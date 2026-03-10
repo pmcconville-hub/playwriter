@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.75
+
+### Changes
+
+- **Remove `alarms` permission and keepalive**: Removed `chrome.alarms` keepalive added in 0.0.73. The `maintainLoop` while-loop and `setInterval(checkMemory)` already keep the service worker alive. The alarm was a no-op that required an unnecessary permission.
+
 ## 0.0.74
 
 ### Bug Fixes

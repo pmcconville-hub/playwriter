@@ -1520,18 +1520,6 @@ async function onActionClicked(tab: chrome.tabs.Tab): Promise<void> {
 resetDebugger()
 connectionManager.maintainLoop()
 
-// MV3 service workers can be terminated by Chrome despite setInterval.
-// chrome.alarms is the only reliable way to keep a service worker alive.
-// Without this, the maintainLoop stops, the WebSocket closes, and the
-// extension silently disconnects from the relay server.
-chrome.alarms.create('keepalive', { periodInMinutes: 0.25 })
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'keepalive') {
-    // No-op — the alarm firing is enough to wake the service worker.
-    // The maintainLoop will handle reconnection if needed.
-  }
-})
-
 chrome.contextMenus
   .remove('playwriter-pin-element')
   .catch(() => {})
