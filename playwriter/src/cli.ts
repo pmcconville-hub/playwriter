@@ -321,6 +321,7 @@ cli
       browser: string | null
       profile: { email: string; id: string } | null
       extensionId: string | null
+      cwd: string | null
     }> = []
 
     try {
@@ -338,6 +339,7 @@ cli
           browser: string | null
           profile: { email: string; id: string } | null
           extensionId: string | null
+          cwd: string | null
         }>
       }
       sessions = result.sessions
@@ -355,6 +357,7 @@ cli
     const browserWidth = Math.max(7, ...sessions.map((session) => (session.browser || 'Chrome').length))
     const profileWidth = Math.max(7, ...sessions.map((session) => (session.profile?.email || '').length || 1))
     const extensionWidth = Math.max(2, ...sessions.map((session) => (session.extensionId || '').length || 1))
+    const cwdWidth = Math.max(3, ...sessions.map((session) => (session.cwd || '').length || 1))
     const stateWidth = Math.max(10, ...sessions.map((session) => session.stateKeys.join(', ').length || 1))
 
     console.log(
@@ -366,13 +369,16 @@ cli
         '  ' +
         'EXT'.padEnd(extensionWidth) +
         '  ' +
+        'CWD'.padEnd(cwdWidth) +
+        '  ' +
         'STATE KEYS',
     )
-    console.log('-'.repeat(idWidth + browserWidth + profileWidth + extensionWidth + stateWidth + 8))
+    console.log('-'.repeat(idWidth + browserWidth + profileWidth + extensionWidth + cwdWidth + stateWidth + 10))
 
     for (const session of sessions) {
       const stateStr = session.stateKeys.length > 0 ? session.stateKeys.join(', ') : '-'
       const profileLabel = session.profile?.email || '-'
+      const cwdLabel = session.cwd || '-'
       console.log(
         String(session.id).padEnd(idWidth) +
           '  ' +
@@ -381,6 +387,8 @@ cli
           profileLabel.padEnd(profileWidth) +
           '  ' +
           (session.extensionId || '-').padEnd(extensionWidth) +
+          '  ' +
+          cwdLabel.padEnd(cwdWidth) +
           '  ' +
           stateStr,
       )

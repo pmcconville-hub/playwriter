@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.90
+
+1. **Show session cwd in `playwriter session list`** — the CLI session table now includes the working directory each session was created with, making it easier to tell similar sessions apart.
+2. **Fix session cwd leakage across relay restarts** — relative `fs` paths in the sandbox now resolve from the cwd captured by `playwriter session new`, instead of whichever directory last launched the detached relay server.
+
 ## 0.0.89
 
 1. **More reliable downloads in extension mode** — download behavior now stays compatible with both `Page.download*` and `Browser.download*` event paths, so Playwright flows like `page.waitForEvent('download')` work consistently when connected through the relay.

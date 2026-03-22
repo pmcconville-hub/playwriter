@@ -1915,13 +1915,7 @@ export async function startPlayWriterCDPRelayServer({
     if (!executor) {
       return c.json({ error: 'not found' }, 404)
     }
-    const metadata = executor.getSessionMetadata()
-    return c.json({
-      id: sessionId,
-      extensionId: metadata.extensionId,
-      browser: metadata.browser,
-      profile: metadata.profile,
-    })
+    return c.json(executor.getSessionInfo({ id: sessionId }))
   })
 
   app.post('/cli/session/delete', async (c) => {

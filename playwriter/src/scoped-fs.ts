@@ -7,7 +7,7 @@ import os from 'node:os'
  * Any attempt to access files outside the allowed directories will throw an EPERM error.
  *
  * By default, allows access to:
- * - Current working directory (process.cwd())
+ * - The base directory captured when the sandbox is created
  * - /tmp
  * - os.tmpdir()
  *
@@ -15,10 +15,13 @@ import os from 'node:os'
  */
 export class ScopedFS {
   private allowedDirs: string[]
+  private baseDir: string
 
-  constructor(allowedDirs?: string[]) {
-    // Default allowed directories: cwd, /tmp, os.tmpdir()
-    const defaultDirs = [process.cwd(), '/tmp', os.tmpdir()]
+  constructor(allowedDirs?: string[], baseDir?: string) {
+    this.baseDir = path.resolve(baseDir || process.cwd())
+
+    // Default allowed directories: session cwd, /tmp, os.tmpdir()
+    const defaultDirs = [this.baseDir, '/tmp', os.tmpdir()]
 
     // Use provided dirs or defaults, resolve all to absolute paths
     const dirs = allowedDirs ?? defaultDirs
@@ -40,8 +43,8 @@ export class ScopedFS {
    */
   private resolvePath(filePath: string): string {
     // If it's an absolute path, use it directly
-    // If it's relative, resolve from cwd
-    const resolved = path.resolve(filePath)
+    // If it's relative, resolve from the session cwd captured when the sandbox was created.
+    const resolved = path.isAbsolute(filePath) ? path.resolve(filePath) : path.resolve(this.baseDir, filePath)
 
     if (!this.isPathAllowed(resolved)) {
       const error = new Error(
@@ -410,8 +413,8 @@ export class ScopedFS {
 
 /**
  * Create a scoped fs instance with allowed directories.
- * Defaults to cwd, /tmp, and os.tmpdir() if no directories specified.
+ * Defaults to the captured base directory, /tmp, and os.tmpdir() if no directories specified.
  */
-export function createScopedFS(allowedDirs?: string[]): ScopedFS {
-  return new ScopedFS(allowedDirs)
+export function createScopedFS(allowedDirs?: string[], baseDir?: string): ScopedFS {
+  return new ScopedFS(allowedDirs, baseDir)
 }

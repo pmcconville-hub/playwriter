@@ -234,6 +234,15 @@ export interface SessionMetadata {
   profile: { email: string; id: string } | null
 }
 
+export interface SessionInfo {
+  id: string
+  stateKeys: string[]
+  extensionId: string | null
+  browser: string | null
+  profile: { email: string; id: string } | null
+  cwd: string | null
+}
+
 export interface ExecutorOptions {
   cdpConfig: CdpConfig
   sessionMetadata?: SessionMetadata
@@ -281,14 +290,19 @@ export class PlaywrightExecutor {
   private cdpConfig: CdpConfig
   private logger: ExecutorLogger
   private sessionMetadata: SessionMetadata
+  private sessionCwd: string | null
   private hasWarnedExtensionOutdated = false
 
   constructor(options: ExecutorOptions) {
     this.cdpConfig = options.cdpConfig
     this.logger = options.logger || { log: console.log, error: console.error }
     this.sessionMetadata = options.sessionMetadata || { extensionId: null, browser: null, profile: null }
+    this.sessionCwd = options.cwd ? path.resolve(options.cwd) : null
     // ScopedFS expects an array of allowed directories. If cwd is provided, use it; otherwise use defaults.
-    this.scopedFs = new ScopedFS(options.cwd ? [options.cwd, '/tmp', os.tmpdir()] : undefined)
+    this.scopedFs = new ScopedFS(
+      this.sessionCwd ? [this.sessionCwd, '/tmp', os.tmpdir()] : undefined,
+      this.sessionCwd || undefined,
+    )
     this.sandboxedRequire = this.createSandboxedRequire(require)
   }
 
@@ -1267,10 +1281,21 @@ export class PlaywrightExecutor {
   getSessionMetadata(): SessionMetadata {
     return this.sessionMetadata
   }
+
+  getSessionInfo({ id }: { id: string }): SessionInfo {
+    return {
+      id,
+      stateKeys: this.getStateKeys(),
+      extensionId: this.sessionMetadata.extensionId,
+      browser: this.sessionMetadata.browser,
+      profile: this.sessionMetadata.profile,
+      cwd: this.sessionCwd,
+    }
+  }
 }
 
 /**
- * Session manager for multiple executors, keyed by session ID (typically cwd hash)
+ * Session manager for multiple executors, keyed by session ID.
  */
 export class ExecutorManager {
   private executors = new Map<string, PlaywrightExecutor>()
@@ -1309,22 +1334,9 @@ export class ExecutorManager {
     return this.executors.get(sessionId) || null
   }
 
-  listSessions(): Array<{
-    id: string
-    stateKeys: string[]
-    extensionId: string | null
-    browser: string | null
-    profile: { email: string; id: string } | null
-  }> {
+  listSessions(): SessionInfo[] {
     return [...this.executors.entries()].map(([id, executor]) => {
-      const metadata = executor.getSessionMetadata()
-      return {
-        id,
-        stateKeys: executor.getStateKeys(),
-        extensionId: metadata.extensionId,
-        browser: metadata.browser,
-        profile: metadata.profile,
-      }
+      return executor.getSessionInfo({ id })
     })
   }
 }
