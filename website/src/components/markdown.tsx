@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import Prism from 'prismjs'
 import 'prismjs/components/prism-jsx'
 import 'prismjs/components/prism-tsx'
@@ -121,8 +122,8 @@ function prepareTocItems({ items }: { items: TocItem[] }): PreparedTocItem[] {
   })
 }
 
-function useActiveTocId() {
-  const [activeId, setActiveId] = useState('')
+function useActiveTocId({ defaultId }: { defaultId: string }) {
+  const [activeId, setActiveId] = useState(defaultId)
 
   useEffect(() => {
     const headings = document.querySelectorAll<HTMLElement>('[data-toc-heading="true"][id]')
@@ -169,11 +170,150 @@ function useActiveTocId() {
   return activeId
 }
 
+type TocGroup = {
+  parent: PreparedTocItem
+  children: PreparedTocItem[]
+}
+
+function TocLink({
+  item,
+  isActive,
+  activeId,
+  chevron,
+}: {
+  item: PreparedTocItem
+  isActive: boolean
+  activeId: string
+  chevron?: { expanded: boolean }
+}) {
+  const defaultColor = isActive ? 'var(--text-primary)' : 'var(--text-tree-label)'
+  const defaultPrefixColor = isActive ? 'var(--text-secondary)' : 'var(--text-tertiary)'
+  return (
+    <a
+      href={item.href}
+      className='block no-underline'
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        fontSize: 'var(--type-toc-size)',
+        fontWeight: item.level === 1 ? 560 : 470,
+        lineHeight: tocLineHeightByLevel[item.level],
+        letterSpacing: 'normal',
+        padding: '2px 8px',
+        color: defaultColor,
+        fontFamily: 'var(--font-primary)',
+        transition: 'color 0.15s ease, background-color 0.15s ease',
+        borderRadius: '6px',
+        background: isActive ? 'var(--code-bg)' : 'transparent',
+        textTransform: 'lowercase',
+      }}
+      onMouseEnter={(e) => {
+        if (!isActive) {
+          e.currentTarget.style.color = 'var(--text-primary)'
+          e.currentTarget.style.background = 'var(--code-bg)'
+        }
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.color = defaultColor
+        e.currentTarget.style.background = isActive ? 'var(--code-bg)' : 'transparent'
+      }}
+    >
+      <span
+        aria-hidden='true'
+        style={{ color: defaultPrefixColor, whiteSpace: 'pre', fontFamily: 'var(--font-code)' }}
+      >
+        {item.prefix}
+      </span>
+      <span style={{ overflowWrap: 'anywhere', fontFamily: 'var(--font-primary)', flex: 1 }}>{item.label}</span>
+      {chevron && (
+        <span
+          aria-hidden='true'
+          style={{
+            color: defaultPrefixColor,
+            fontSize: '10px',
+            marginLeft: '4px',
+            marginTop: '2px',
+            transition: 'transform 0.2s ease',
+            transform: chevron.expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+            display: 'inline-block',
+            flexShrink: 0,
+          }}
+        >
+          ▸
+        </span>
+      )}
+    </a>
+  )
+}
+
 export function TableOfContents({ items, logo }: { items: TocItem[]; logo?: string }) {
-  const activeId = useActiveTocId()
+  // Default active to first item
+  const firstHref = items[0]?.href ?? ''
+  const defaultId = firstHref.startsWith('#') ? firstHref.slice(1) : firstHref
+  const activeId = useActiveTocId({ defaultId })
+
   const preparedItems = useMemo(() => {
     return prepareTocItems({ items })
   }, [items])
+
+  // Group items into { parent, children }[] for structured rendering
+  const groups = useMemo(() => {
+    const result: TocGroup[] = []
+    for (const item of preparedItems) {
+      if (item.level === 1) {
+        result.push({ parent: item, children: [] })
+      } else if (result.length > 0) {
+        result[result.length - 1].children.push(item)
+      }
+    }
+    return result
+  }, [preparedItems])
+
+  // Compute which section the active heading belongs to
+  const targetSection = useMemo(() => {
+    if (!activeId) {
+      // Default: first section with children
+      const first = groups.find((g) => {
+        return g.children.length > 0
+      })
+      return first?.parent.href ?? null
+    }
+    const activeHref = `#${activeId}`
+    let currentParent: string | null = null
+    for (const item of preparedItems) {
+      if (item.level === 1) {
+        currentParent = item.href
+      }
+      if (item.href === activeHref) {
+        return currentParent
+      }
+    }
+    return null
+  }, [activeId, preparedItems, groups])
+
+  // Expanded section is explicit state, updated via View Transition API
+  const [expandedSection, setExpandedSection] = useState<string | null>(() => {
+    const first = groups.find((g) => {
+      return g.children.length > 0
+    })
+    return first?.parent.href ?? null
+  })
+
+  // When target section changes, animate the transition with View Transition API
+  useEffect(() => {
+    if (targetSection === expandedSection) {
+      return
+    }
+    if ('startViewTransition' in document) {
+      document.startViewTransition(() => {
+        flushSync(() => {
+          setExpandedSection(targetSection)
+        })
+      })
+    } else {
+      setExpandedSection(targetSection)
+    }
+  }, [targetSection]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <aside
@@ -205,49 +345,37 @@ export function TableOfContents({ items, logo }: { items: TocItem[]; logo?: stri
         >
           {logo ?? 'index'}
         </a>
-        {preparedItems.map((item) => {
-          const isActive = `#${activeId}` === item.href
-          const defaultColor = isActive ? 'var(--text-primary)' : 'var(--text-tree-label)'
-          const defaultPrefixColor = isActive ? 'var(--text-secondary)' : 'var(--text-tertiary)'
+        {groups.map((group, groupIndex) => {
+          const isExpanded = expandedSection === group.parent.href
+          const hasChildren = group.children.length > 0
           return (
-            <a
-              key={item.href}
-              href={item.href}
-              className='block no-underline'
-              style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                fontSize: 'var(--type-toc-size)',
-                fontWeight: item.level === 1 ? 560 : 470,
-                lineHeight: tocLineHeightByLevel[item.level],
-                letterSpacing: 'normal',
-                padding: '2px 8px',
-                color: defaultColor,
-                fontFamily: 'var(--font-primary)',
-                transition: 'color 0.15s ease, background-color 0.15s ease',
-                borderRadius: '6px',
-                background: isActive ? 'var(--code-bg)' : 'transparent',
-                textTransform: 'lowercase',
-              }}
-              onMouseEnter={(e) => {
-                if (!isActive) {
-                  e.currentTarget.style.color = 'var(--text-primary)'
-                  e.currentTarget.style.background = 'var(--code-bg)'
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = defaultColor
-                e.currentTarget.style.background = isActive ? 'var(--code-bg)' : 'transparent'
-              }}
-            >
-              <span
-                aria-hidden='true'
-                style={{ color: defaultPrefixColor, whiteSpace: 'pre', fontFamily: 'var(--font-code)' }}
-              >
-                {item.prefix}
-              </span>
-              <span style={{ overflowWrap: 'anywhere', fontFamily: 'var(--font-primary)' }}>{item.label}</span>
-            </a>
+            <div key={group.parent.href}>
+              <TocLink
+                item={group.parent}
+                isActive={`#${activeId}` === group.parent.href}
+                activeId={activeId}
+                chevron={hasChildren ? { expanded: isExpanded } : undefined}
+              />
+              {hasChildren && isExpanded && (
+                <div
+                  className='toc-children-container'
+                  style={{
+                    viewTransitionName: `toc-section-${groupIndex}`,
+                  }}
+                >
+                  {group.children.map((child) => {
+                    return (
+                      <TocLink
+                        key={child.href}
+                        item={child}
+                        isActive={`#${activeId}` === child.href}
+                        activeId={activeId}
+                      />
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           )
         })}
       </nav>

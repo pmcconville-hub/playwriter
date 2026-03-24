@@ -297,3 +297,52 @@
     background: rgba(255, 255, 255, 0.3);
   }
 }
+
+/* TOC collapsible children — View Transition API animations.
+   Each children group has view-transition-name: toc-section-N and
+   class toc-children-container with view-transition-class for shared CSS. */
+.toc-children-container {
+  view-transition-class: toc-children;
+}
+
+/* Suppress default root crossfade so only TOC children animate */
+::view-transition-group(root) {
+  animation: none;
+}
+
+/* Clip-reveal from top when children appear */
+::view-transition-new(.toc-children) {
+  animation: toc-clip-in 180ms var(--ease-smooth) both;
+}
+
+/* Clip-hide from bottom when children disappear */
+::view-transition-old(.toc-children) {
+  animation: toc-clip-out 140ms ease-in both;
+}
+
+/* Prevent position/size interpolation between old and new groups */
+::view-transition-group(.toc-children) {
+  animation: none;
+}
+
+@keyframes toc-clip-in {
+  from {
+    clip-path: inset(0 0 100% 0);
+    opacity: 0;
+  }
+  to {
+    clip-path: inset(0);
+    opacity: 1;
+  }
+}
+
+@keyframes toc-clip-out {
+  from {
+    clip-path: inset(0);
+    opacity: 1;
+  }
+  to {
+    clip-path: inset(0 0 100% 0);
+    opacity: 0;
+  }
+}
