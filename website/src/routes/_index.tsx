@@ -19,6 +19,7 @@ import {
   OL,
   Li,
   PixelatedImage,
+  type TocItem,
 } from 'website/src/components/markdown'
 import placeholderScreenshot from '../assets/placeholders/placeholder-screenshot@2x.png'
 
@@ -46,18 +47,26 @@ export const meta: MetaFunction = () => {
 
 const tocItems = [
   { label: 'Getting started', href: '#getting-started' },
+  { label: 'Install extension', href: '#install-extension', level: 2 },
+  { label: 'Install CLI + skill', href: '#install-cli-and-skill', level: 2 },
+  { label: 'First commands', href: '#first-commands', level: 3 },
   { label: 'How it works', href: '#how-it-works' },
   { label: 'Collaboration', href: '#collaboration' },
   { label: 'Snapshots', href: '#snapshots' },
+  { label: 'Search and diff', href: '#snapshot-search-and-diff', level: 2 },
   { label: 'Visual labels', href: '#visual-labels' },
   { label: 'Sessions', href: '#sessions' },
+  { label: 'Isolated state', href: '#isolated-state', level: 2 },
+  { label: 'Dedicated pages', href: '#dedicated-pages', level: 2 },
   { label: 'Debugger & editor', href: '#debugger-and-editor' },
   { label: 'Network interception', href: '#network-interception' },
   { label: 'Screen recording', href: '#screen-recording' },
   { label: 'Comparison', href: '#comparison' },
   { label: 'Remote access', href: '#remote-access' },
+  { label: 'Tunnel', href: '#remote-tunnel', level: 2 },
+  { label: 'LAN', href: '#remote-lan', level: 2 },
   { label: 'Security', href: '#security' },
-]
+] satisfies TocItem[]
 
 export default function IndexPage() {
   return (
@@ -98,42 +107,49 @@ export default function IndexPage() {
           <strong>Four steps</strong> and your agent is browsing.
         </P>
 
-        <OL>
-          <Li>
-            Install the{' '}
-            <A href='https://chromewebstore.google.com/detail/playwriter-mcp/jfeammnjpkecdekppnclgkkffahnhfhe'>
-              Chrome extension
-            </A>
-          </Li>
-          <Li>Click the extension icon on a tab {' \u2014 '} it turns green</Li>
-          <Li>Install the CLI:</Li>
-        </OL>
+        <Section id='install-extension' title='Install the extension' level={2}>
+          <OL>
+            <Li>
+              Install the{' '}
+              <A href='https://chromewebstore.google.com/detail/playwriter-mcp/jfeammnjpkecdekppnclgkkffahnhfhe'>
+                Chrome extension
+              </A>
+            </Li>
+            <Li>Click the extension icon on a tab {' \u2014 '} it turns green</Li>
+          </OL>
+        </Section>
 
-        <CodeBlock lang='bash'>{dedent`
-          npm i -g playwriter
-        `}</CodeBlock>
+        <Section id='install-cli-and-skill' title='Install CLI + skill' level={2}>
+          <P>Install the CLI, then add the skill so your agent knows the good Playwriter workflows.</P>
 
-        <P>
-          Then install the <strong>skill</strong> {' \u2014 '} it teaches your agent how to use Playwriter: which
-          selectors to use, how to avoid timeouts, how to read snapshots, and all available utilities.
-        </P>
+          <CodeBlock lang='bash'>{dedent`
+            npm i -g playwriter
+          `}</CodeBlock>
 
-        <CodeBlock lang='bash'>{dedent`
-          npx -y skills add remorses/playwriter
-        `}</CodeBlock>
+          <P>
+            Then install the <strong>skill</strong> {' \u2014 '} it teaches your agent how to use Playwriter: which
+            selectors to use, how to avoid timeouts, how to read snapshots, and all available utilities.
+          </P>
 
-        <P>
-          The extension connects your browser to a <strong>local WebSocket relay</strong> on{' '}
-          <Code>localhost:19988</Code>. The CLI sends Playwright code through the relay. No remote servers, no accounts,
-          nothing leaves your machine.
-        </P>
+          <CodeBlock lang='bash'>{dedent`
+            npx -y skills add remorses/playwriter
+          `}</CodeBlock>
 
-        <CodeBlock lang='bash'>{dedent`
-          playwriter session new              # new sandbox, outputs id (e.g. 1)
-          playwriter -e "page.goto('https://example.com')"
-          playwriter -e "snapshot({ page })"
-          playwriter -e "page.locator('aria-ref=e5').click()"
-        `}</CodeBlock>
+          <Section id='first-commands' title='First commands' level={3}>
+            <P>
+              The extension connects your browser to a <strong>local WebSocket relay</strong> on{' '}
+              <Code>localhost:19988</Code>. The CLI sends Playwright code through the relay. No remote servers, no
+              accounts, nothing leaves your machine.
+            </P>
+          </Section>
+
+          <CodeBlock lang='bash'>{dedent`
+            playwriter session new              # new sandbox, outputs id (e.g. 1)
+            playwriter -e "page.goto('https://example.com')"
+            playwriter -e "snapshot({ page })"
+            playwriter -e "page.locator('aria-ref=e5').click()"
+          `}</CodeBlock>
+        </Section>
 
         <Caption>Extension icon green = connected. Gray = not attached to this tab.</Caption>
       </Section>
@@ -203,11 +219,13 @@ export default function IndexPage() {
           #         - link "Blog" role=link[name="Blog"]
         `}</CodeBlock>
 
-        <P>
-          Each line ends with a <strong>locator</strong> you can pass directly to <Code>page.locator()</Code>.
-          Subsequent calls return a<strong> diff</strong>, so you only see what changed. Use <Code>search</Code> to
-          filter large pages.
-        </P>
+        <Section id='snapshot-search-and-diff' title='Search and diff' level={2}>
+          <P>
+            Each line ends with a <strong>locator</strong> you can pass directly to <Code>page.locator()</Code>.
+            Subsequent calls return a<strong> diff</strong>, so you only see what changed. Use <Code>search</Code> to
+            filter large pages.
+          </P>
+        </Section>
 
         <CodeBlock lang='bash'>{dedent`
           # Search for specific elements
@@ -247,11 +265,13 @@ export default function IndexPage() {
       </Section>
 
       <Section id='sessions' title='Sessions'>
-        <P>
-          Run <strong>multiple agents at once</strong> without them stepping on each other. Each session is an isolated
-          sandbox with its own <Code>state</Code> object. Variables, pages, and listeners persist between calls. Browser
-          tabs are shared, but state is not.
-        </P>
+        <Section id='isolated-state' title='Isolated state' level={2}>
+          <P>
+            Run <strong>multiple agents at once</strong> without them stepping on each other. Each session is an
+            isolated sandbox with its own <Code>state</Code> object. Variables, pages, and listeners persist between
+            calls. Browser tabs are shared, but state is not.
+          </P>
+        </Section>
 
         <CodeBlock lang='bash'>{dedent`
           playwriter session new    # => 1
@@ -265,10 +285,12 @@ export default function IndexPage() {
           playwriter -s 2 -e "console.log(state.users)"  # undefined
         `}</CodeBlock>
 
-        <P>
-          Create your own page to <strong>avoid interference</strong> from other agents. Reuse an existing{' '}
-          <Code>about:blank</Code> tab or create a fresh one, and store it in <Code>state</Code>.
-        </P>
+        <Section id='dedicated-pages' title='Dedicated pages' level={2}>
+          <P>
+            Create your own page to <strong>avoid interference</strong> from other agents. Reuse an existing{' '}
+            <Code>about:blank</Code> tab or create a fresh one, and store it in <Code>state</Code>.
+          </P>
+        </Section>
 
         <CodeBlock lang='bash'>{dedent`
           playwriter -s 1 -e "state.myPage = context.pages().find(p => p.url() === 'about:blank') ?? context.newPage(); state.myPage.goto('https://example.com')"
@@ -417,11 +439,13 @@ export default function IndexPage() {
       </Section>
 
       <Section id='remote-access' title='Remote access'>
-        <P>
-          Control Chrome on a <strong>remote machine</strong> {' \u2014 '} a headless Mac mini, a cloud VM, a
-          devcontainer. A <A href='https://traforo.dev'>traforo</A> tunnel exposes the relay through Cloudflare.{' '}
-          <strong>No VPN, no firewall rules, no port forwarding.</strong>
-        </P>
+        <Section id='remote-tunnel' title='Tunnel' level={2}>
+          <P>
+            Control Chrome on a <strong>remote machine</strong> {' \u2014 '} a headless Mac mini, a cloud VM, a
+            devcontainer. A <A href='https://traforo.dev'>traforo</A> tunnel exposes the relay through Cloudflare.{' '}
+            <strong>No VPN, no firewall rules, no port forwarding.</strong>
+          </P>
+        </Section>
 
         <CodeBlock lang='bash'>{dedent`
           # On the host machine — start relay with tunnel
@@ -433,12 +457,14 @@ export default function IndexPage() {
           playwriter -e "page.goto('https://example.com')"
         `}</CodeBlock>
 
-        <P>
-          Also works on a <strong>LAN without tunnels</strong> {' \u2014 '} just set{' '}
-          <Code>PLAYWRITER_HOST=192.168.1.10</Code>. Works for MCP too {' \u2014 '} set <Code>PLAYWRITER_HOST</Code> and{' '}
-          <Code>PLAYWRITER_TOKEN</Code> in your MCP client env config. Use cases: headless Mac mini, remote user
-          support, multi-machine automation, dev from a VM or devcontainer.
-        </P>
+        <Section id='remote-lan' title='LAN' level={2}>
+          <P>
+            Also works on a <strong>LAN without tunnels</strong> {' \u2014 '} just set{' '}
+            <Code>PLAYWRITER_HOST=192.168.1.10</Code>. Works for MCP too {' \u2014 '} set <Code>PLAYWRITER_HOST</Code> and{' '}
+            <Code>PLAYWRITER_TOKEN</Code> in your MCP client env config. Use cases: headless Mac mini, remote user
+            support, multi-machine automation, dev from a VM or devcontainer.
+          </P>
+        </Section>
       </Section>
 
       <Section id='security' title='Security'>

@@ -6,7 +6,7 @@
  * --link-accent, --page-border.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Prism from 'prismjs'
 import 'prismjs/components/prism-jsx'
 import 'prismjs/components/prism-tsx'
@@ -24,11 +24,108 @@ Prism.languages.diagram = {
    TOC sidebar (fixed left)
    ========================================================================= */
 
+export type HeadingLevel = 1 | 2 | 3
+
+export type TocItem = {
+  label: string
+  href: string
+  level?: HeadingLevel
+}
+
+type PreparedTocItem = TocItem & {
+  level: HeadingLevel
+  prefix: string
+}
+
+const headingTagByLevel: Record<HeadingLevel, 'h1' | 'h2' | 'h3'> = {
+  1: 'h1',
+  2: 'h2',
+  3: 'h3',
+}
+
+const headingStyleByLevel: Record<HeadingLevel, React.CSSProperties> = {
+  1: {
+    fontSize: 'var(--type-heading-1-size)',
+    fontWeight: 560,
+    lineHeight: 1.4,
+    letterSpacing: '-0.09px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    paddingTop: '24px',
+    paddingBottom: '24px',
+  },
+  2: {
+    fontSize: 'var(--type-heading-2-size)',
+    fontWeight: 560,
+    lineHeight: 1.43,
+    letterSpacing: '-0.06px',
+    paddingTop: '10px',
+    paddingBottom: '4px',
+  },
+  3: {
+    fontSize: 'var(--type-heading-3-size)',
+    fontWeight: 540,
+    lineHeight: 1.38,
+    letterSpacing: '-0.03px',
+    paddingTop: '4px',
+    paddingBottom: '2px',
+    color: 'var(--text-secondary)',
+  },
+}
+
+const tocLineHeightByLevel: Record<HeadingLevel, number> = {
+  1: 1.32,
+  2: 1.32,
+  3: 1.32,
+}
+
+function getTocLevel({ item }: { item: TocItem }): HeadingLevel {
+  return item.level ?? 1
+}
+
+function hasNextTocSibling({ items, index, level }: { items: TocItem[]; index: number; level: HeadingLevel }) {
+  const nextSiblingLevel = items
+    .slice(index + 1)
+    .map((item) => {
+      return getTocLevel({ item })
+    })
+    .find((nextLevel) => {
+      return nextLevel <= level
+    })
+
+  return nextSiblingLevel === level
+}
+
+function prepareTocItems({ items }: { items: TocItem[] }): PreparedTocItem[] {
+  const ancestorContinuations: boolean[] = []
+
+  return items.map((item, index) => {
+    const level = getTocLevel({ item })
+    ancestorContinuations.length = Math.max(level - 1, 0)
+    const isLast = !hasNextTocSibling({ items, index, level })
+    const prefix = `${ancestorContinuations
+      .slice(0, Math.max(level - 1, 0))
+      .map((shouldContinue) => {
+        return shouldContinue ? '│  ' : '   '
+      })
+      .join('')}${isLast ? '└─ ' : '├─ '}`
+
+    ancestorContinuations[level - 1] = !isLast
+
+    return {
+      ...item,
+      level,
+      prefix,
+    }
+  })
+}
+
 function useActiveTocId() {
   const [activeId, setActiveId] = useState('')
 
   useEffect(() => {
-    const headings = document.querySelectorAll<HTMLElement>('h1[id]')
+    const headings = document.querySelectorAll<HTMLElement>('[data-toc-heading="true"][id]')
     if (headings.length === 0) {
       return
     }
@@ -72,27 +169,32 @@ function useActiveTocId() {
   return activeId
 }
 
-export function TableOfContents({ items, logo }: { items: Array<{ label: string; href: string }>; logo?: string }) {
+export function TableOfContents({ items, logo }: { items: TocItem[]; logo?: string }) {
   const activeId = useActiveTocId()
+  const preparedItems = useMemo(() => {
+    return prepareTocItems({ items })
+  }, [items])
 
   return (
     <aside
       className='fixed top-[80px] hidden lg:block'
-      style={{ left: 'max(1rem, calc((100vw - 550px) / 2 - 200px))', width: '122px' }}
+      style={{ left: 'max(1rem, calc((100vw - 550px) / 2 - 280px))', width: 'fit-content', maxWidth: '240px' }}
     >
-      <nav>
+      <nav aria-label='Table of contents'>
         <a
           href='/'
           className='no-underline transition-colors block'
           style={{
-            fontSize: '14px',
+            fontSize: 'var(--type-toc-size)',
             fontWeight: 700,
-            lineHeight: '20px',
-            letterSpacing: '-0.09px',
+            lineHeight: 1.32,
+            letterSpacing: 'normal',
             padding: '4px 0',
             color: 'var(--text-primary)',
-            fontFamily: 'var(--font-primary)',
-            marginBottom: '8px',
+            fontFamily: 'var(--font-code)',
+            marginBottom: '4px',
+            whiteSpace: 'pre',
+            textTransform: 'lowercase',
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.color = 'var(--text-hover)'
@@ -103,34 +205,48 @@ export function TableOfContents({ items, logo }: { items: Array<{ label: string;
         >
           {logo ?? 'index'}
         </a>
-        {items.map((item) => {
+        {preparedItems.map((item) => {
           const isActive = `#${activeId}` === item.href
-          const defaultColor = isActive ? 'var(--text-primary)' : 'var(--text-secondary)'
+          const defaultColor = isActive ? 'var(--text-primary)' : 'var(--text-tree-label)'
+          const defaultPrefixColor = isActive ? 'var(--text-secondary)' : 'var(--text-tertiary)'
           return (
             <a
               key={item.href}
               href={item.href}
               className='block no-underline'
               style={{
-                fontSize: '13px',
-                fontWeight: 475,
-                lineHeight: '15.6px',
-                letterSpacing: '-0.04px',
-                padding: '5px 0',
+                display: 'flex',
+                alignItems: 'flex-start',
+                fontSize: 'var(--type-toc-size)',
+                fontWeight: item.level === 1 ? 560 : 470,
+                lineHeight: tocLineHeightByLevel[item.level],
+                letterSpacing: 'normal',
+                padding: '2px 8px',
                 color: defaultColor,
                 fontFamily: 'var(--font-primary)',
-                transition: 'color 0.15s ease',
+                transition: 'color 0.15s ease, background-color 0.15s ease',
+                borderRadius: '6px',
+                background: isActive ? 'var(--code-bg)' : 'transparent',
+                textTransform: 'lowercase',
               }}
               onMouseEnter={(e) => {
                 if (!isActive) {
-                  e.currentTarget.style.color = 'var(--text-hover)'
+                  e.currentTarget.style.color = 'var(--text-primary)'
+                  e.currentTarget.style.background = 'var(--code-bg)'
                 }
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.color = defaultColor
+                e.currentTarget.style.background = isActive ? 'var(--code-bg)' : 'transparent'
               }}
             >
-              {item.label}
+              <span
+                aria-hidden='true'
+                style={{ color: defaultPrefixColor, whiteSpace: 'pre', fontFamily: 'var(--font-code)' }}
+              >
+                {item.prefix}
+              </span>
+              <span style={{ overflowWrap: 'anywhere', fontFamily: 'var(--font-primary)' }}>{item.label}</span>
             </a>
           )
         })}
@@ -186,30 +302,34 @@ export function BackButton() {
    Typography
    ========================================================================= */
 
-export function SectionHeading({ id, children }: { id: string; children: React.ReactNode }) {
+export function SectionHeading({
+  id,
+  level = 1,
+  children,
+}: {
+  id: string
+  level?: HeadingLevel
+  children: React.ReactNode
+}) {
+  const Tag = headingTagByLevel[level]
+
   return (
-    <h1
+    <Tag
       id={id}
+      data-toc-heading='true'
+      data-toc-level={level}
       className='scroll-mt-[5.25rem]'
       style={{
         fontFamily: 'var(--font-primary)',
-        fontSize: '14px',
-        fontWeight: 560,
-        lineHeight: '20px',
-        letterSpacing: '-0.09px',
         color: 'var(--text-primary)',
         margin: 0,
         padding: 0,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        paddingTop: '24px',
-        paddingBottom: '24px',
+        ...headingStyleByLevel[level],
       }}
     >
-      <span style={{ whiteSpace: 'nowrap' }}>{children}</span>
-      <span style={{ flex: 1, height: '1px', background: 'var(--divider)' }} />
-    </h1>
+      <span style={{ whiteSpace: level === 1 ? 'nowrap' : 'normal' }}>{children}</span>
+      {level === 1 ? <span style={{ flex: 1, height: '1px', background: 'var(--divider)' }} /> : null}
+    </Tag>
   )
 }
 
@@ -219,9 +339,9 @@ export function P({ children, className = '' }: { children: React.ReactNode; cla
       className={`editorial-prose ${className}`}
       style={{
         fontFamily: 'var(--font-primary)',
-        fontSize: '14px',
+        fontSize: 'var(--type-body-size)',
         fontWeight: 475,
-        lineHeight: '22px',
+        lineHeight: 1.6,
         letterSpacing: '-0.09px',
         color: 'var(--text-primary)',
         opacity: 0.82,
@@ -238,10 +358,10 @@ export function Caption({ children }: { children: React.ReactNode }) {
     <p
       style={{
         fontFamily: 'var(--font-primary)',
-        fontSize: '12px',
+        fontSize: 'var(--type-caption-size)',
         fontWeight: 475,
         textAlign: 'center',
-        lineHeight: '20px',
+        lineHeight: 1.6,
         letterSpacing: '-0.09px',
         color: 'var(--text-secondary)',
         margin: 0,
@@ -291,10 +411,22 @@ export function Divider() {
   )
 }
 
-export function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
+export function Section({
+  id,
+  title,
+  level = 1,
+  children,
+}: {
+  id: string
+  title: string
+  level?: HeadingLevel
+  children: React.ReactNode
+}) {
   return (
     <>
-      <SectionHeading id={id}>{title}</SectionHeading>
+      <SectionHeading id={id} level={level}>
+        {title}
+      </SectionHeading>
       {children}
     </>
   )
@@ -306,9 +438,9 @@ export function OL({ children }: { children: React.ReactNode }) {
       className='m-0 pl-5'
       style={{
         fontFamily: 'var(--font-primary)',
-        fontSize: '14px',
+        fontSize: 'var(--type-body-size)',
         fontWeight: 475,
-        lineHeight: '20px',
+        lineHeight: 1.6,
         letterSpacing: '-0.09px',
         color: 'var(--text-primary)',
         listStyleType: 'decimal',
@@ -325,9 +457,9 @@ export function List({ children }: { children: React.ReactNode }) {
       className='m-0 pl-5'
       style={{
         fontFamily: 'var(--font-primary)',
-        fontSize: '14px',
+        fontSize: 'var(--type-body-size)',
         fontWeight: 475,
-        lineHeight: '20px',
+        lineHeight: 1.6,
         letterSpacing: '-0.09px',
         color: 'var(--text-primary)',
         listStyleType: 'disc',
@@ -829,7 +961,7 @@ export function EditorialPage({
   logo,
   children,
 }: {
-  toc: Array<{ label: string; href: string }>
+  toc: TocItem[]
   logo?: string
   children: React.ReactNode
 }) {
