@@ -128,18 +128,18 @@
   position: relative;
   display: inline-block;
   font-family: var(--font-code);
-  font-size: 12.6px;
+  font-size: 13px;
   font-weight: 500;
-  line-height: 12.6px;
+  line-height: 13px;
   letter-spacing: 0.01em;
-  padding: 1.6px 3.2px;
+  padding: 2px 4px;
   color: rgba(0, 0, 0, 0.75);
 }
 
 .inline-code::before {
   content: '';
   position: absolute;
-  inset: -1.26px 0;
+  inset: -1px 0;
   background: rgba(0, 0, 0, 0.04);
   border-radius: 4px;
   z-index: -1;
@@ -166,10 +166,10 @@
   pointer-events: none;
   z-index: 9;
   position: fixed;
-  top: 81px;
+  top: var(--fade-top);
   left: 0;
   right: 0;
-  height: 48px;
+  height: var(--fade-height);
   background: linear-gradient(
     var(--fade-0) 0px,
     var(--fade-1) 19%,

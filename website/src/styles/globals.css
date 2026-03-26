@@ -55,8 +55,10 @@
   --type-heading-1-size: 15px;
   --type-heading-2-size: 14px;
   --type-heading-3-size: 13px;
-  --type-caption-size: 12.5px;
+  --type-caption-size: 13px;
   --type-toc-size: 13px;
+  --type-code-size: 12px;
+  --type-table-size: 11px;
 
   /* Bleed: code blocks & images extend beyond prose column. */
   --bleed: 44px;
@@ -65,8 +67,32 @@
   /* TOC sidebar left offset — shared with tab bar for alignment */
   --toc-left: max(1rem, calc((100vw - 550px) / 2 - 280px));
 
-  /* Sticky top offset for sidebar elements (header height + tab bar) */
-  --sticky-top: 120px;
+  /* Header anatomy — all sticky/fade/spacer offsets derive from these.
+     Change --logo-height or --tab-bar-height and every dependent value updates. */
+  --header-padding-y: 16px;
+  --logo-height: 30px;
+  --header-row-height: calc(2 * var(--header-padding-y) + var(--logo-height));
+  --tab-bar-height: 36px;
+  --tab-bar-border: 1px;
+  --header-height: calc(var(--header-row-height) + var(--tab-bar-height) + var(--tab-bar-border));
+  --content-top-gap: 60px;
+  --sticky-top: calc(var(--header-height) + 21px);
+
+  /* Fade gradient — overlaps bottom of tab bar for smooth content fade */
+  --fade-top: calc(var(--header-row-height) + 19px);
+  --fade-height: 48px;
+
+  /* Grid geometry — change one value and max-width recomputes.
+     Breakpoint (1080px in @media) ≈ grid-max-width + 40px buffer. */
+  --grid-toc-width: 210px;
+  --grid-gap: 50px;
+  --grid-content-width: 520px;
+  --grid-sidebar-width: var(--grid-toc-width);
+  --grid-max-width: calc(
+    var(--grid-toc-width) + var(--grid-gap) + var(--grid-content-width)
+    + var(--grid-gap) + var(--grid-sidebar-width)
+  );
+  --mobile-padding: 1.25rem;
 
   /* Spacing scale */
   --spacing-xxs: 0.5rem;
@@ -76,6 +102,10 @@
   --spacing-lg: 2.5rem;
   --spacing-xl: 3rem;
   --spacing-xxl: 3.5rem;
+
+  /* Utility tokens */
+  --border-radius-md: 8px;
+  --transition-hover: 0.15s ease;
 
   /* Timing */
   --duration-snappy: 220ms;
@@ -317,7 +347,7 @@
   max-width: 100%;
   margin-left: auto;
   margin-right: auto;
-  padding: 0 1.25rem;
+  padding: 0 var(--mobile-padding);
 }
 
 .editorial-grid-toc {
@@ -343,7 +373,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 1.25rem;
+  padding: 0 var(--mobile-padding);
 }
 
 .editorial-tab-inner {
@@ -353,8 +383,8 @@
   display: flex;
   align-items: stretch;
   gap: 24px;
-  height: 36px;
-  padding: 0 1.25rem;
+  height: var(--tab-bar-height);
+  padding: 0 var(--mobile-padding);
   overflow-x: auto;
 }
 
@@ -368,8 +398,8 @@
 
 @media (min-width: 1080px) {
   .editorial-grid {
-    grid-template-columns: 210px 50px 520px 50px 210px;
-    max-width: 1040px;
+    grid-template-columns: var(--grid-toc-width) var(--grid-gap) var(--grid-content-width) var(--grid-gap) var(--grid-sidebar-width);
+    max-width: var(--grid-max-width);
     padding: 0;
   }
 
@@ -391,12 +421,12 @@
   }
 
   .editorial-header-inner {
-    max-width: 1040px;
+    max-width: var(--grid-max-width);
     padding: 0;
   }
 
   .editorial-tab-inner {
-    max-width: 1040px;
+    max-width: var(--grid-max-width);
     padding: 0;
   }
 }
@@ -426,9 +456,9 @@
   margin-top: 8px;
   margin-bottom: 8px;
   padding: 12px;
-  border-radius: 8px;
+  border-radius: var(--border-radius-md);
   background: var(--code-bg);
-  font-size: 13px;
+  font-size: var(--type-toc-size);
   line-height: 1.5;
   color: var(--text-tree-label);
 }
@@ -453,7 +483,7 @@
     position: sticky;
     top: var(--sticky-top);
     align-self: start;
-    max-height: calc(100vh - 100px);
+    max-height: calc(100vh - var(--header-height));
     overflow-y: auto;
     margin-top: 0;
     margin-bottom: 0;

@@ -21,6 +21,27 @@ Prism.languages.diagram = {
 }
 
 /* =========================================================================
+   Typography primitives — reduced set after merging near-identical values.
+   4 weights (regular/prose/heading/bold), 2 line-heights (heading/prose).
+   Mirrors CSS variables in globals.css. Used in inline styles for type safety.
+   ========================================================================= */
+
+const WEIGHT = { regular: 400, prose: 475, heading: 560, bold: 700 } as const
+const LINE_HEIGHT = { heading: 1.4, prose: 1.6 } as const
+const LETTER_SPACING = { prose: '-0.09px', code: '0.01em' } as const
+
+/** Shared prose style — body text, lists, captions. Spread and override per component. */
+const proseStyle = {
+  fontFamily: 'var(--font-primary)',
+  fontSize: 'var(--type-body-size)',
+  fontWeight: WEIGHT.prose,
+  lineHeight: LINE_HEIGHT.prose,
+  letterSpacing: LETTER_SPACING.prose,
+  color: 'var(--text-primary)',
+  margin: 0,
+} satisfies React.CSSProperties
+
+/* =========================================================================
    TOC sidebar (fixed left)
    ========================================================================= */
 
@@ -46,9 +67,9 @@ const headingTagByLevel: Record<HeadingLevel, 'h1' | 'h2' | 'h3'> = {
 const headingStyleByLevel: Record<HeadingLevel, React.CSSProperties> = {
   1: {
     fontSize: 'var(--type-heading-1-size)',
-    fontWeight: 560,
-    lineHeight: 1.4,
-    letterSpacing: '-0.09px',
+    fontWeight: WEIGHT.heading,
+    lineHeight: LINE_HEIGHT.heading,
+    letterSpacing: LETTER_SPACING.prose,
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
@@ -57,17 +78,17 @@ const headingStyleByLevel: Record<HeadingLevel, React.CSSProperties> = {
   },
   2: {
     fontSize: 'var(--type-heading-2-size)',
-    fontWeight: 560,
-    lineHeight: 1.43,
-    letterSpacing: '-0.06px',
+    fontWeight: WEIGHT.heading,
+    lineHeight: LINE_HEIGHT.heading,
+    letterSpacing: LETTER_SPACING.prose,
     paddingTop: '10px',
     paddingBottom: '4px',
   },
   3: {
     fontSize: 'var(--type-heading-3-size)',
-    fontWeight: 540,
-    lineHeight: 1.38,
-    letterSpacing: '-0.03px',
+    fontWeight: WEIGHT.heading,
+    lineHeight: LINE_HEIGHT.heading,
+    letterSpacing: LETTER_SPACING.prose,
     paddingTop: '4px',
     paddingBottom: '2px',
     color: 'var(--text-secondary)',
@@ -75,9 +96,9 @@ const headingStyleByLevel: Record<HeadingLevel, React.CSSProperties> = {
 }
 
 const tocLineHeightByLevel: Record<HeadingLevel, number> = {
-  1: 1.6,
-  2: 1.6,
-  3: 1.6,
+  1: LINE_HEIGHT.prose,
+  2: LINE_HEIGHT.prose,
+  3: LINE_HEIGHT.prose,
 }
 
 function getTocLevel({ item }: { item: TocItem }): HeadingLevel {
@@ -156,6 +177,7 @@ function useActiveTocId({ defaultId }: { defaultId: string }) {
         }
       },
       {
+        /* -80px ≈ header-row-height; accounts for sticky header covering top of viewport */
         rootMargin: '-80px 0px -75% 0px',
         threshold: 0,
       },
@@ -199,7 +221,7 @@ function TocLink({
         display: 'flex',
         alignItems: 'flex-start',
         fontSize: 'var(--type-toc-size)',
-        fontWeight: item.level === 1 ? 560 : 470,
+        fontWeight: item.level === 1 ? WEIGHT.heading : WEIGHT.prose,
         lineHeight: tocLineHeightByLevel[item.level],
         letterSpacing: 'normal',
         padding: '2px 8px',
@@ -297,7 +319,7 @@ export function TableOfContents({ items, logo }: { items: TocItem[]; logo?: stri
   }
 
   return (
-    <aside style={{ width: 'fit-content', maxWidth: '210px' }}>
+    <aside style={{ width: 'fit-content', maxWidth: 'var(--grid-toc-width)' }}>
 
       <nav aria-label='Table of contents'>
         {groups.map((group, groupIndex) => {
@@ -406,12 +428,12 @@ export function SectionHeading({
       id={id}
       data-toc-heading='true'
       data-toc-level={level}
-      className='scroll-mt-[5.25rem]'
       style={{
         fontFamily: 'var(--font-primary)',
         color: 'var(--text-primary)',
         margin: 0,
         padding: 0,
+        scrollMarginTop: 'var(--header-height)',
         ...headingStyleByLevel[level],
       }}
     >
@@ -426,14 +448,8 @@ export function P({ children, className = '' }: { children: React.ReactNode; cla
     <p
       className={`editorial-prose ${className}`}
       style={{
-        fontFamily: 'var(--font-primary)',
-        fontSize: 'var(--type-body-size)',
-        fontWeight: 475,
-        lineHeight: 1.6,
-        letterSpacing: '-0.09px',
-        color: 'var(--text-primary)',
+        ...proseStyle,
         opacity: 0.82,
-        margin: 0,
       }}
     >
       {children}
@@ -445,14 +461,10 @@ export function Caption({ children }: { children: React.ReactNode }) {
   return (
     <p
       style={{
-        fontFamily: 'var(--font-primary)',
+        ...proseStyle,
         fontSize: 'var(--type-caption-size)',
-        fontWeight: 475,
         textAlign: 'center',
-        lineHeight: 1.6,
-        letterSpacing: '-0.09px',
         color: 'var(--text-secondary)',
-        margin: 0,
       }}
     >
       {children}
@@ -468,7 +480,7 @@ export function A({ href, children }: { href: string; children: React.ReactNode 
       rel='noopener noreferrer'
       style={{
         color: 'var(--link-accent, #0969da)',
-        fontWeight: 600,
+        fontWeight: WEIGHT.heading,
         textDecoration: 'none',
       }}
       onMouseEnter={(e) => {
@@ -542,12 +554,7 @@ export function OL({ children }: { children: React.ReactNode }) {
     <ol
       className='m-0 pl-5'
       style={{
-        fontFamily: 'var(--font-primary)',
-        fontSize: 'var(--type-body-size)',
-        fontWeight: 475,
-        lineHeight: 1.6,
-        letterSpacing: '-0.09px',
-        color: 'var(--text-primary)',
+        ...proseStyle,
         listStyleType: 'decimal',
       }}
     >
@@ -561,12 +568,7 @@ export function List({ children }: { children: React.ReactNode }) {
     <ul
       className='m-0 pl-5'
       style={{
-        fontFamily: 'var(--font-primary)',
-        fontSize: 'var(--type-body-size)',
-        fontWeight: 475,
-        lineHeight: 1.6,
-        letterSpacing: '-0.09px',
-        color: 'var(--text-primary)',
+        ...proseStyle,
         listStyleType: 'disc',
       }}
     >
@@ -613,7 +615,7 @@ export function CodeBlock({
         <pre
           className='overflow-x-auto'
           style={{
-            borderRadius: '8px',
+            borderRadius: 'var(--border-radius-md)',
             margin: 0,
             padding: 0,
           }}
@@ -621,10 +623,10 @@ export function CodeBlock({
           <div
             className='flex'
             style={{
-              padding: '12px 8px 8px',
-              fontFamily: 'var(--font-code)',
-              fontSize: '12px',
-              fontWeight: 400,
+            padding: '12px 8px 8px',
+            fontFamily: 'var(--font-code)',
+            fontSize: 'var(--type-code-size)',
+            fontWeight: WEIGHT.regular,
               lineHeight,
               letterSpacing: 'normal',
               color: 'var(--text-primary)',
@@ -947,8 +949,8 @@ export function ChartPlaceholder({ height = 200, label }: { height?: number; lab
               background: 'rgba(59, 130, 246, 0.15)',
               color: '#3b82f6',
               fontFamily: 'var(--font-code)',
-              fontWeight: 475,
-              fontSize: '11px',
+              fontWeight: WEIGHT.prose,
+              fontSize: 'var(--type-table-size)',
             }}
           >
             {label}
@@ -978,11 +980,11 @@ export function ComparisonTable({
         <div
           style={{
             fontFamily: 'var(--font-primary)',
-            fontSize: '11px',
-            fontWeight: 400,
+            fontSize: 'var(--type-table-size)',
+            fontWeight: WEIGHT.regular,
             color: 'var(--text-muted)',
             textTransform: 'uppercase',
-            letterSpacing: '0.02em',
+            letterSpacing: LETTER_SPACING.code,
             padding: '0 0 6px',
           }}
         >
@@ -1004,9 +1006,9 @@ export function ComparisonTable({
                   key={header}
                   className='text-left'
                   style={{
-                    padding: '4.8px 12px 4.8px 0',
-                    fontSize: '11px',
-                    fontWeight: 400,
+                    padding: '4px 12px 4px 0',
+                    fontSize: 'var(--type-table-size)',
+                    fontWeight: WEIGHT.regular,
                     fontFamily: 'var(--font-primary)',
                     color: 'var(--text-muted)',
                     borderBottom: '1px solid var(--page-border)',
@@ -1024,9 +1026,9 @@ export function ComparisonTable({
               <tr key={feature}>
                 <td
                   style={{
-                    padding: '4.8px 12px 4.8px 0',
-                    fontSize: '11px',
-                    fontWeight: 500,
+                    padding: '4px 12px 4px 0',
+                    fontSize: 'var(--type-table-size)',
+                    fontWeight: WEIGHT.prose,
                     fontFamily: 'var(--font-code)',
                     color: 'var(--text-primary)',
                     borderBottom: '1px solid var(--page-border)',
@@ -1037,9 +1039,9 @@ export function ComparisonTable({
                 </td>
                 <td
                   style={{
-                    padding: '4.8px 12px 4.8px 0',
-                    fontSize: '11px',
-                    fontWeight: 500,
+                    padding: '4px 12px 4px 0',
+                    fontSize: 'var(--type-table-size)',
+                    fontWeight: WEIGHT.prose,
                     fontFamily: 'var(--font-code)',
                     color: 'var(--text-primary)',
                     borderBottom: '1px solid var(--page-border)',
@@ -1050,9 +1052,9 @@ export function ComparisonTable({
                 </td>
                 <td
                   style={{
-                    padding: '4.8px 12px 4.8px 0',
-                    fontSize: '11px',
-                    fontWeight: 500,
+                    padding: '4px 12px 4px 0',
+                    fontSize: 'var(--type-table-size)',
+                    fontWeight: WEIGHT.prose,
                     fontFamily: 'var(--font-code)',
                     color: 'var(--text-primary)',
                     borderBottom: '1px solid var(--page-border)',
@@ -1134,11 +1136,11 @@ export function SidebarBanner({
       style={{
         position: 'relative',
         backgroundColor: 'var(--code-bg)',
-        borderRadius: '10px',
+        borderRadius: 'var(--border-radius-md)',
         padding: '10px',
-        fontSize: '13px',
-        fontWeight: 450,
-        lineHeight: 1.45,
+        fontSize: 'var(--type-toc-size)',
+        fontWeight: WEIGHT.prose,
+        lineHeight: LINE_HEIGHT.heading,
         color: 'var(--text-tree-label)',
         overflow: 'visible',
       }}
@@ -1154,9 +1156,9 @@ export function SidebarBanner({
           width: '100%',
           height: '32px',
           marginTop: '8px',
-          borderRadius: '8px',
-          fontSize: '13px',
-          fontWeight: 500,
+          borderRadius: 'var(--border-radius-md)',
+          fontSize: 'var(--type-toc-size)',
+          fontWeight: WEIGHT.prose,
           backgroundColor: 'var(--text-primary)',
           color: 'var(--bg)',
           textDecoration: 'none',
@@ -1205,8 +1207,8 @@ function TabLink({ tab, isActive }: { tab: TabItem; isActive: boolean }) {
         position: 'relative',
         display: 'flex',
         alignItems: 'center',
-        fontSize: '13px',
-        fontWeight: 500,
+        fontSize: 'var(--type-toc-size)',
+        fontWeight: WEIGHT.prose,
         fontFamily: 'var(--font-primary)',
         color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
         textShadow: isActive ? '-0.2px 0 0 currentColor, 0.2px 0 0 currentColor' : 'none',
@@ -1322,7 +1324,7 @@ export function EditorialPage({
         }}
       >
         {/* Top row: logo + right links */}
-        <div className='editorial-header-inner' style={{ paddingTop: '16px', paddingBottom: '16px' }}>
+        <div className='editorial-header-inner' style={{ paddingTop: 'var(--header-padding-y)', paddingBottom: 'var(--header-padding-y)' }}>
 
           <a
             href='/'
@@ -1339,7 +1341,7 @@ export function EditorialPage({
                 role='img'
                 aria-label='playwriter'
                 style={{
-                  height: '30px',
+                  height: 'var(--logo-height)',
                   /* aspect ratio from SVG viewBox: 730/201 ≈ 3.63 */
                   aspectRatio: '730 / 201',
                   backgroundColor: 'var(--logo-color)',
@@ -1354,7 +1356,7 @@ export function EditorialPage({
             ) : (
               <span style={{
                 fontSize: '15px',
-                fontWeight: 700,
+                fontWeight: WEIGHT.bold,
                 fontFamily: 'var(--font-code)',
                 textTransform: 'lowercase',
                 letterSpacing: '-0.01em',
@@ -1415,7 +1417,7 @@ export function EditorialPage({
 
       <div className='editorial-grid'>
         {/* TOC sidebar: sticky within its grid cell */}
-        <div className='editorial-grid-toc' style={{ paddingTop: '60px' }}>
+        <div className='editorial-grid-toc' style={{ paddingTop: 'var(--content-top-gap)' }}>
           <div
             style={{
               position: 'sticky',
@@ -1433,7 +1435,7 @@ export function EditorialPage({
             {/* Top spacer row — mirrors the 80px spacer from flat layout */}
             <div className='editorial-section-row'>
               <div className='editorial-section-content'>
-                <div style={{ height: '60px' }} />
+                <div style={{ height: 'var(--content-top-gap)' }} />
               </div>
             </div>
             {sections.map((section, i) => {
@@ -1444,7 +1446,7 @@ export function EditorialPage({
           <>
             {/* Flat layout: single article column + optional static sidebar */}
             <div className='editorial-grid-content'>
-              <div style={{ height: '60px' }} />
+              <div style={{ height: 'var(--content-top-gap)' }} />
               <article className='editorial-article flex flex-col gap-[20px]'>{children}</article>
             </div>
 
@@ -1452,8 +1454,8 @@ export function EditorialPage({
               <div
                 style={{
                   position: 'sticky',
-                  top: hasTabBar ? '56px' : '12px',
-                  paddingTop: '68px',
+                  top: hasTabBar ? 'var(--sticky-top)' : '12px',
+                  paddingTop: '4px',
                 }}
               >
                 {sidebar}
