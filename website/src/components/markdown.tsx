@@ -1415,7 +1415,7 @@ export function EditorialPage({
 
       <div className='editorial-grid'>
         {/* TOC sidebar: sticky within its grid cell */}
-        <div className='editorial-grid-toc' style={{ paddingTop: '80px' }}>
+        <div className='editorial-grid-toc' style={{ paddingTop: '60px' }}>
           <div
             style={{
               position: 'sticky',
@@ -1433,7 +1433,7 @@ export function EditorialPage({
             {/* Top spacer row — mirrors the 80px spacer from flat layout */}
             <div className='editorial-section-row'>
               <div className='editorial-section-content'>
-                <div style={{ height: '80px' }} />
+                <div style={{ height: '60px' }} />
               </div>
             </div>
             {sections.map((section, i) => {
@@ -1444,7 +1444,7 @@ export function EditorialPage({
           <>
             {/* Flat layout: single article column + optional static sidebar */}
             <div className='editorial-grid-content'>
-              <div style={{ height: '80px' }} />
+              <div style={{ height: '60px' }} />
               <article className='editorial-article flex flex-col gap-[20px]'>{children}</article>
             </div>
 

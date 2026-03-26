@@ -86,7 +86,8 @@
   --ease-smooth: cubic-bezier(0.19, 1, 0.22, 1);
 
   /* Logo color — orange from the hero screenshot gradient */
-  --logo-color: #e8602c;
+  /*--logo-color: #e8602c;*/
+  --logo-color: var(--foreground);
 
   /* Colors — near-black, not pure black */
   --text-primary: rgb(17, 17, 17);
