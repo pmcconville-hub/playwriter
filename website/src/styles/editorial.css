@@ -166,10 +166,10 @@
   pointer-events: none;
   z-index: 9;
   position: fixed;
-  top: 0;
+  top: 81px;
   left: 0;
   right: 0;
-  height: 8rem;
+  height: 6rem;
   background: linear-gradient(
     var(--fade-0) 0px,
     var(--fade-1) 19%,
