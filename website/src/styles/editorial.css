@@ -111,13 +111,6 @@
   margin-right: calc(-1 * var(--bleed));
 }
 
-@media (max-width: 650px) {
-  .bleed {
-    margin-left: 0;
-    margin-right: 0;
-  }
-}
-
 /* ========================================================================
    Inline code — subtle background pill via ::before pseudo-element.
    Position relative, ::before with absolute inset creates a pill that
