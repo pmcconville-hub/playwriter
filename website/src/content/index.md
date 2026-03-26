@@ -26,6 +26,12 @@ tool definitions. And it runs in your existing browser, so **nothing extra gets 
 
 **Four steps** and your agent is browsing.
 
+<Aside>
+
+**Requirements:** Chrome or Chromium installed, Node.js 18+, and a Playwriter-compatible agent (OpenCode, Cursor, Claude Code, etc).
+
+</Aside>
+
 ### Install the extension
 
 1. Install the [Chrome extension](https://chromewebstore.google.com/detail/playwriter-mcp/jfeammnjpkecdekppnclgkkffahnhfhe)
@@ -100,6 +106,12 @@ You're not watching a remote screen or reading logs after the fact. You're
 a human.
 
 ## Accessibility snapshots
+
+<Aside>
+
+Snapshots are the **primary way** agents read pages. Only use screenshots when spatial layout matters (grids, dashboards, maps).
+
+</Aside>
 
 Your agent needs to **see the page** before it can act. Accessibility snapshots return every
 interactive element as text, with Playwright locators attached.

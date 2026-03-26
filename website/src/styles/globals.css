@@ -65,6 +65,9 @@
   /* TOC sidebar left offset — shared with tab bar for alignment */
   --toc-left: max(1rem, calc((100vw - 550px) / 2 - 280px));
 
+  /* Sticky top offset for sidebar elements (header height + tab bar) */
+  --sticky-top: 81px;
+
   /* Spacing scale */
   --spacing-xxs: 0.5rem;
   --spacing-xs: 1rem;
@@ -373,6 +376,9 @@
   .editorial-grid-toc {
     display: block;
     grid-column: 1;
+    /* Span all rows so the TOC doesn't inflate the first row's height.
+       Large span value because implicit rows don't support -1. */
+    grid-row: 1 / span 100;
   }
 
   .editorial-grid-sidebar {
@@ -392,6 +398,62 @@
   .editorial-tab-inner {
     max-width: 1040px;
     padding: 0;
+  }
+}
+
+/* Section rows — each heading section becomes a subgrid row so that
+   aside content can live in column 5, sticky within its section height.
+   On mobile, asides render inline in the content flow. */
+
+.editorial-section-row {
+  display: contents;
+}
+
+.editorial-section-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Mobile: aside renders inline as a styled callout */
+.editorial-section-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+  margin-bottom: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--code-bg);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-tree-label);
+}
+
+@media (min-width: 1080px) {
+  /* Section rows span columns 3-5 (content + gap + sidebar), leaving
+     column 1 free for the TOC which sits across all rows. Subgrid
+     inherits the parent track sizes so children map to the correct columns. */
+  .editorial-section-row {
+    display: grid;
+    grid-template-columns: subgrid;
+    grid-column: 3 / -1;
+  }
+
+  .editorial-section-content {
+    grid-column: 1; /* first subgrid column = parent column 3 (520px) */
+  }
+
+  .editorial-section-aside {
+    grid-column: 3; /* third subgrid column = parent column 5 (210px) */
+    position: sticky;
+    top: var(--sticky-top);
+    padding-top: 24px;
+    align-self: start;
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+    margin-top: 0;
+    margin-bottom: 0;
   }
 }
 

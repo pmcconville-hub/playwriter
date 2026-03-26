@@ -1080,6 +1080,40 @@ export type TabItem = {
 }
 
 /* =========================================================================
+   Aside — MDX component for right-sidebar content.
+   On desktop, extracted from content flow and rendered in grid column 5
+   via SectionRow. On mobile, renders inline as a styled callout.
+   ========================================================================= */
+
+/** Aside is a marker component for MDX. On desktop, its children are extracted
+ *  by the section grouping logic and rendered in the sidebar column via SectionRow
+ *  (which adds .editorial-section-aside). On mobile, SectionRow renders it inline.
+ *  The component itself is just a transparent pass-through. */
+export function Aside({ children }: { children: React.ReactNode }) {
+  return <>{children}</>
+}
+
+/* =========================================================================
+   SectionRow — renders one content section as a grid row.
+   Content goes in column 3, aside in column 5 (sticky).
+   ========================================================================= */
+
+export function SectionRow({
+  content,
+  aside,
+}: {
+  content: React.ReactNode
+  aside?: React.ReactNode
+}) {
+  return (
+    <div className='editorial-section-row'>
+      <div className='editorial-section-content'>{content}</div>
+      {aside && <div className='editorial-section-aside'>{aside}</div>}
+    </div>
+  )
+}
+
+/* =========================================================================
    Sidebar banner — Seline-style CTA card for the right gutter.
    Tinted background, short text, full-width button, optional corner image.
    ========================================================================= */
@@ -1238,6 +1272,11 @@ export type HeaderLink = {
   icon: React.ReactNode
 }
 
+export type EditorialSection = {
+  content: React.ReactNode
+  aside?: React.ReactNode
+}
+
 export function EditorialPage({
   toc,
   logo,
@@ -1246,6 +1285,7 @@ export function EditorialPage({
   sidebar,
   headerLinks,
   children,
+  sections,
 }: {
   toc: TocItem[]
   logo?: string
@@ -1253,7 +1293,9 @@ export function EditorialPage({
   activeTab?: string
   sidebar?: React.ReactNode
   headerLinks?: HeaderLink[]
-  children: React.ReactNode
+  children?: React.ReactNode
+  /** When provided, renders section rows with aside support instead of flat children */
+  sections?: EditorialSection[]
 }) {
   const hasTabBar = tabs && tabs.length > 0
 
@@ -1280,7 +1322,7 @@ export function EditorialPage({
         }}
       >
         {/* Top row: logo + right links */}
-        <div className='editorial-header-inner' style={{ paddingTop: '12px' }}>
+        <div className='editorial-header-inner' style={{ paddingTop: '16px', paddingBottom: '16px' }}>
 
           <a
             href='/'
@@ -1377,7 +1419,7 @@ export function EditorialPage({
           <div
             style={{
               position: 'sticky',
-              top: hasTabBar ? '81px' : '0px',
+              top: hasTabBar ? 'var(--sticky-top)' : '0px',
               paddingTop: '24px',
             }}
           >
@@ -1385,24 +1427,41 @@ export function EditorialPage({
           </div>
         </div>
 
-        {/* Content column */}
-        <div className='editorial-grid-content'>
-          <div style={{ height: '80px' }} />
-          <article className='editorial-article flex flex-col gap-[20px]'>{children}</article>
-        </div>
+        {sections ? (
+          <>
+            {/* Section-based layout: each section is a subgrid row with
+                content in column 3 and optional aside in column 5 (sticky). */}
+            {/* Top spacer row — mirrors the 80px spacer from flat layout */}
+            <div className='editorial-section-row'>
+              <div className='editorial-section-content'>
+                <div style={{ height: '80px' }} />
+              </div>
+            </div>
+            {sections.map((section, i) => {
+              return <SectionRow key={i} content={section.content} aside={section.aside} />
+            })}
+          </>
+        ) : (
+          <>
+            {/* Flat layout: single article column + optional static sidebar */}
+            <div className='editorial-grid-content'>
+              <div style={{ height: '80px' }} />
+              <article className='editorial-article flex flex-col gap-[20px]'>{children}</article>
+            </div>
 
-        {/* Right sidebar: CTA banner, sticky */}
-        <div className='editorial-grid-sidebar'>
-          <div
-            style={{
-              position: 'sticky',
-              top: hasTabBar ? '56px' : '12px',
-              paddingTop: '68px',
-            }}
-          >
-            {sidebar}
-          </div>
-        </div>
+            <div className='editorial-grid-sidebar'>
+              <div
+                style={{
+                  position: 'sticky',
+                  top: hasTabBar ? '56px' : '12px',
+                  paddingTop: '68px',
+                }}
+              >
+                {sidebar}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
