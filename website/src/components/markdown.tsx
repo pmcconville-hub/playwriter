@@ -1415,12 +1415,12 @@ export function EditorialPage({
 
       <div className='editorial-grid'>
         {/* TOC sidebar: sticky within its grid cell */}
-        <div className='editorial-grid-toc' style={{ paddingTop: '56px' }}>
+        <div className='editorial-grid-toc'>
           <div
             style={{
               position: 'sticky',
               top: hasTabBar ? 'var(--sticky-top)' : '0px',
-              paddingTop: '24px',
+              // paddingTop: '24px',
             }}
           >
             <TableOfContents items={toc} logo={logo} />

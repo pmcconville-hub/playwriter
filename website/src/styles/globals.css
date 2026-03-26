@@ -66,7 +66,7 @@
   --toc-left: max(1rem, calc((100vw - 550px) / 2 - 280px));
 
   /* Sticky top offset for sidebar elements (header height + tab bar) */
-  --sticky-top: 81px;
+  --sticky-top: 120px;
 
   /* Spacing scale */
   --spacing-xxs: 0.5rem;
@@ -342,7 +342,6 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 44px;
   padding: 0 1.25rem;
 }
 

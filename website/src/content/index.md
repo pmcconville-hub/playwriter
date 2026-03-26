@@ -1,3 +1,10 @@
+<Aside>
+
+If you like **Playwriter** please
+[Star on GitHub](https://github.com/remorses/playwriter). It helps give more visibility to the project!
+
+</Aside>
+
 A Chrome extension and CLI that let your agents control **your actual browser** — with
 logins, extensions, and cookies already there. No headless instance, no bot detection, no extra memory.
 [Star on GitHub](https://github.com/remorses/playwriter).
@@ -271,56 +278,56 @@ the page. You can also check recording status with `isRecording` or cancel witho
 Why use this over the alternatives.
 
 <ComparisonTable
-  title="vs Playwright MCP"
-  headers={['', 'Playwright MCP', 'Playwriter']}
-  rows={[
-    ['Browser', 'Spawns new Chrome', 'Uses your Chrome'],
-    ['Extensions', 'None', 'Your existing ones'],
-    ['Login state', 'Fresh', 'Already logged in'],
-    ['Bot detection', 'Always detected', 'Can bypass'],
-    ['Collaboration', 'Separate window', 'Same browser as user']
-  ]}
+title="vs Playwright MCP"
+headers={['', 'Playwright MCP', 'Playwriter']}
+rows={[
+['Browser', 'Spawns new Chrome', 'Uses your Chrome'],
+['Extensions', 'None', 'Your existing ones'],
+['Login state', 'Fresh', 'Already logged in'],
+['Bot detection', 'Always detected', 'Can bypass'],
+['Collaboration', 'Separate window', 'Same browser as user']
+]}
 />
 
 <ComparisonTable
-  title="vs Playwright CLI"
-  headers={['', 'Playwright CLI', 'Playwriter']}
-  rows={[
-    ['Browser', 'Spawns new browser', 'Uses your Chrome'],
-    ['Login state', 'Fresh', 'Already logged in'],
-    ['Extensions', 'None', 'Your existing ones'],
-    ['Captchas', 'Always blocked', 'Bypass (disconnect extension)'],
-    ['Collaboration', 'Separate window', 'Same browser as user'],
-    ['Capabilities', 'Limited command set', 'Anything Playwright can do'],
-    ['Raw CDP access', 'No', 'Yes'],
-    ['Video recording', 'File-based tracing', 'Native tab capture (30–60fps)']
-  ]}
+title="vs Playwright CLI"
+headers={['', 'Playwright CLI', 'Playwriter']}
+rows={[
+['Browser', 'Spawns new browser', 'Uses your Chrome'],
+['Login state', 'Fresh', 'Already logged in'],
+['Extensions', 'None', 'Your existing ones'],
+['Captchas', 'Always blocked', 'Bypass (disconnect extension)'],
+['Collaboration', 'Separate window', 'Same browser as user'],
+['Capabilities', 'Limited command set', 'Anything Playwright can do'],
+['Raw CDP access', 'No', 'Yes'],
+['Video recording', 'File-based tracing', 'Native tab capture (30–60fps)']
+]}
 />
 
 <ComparisonTable
-  title="vs BrowserMCP"
-  headers={['', 'BrowserMCP', 'Playwriter']}
-  rows={[
-    ['Tools', '12+ dedicated tools', '1 execute tool'],
-    ['API', 'Limited actions', 'Full Playwright'],
-    ['Context usage', 'High (tool schemas)', 'Low'],
-    ['LLM knowledge', 'Must learn tools', 'Already knows Playwright']
-  ]}
+title="vs BrowserMCP"
+headers={['', 'BrowserMCP', 'Playwriter']}
+rows={[
+['Tools', '12+ dedicated tools', '1 execute tool'],
+['API', 'Limited actions', 'Full Playwright'],
+['Context usage', 'High (tool schemas)', 'Low'],
+['LLM knowledge', 'Must learn tools', 'Already knows Playwright']
+]}
 />
 
 <ComparisonTable
-  title="vs Claude Browser Extension"
-  headers={['', 'Claude Extension', 'Playwriter']}
-  rows={[
-    ['Agent support', 'Claude only', 'Any MCP client'],
-    ['Windows WSL', 'No', 'Yes'],
-    ['Context method', 'Screenshots (100KB+)', 'A11y snapshots (5–20KB)'],
-    ['Playwright API', 'No', 'Full'],
-    ['Debugger', 'No', 'Yes'],
-    ['Live code editing', 'No', 'Yes'],
-    ['Network interception', 'Limited', 'Full'],
-    ['Raw CDP access', 'No', 'Yes']
-  ]}
+title="vs Claude Browser Extension"
+headers={['', 'Claude Extension', 'Playwriter']}
+rows={[
+['Agent support', 'Claude only', 'Any MCP client'],
+['Windows WSL', 'No', 'Yes'],
+['Context method', 'Screenshots (100KB+)', 'A11y snapshots (5–20KB)'],
+['Playwright API', 'No', 'Full'],
+['Debugger', 'No', 'Yes'],
+['Live code editing', 'No', 'Yes'],
+['Network interception', 'Limited', 'Full'],
+['Raw CDP access', 'No', 'Yes']
+]}
 />
 
 ## Remote access
