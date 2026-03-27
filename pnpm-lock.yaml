@@ -320,9 +320,6 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.25.2
         version: 1.25.2(@cfworker/json-schema@4.1.1)(hono@4.10.6)(zod@4.3.5)
-      '@xmorse/cac':
-        specifier: ^6.0.7
-        version: 6.0.7
       '@xmorse/playwright-core':
         specifier: workspace:^
         version: link:../playwright/packages/playwright-core
@@ -338,6 +335,9 @@ importers:
       dom-accessibility-api:
         specifier: ^0.7.1
         version: 0.7.1
+      goke:
+        specifier: ^6.3.1
+        version: 6.3.1
       hono:
         specifier: ^4.10.6
         version: 4.10.6
@@ -517,7 +517,7 @@ importers:
         version: 6.0.3(typescript@5.9.3)(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.20.6)(yaml@2.6.0))
       vitest:
         specifier: ^4.0.16
-        version: 4.0.16(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jiti@2.6.1)(jsdom@27.2.0(bufferutil@4.0.9))(lightningcss@1.31.1)(tsx@4.20.6)(yaml@2.6.0)
+        version: 4.0.16(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(@vitest/ui@4.0.8(vitest@4.0.8))(jiti@2.6.1)(jsdom@27.2.0(bufferutil@4.0.9))(lightningcss@1.31.1)(tsx@4.20.6)(yaml@2.6.0)
 
 packages:
 
@@ -3012,10 +3012,6 @@ packages:
   '@vitest/utils@4.0.8':
     resolution: {integrity: sha512-pdk2phO5NDvEFfUTxcTP8RFYjVj/kfLSPIN5ebP2Mu9kcIMeAQTbknqcFEyBcC4z2pJlJI9aS5UQjcYfhmKAow==}
 
-  '@xmorse/cac@6.0.7':
-    resolution: {integrity: sha512-eCKgJIn0Yswt4JreHNXUslyuOe8amDK6gE+wVgG8/Tu1HmCxuxAUOGPQRoma4mFO77759/YYE5opAbmaU6+Gxg==}
-    engines: {node: '>=8'}
-
   '@xmorse/deployment-utils@0.7.2':
     resolution: {integrity: sha512-iRnHKcuPHK1dGHH+HqWJrPbodeR0mlnmS6yhC0nS5rLkxlgoqq6UK0Xv2/6fL0uLZGoUhopXimaFs1GbYrLH2g==}
 
@@ -4399,6 +4395,10 @@ packages:
 
   globrex@0.1.2:
     resolution: {integrity: sha512-uHJgbwAMwNFf5mLst7IWLNg14x1CkeqglJb/K3doi4dw6q2IvAAmM/Y81kevy83wP+Sst+nutFTYOGg3d1lsxg==}
+
+  goke@6.3.1:
+    resolution: {integrity: sha512-TE62s1HFbj0UlmrmsoefwU+bDU7yiaLT1vVN1LmYpTFguF6MynMT4T6jKboqS7wVkbTXKWPIBXQVEaPasGu41w==}
+    engines: {node: '>=18'}
 
   google-auth-library@10.5.0:
     resolution: {integrity: sha512-7ABviyMOlX5hIVD60YOfHw4/CxOfBhyduaYB+wbFWCWoni4N7SLcV46hrVRktuBbZjFC9ONyqamZITN7q3n32w==}
@@ -9877,6 +9877,14 @@ snapshots:
     optionalDependencies:
       vite: 7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.20.6)(yaml@2.6.0)
 
+  '@vitest/mocker@4.0.8(vite@7.2.2(@types/node@24.10.1)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.20.6)(yaml@2.6.0))':
+    dependencies:
+      '@vitest/spy': 4.0.8
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+    optionalDependencies:
+      vite: 7.2.2(@types/node@24.10.1)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.20.6)(yaml@2.6.0)
+
   '@vitest/mocker@4.0.8(vite@7.2.2(@types/node@25.2.0)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.20.6)(yaml@2.6.0))':
     dependencies:
       '@vitest/spy': 4.0.8
@@ -9928,7 +9936,7 @@ snapshots:
       sirv: 3.0.2
       tinyglobby: 0.2.15
       tinyrainbow: 3.0.3
-      vitest: 4.0.8(@types/debug@4.1.13)(@types/node@25.2.0)(@vitest/ui@4.0.8)(jiti@2.6.1)(jsdom@27.2.0(bufferutil@4.0.9))(lightningcss@1.31.1)(tsx@4.20.6)(yaml@2.6.0)
+      vitest: 4.0.8(@types/debug@4.1.13)(@types/node@24.10.1)(@vitest/ui@4.0.8)(jiti@2.6.1)(jsdom@27.2.0(bufferutil@4.0.9))(lightningcss@1.31.1)(tsx@4.20.6)(yaml@2.6.0)
 
   '@vitest/utils@4.0.16':
     dependencies:
@@ -9939,8 +9947,6 @@ snapshots:
     dependencies:
       '@vitest/pretty-format': 4.0.8
       tinyrainbow: 3.0.3
-
-  '@xmorse/cac@6.0.7': {}
 
   '@xmorse/deployment-utils@0.7.2(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.20.6)(yaml@2.6.0)':
     dependencies:
@@ -11669,6 +11675,10 @@ snapshots:
       slash: 3.0.0
 
   globrex@0.1.2: {}
+
+  goke@6.3.1:
+    dependencies:
+      picocolors: 1.1.1
 
   google-auth-library@10.5.0:
     dependencies:
@@ -14607,7 +14617,7 @@ snapshots:
       tsx: 4.20.6
       yaml: 2.6.0
 
-  vitest@4.0.16(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(jiti@2.6.1)(jsdom@27.2.0(bufferutil@4.0.9))(lightningcss@1.31.1)(tsx@4.20.6)(yaml@2.6.0):
+  vitest@4.0.16(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(@vitest/ui@4.0.8(vitest@4.0.8))(jiti@2.6.1)(jsdom@27.2.0(bufferutil@4.0.9))(lightningcss@1.31.1)(tsx@4.20.6)(yaml@2.6.0):
     dependencies:
       '@vitest/expect': 4.0.16
       '@vitest/mocker': 4.0.16(vite@7.3.0(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.20.6)(yaml@2.6.0))
@@ -14632,6 +14642,7 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.0
       '@types/node': 25.0.3
+      '@vitest/ui': 4.0.8(vitest@4.0.8)
       jsdom: 27.2.0(bufferutil@4.0.9)
     transitivePeerDependencies:
       - jiti
@@ -14649,7 +14660,7 @@ snapshots:
   vitest@4.0.8(@types/debug@4.1.13)(@types/node@24.10.1)(@vitest/ui@4.0.8)(jiti@2.6.1)(jsdom@27.2.0(bufferutil@4.0.9))(lightningcss@1.31.1)(tsx@4.20.6)(yaml@2.6.0):
     dependencies:
       '@vitest/expect': 4.0.8
-      '@vitest/mocker': 4.0.8(vite@7.2.2(@types/node@25.2.0)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.20.6)(yaml@2.6.0))
+      '@vitest/mocker': 4.0.8(vite@7.2.2(@types/node@24.10.1)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.20.6)(yaml@2.6.0))
       '@vitest/pretty-format': 4.0.8
       '@vitest/runner': 4.0.8
       '@vitest/snapshot': 4.0.8

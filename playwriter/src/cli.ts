@@ -4,7 +4,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import util from 'node:util'
 import { fileURLToPath } from 'node:url'
-import { cac } from '@xmorse/cac'
+import { goke } from 'goke'
+import { z } from 'zod'
 import pc from 'picocolors'
 import {
   getBrowserLaunchArgs,
@@ -34,7 +35,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const cliRelayEnv = { PLAYWRITER_AUTO_ENABLE: '1' }
 
-const cli = cac('playwriter')
+const cli = goke('playwriter')
 
 cli
   .command('browser start [binaryPath]', 'Start Chromium or Chrome for Testing with the bundled Playwriter extension')
@@ -42,16 +43,7 @@ cli
   .option('--headless', 'Run the browser in headless mode')
   .option('--headed', 'Force headed mode even on Linux without DISPLAY/WAYLAND_DISPLAY')
   .option('--disable-sandbox', 'Disable the browser sandbox, useful on some VPS setups')
-  .action(
-    async (
-      binaryPath: string | undefined,
-      options: {
-        userDataDir?: string
-        headless?: boolean
-        headed?: boolean
-        disableSandbox?: boolean
-      },
-    ) => {
+  .action(async (binaryPath, options) => {
       if (options.headless && options.headed) {
         console.error('Error: --headless and --headed cannot be used together.')
         process.exit(1)
@@ -111,8 +103,8 @@ cli
   .option('--direct [endpoint]', 'Use direct CDP connection without the extension. Enable debugging first at chrome://inspect/#remote-debugging or launch Chrome with --remote-debugging-port=9222. Auto-discovers instances or accepts an explicit ws:// endpoint (or use PLAYWRITER_DIRECT env var)')
   .option('-s, --session <name>', 'Session ID (required for -e, get one with `playwriter session new`)')
   .option('-e, --eval <code>', 'Execute JavaScript code and exit, read https://playwriter.dev/SKILL.md for usage')
-  .option('--timeout <ms>', 'Execution timeout in milliseconds', { default: 10000 })
-  .action(async (options: { host?: string; token?: string; direct?: boolean | string; eval?: string; timeout?: number; session?: string }) => {
+  .option('--timeout [ms]', z.number().default(10000).describe('Execution timeout in milliseconds'))
+  .action(async (options) => {
     // If -e flag is provided, execute code via relay server
     if (options.eval) {
       await executeCode({
@@ -309,7 +301,7 @@ cli
   .option('--host <host>', 'Remote relay server host')
   .option('--browser <key>', 'Browser key when multiple browsers are available')
   .option('--direct [endpoint]', 'Use direct CDP connection without the extension. Enable debugging first at chrome://inspect/#remote-debugging or launch Chrome with --remote-debugging-port=9222. Auto-discovers instances or accepts an explicit ws:// endpoint')
-  .action(async (options: { host?: string; browser?: string; direct?: boolean | string }) => {
+  .action(async (options) => {
     const isLocal = !options.host && !process.env.PLAYWRITER_HOST
     const directEndpoint = typeof options.direct === 'string' ? options.direct : null
 
@@ -593,7 +585,7 @@ function printBrowserTable(options: BrowserOption[]): void {
 cli
   .command('session list', 'List all active sessions')
   .option('--host <host>', 'Remote relay server host')
-  .action(async (options: { host?: string }) => {
+  .action(async (options) => {
     if (!options.host && !process.env.PLAYWRITER_HOST) {
       await ensureRelayServer({ logger: console, env: cliRelayEnv })
     }
@@ -682,7 +674,7 @@ cli
 cli
   .command('session delete <sessionId>', 'Delete a session and clear its state')
   .option('--host <host>', 'Remote relay server host')
-  .action(async (sessionId: string, options: { host?: string }) => {
+  .action(async (sessionId, options) => {
     const serverUrl = await getServerUrl(options.host)
 
     if (!options.host && !process.env.PLAYWRITER_HOST) {
@@ -712,7 +704,7 @@ cli
 cli
   .command('session reset <sessionId>', 'Reset the browser connection for a session')
   .option('--host <host>', 'Remote relay server host')
-  .action(async (sessionId: string, options: { host?: string }) => {
+  .action(async (sessionId, options) => {
     const cwd = process.cwd()
     const serverUrl = await getServerUrl(options.host)
 
@@ -748,10 +740,10 @@ cli
     'serve',
     `Start the relay server on this machine (must be the same host where Chrome is running). Remote clients (Docker, other machines) connect via PLAYWRITER_HOST. Use --host localhost for Docker (no token needed) — containers reach it via host.docker.internal. Use --host 0.0.0.0 for LAN/internet access (requires --token).`,
   )
-  .option('--host <host>', 'Host to bind to (use "localhost" for Docker, "0.0.0.0" for remote access)', { default: '0.0.0.0' })
+  .option('--host [host]', z.string().default('0.0.0.0').describe('Host to bind to (use "localhost" for Docker, "0.0.0.0" for remote access)'))
   .option('--token <token>', 'Authentication token, required when --host is 0.0.0.0 (or use PLAYWRITER_TOKEN env var)')
   .option('--replace', 'Kill existing server if running')
-  .action(async (options: { host: string; token?: string; replace?: boolean }) => {
+  .action(async (options) => {
     const token = options.token || process.env.PLAYWRITER_TOKEN
     const isPublicHost = options.host === '0.0.0.0' || options.host === '::'
     if (isPublicHost && !token) {
