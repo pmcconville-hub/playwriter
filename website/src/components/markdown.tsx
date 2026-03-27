@@ -1,3 +1,4 @@
+'use client'
 /*
  * Editorial markdown components.
  *
