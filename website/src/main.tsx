@@ -51,6 +51,9 @@ export const app = new Spiceflow()
       </>
     )
   })
+  .get('/api/health', () => {
+    return { ok: true }
+  })
   .get('/github', () => {
     throw redirect('https://github.com/remorses/playwriter')
   })
