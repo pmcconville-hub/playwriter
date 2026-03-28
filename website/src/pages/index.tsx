@@ -18,6 +18,7 @@ import type { MyRootContent } from 'safe-mdx'
 import {
   EditorialPage,
   Aside,
+  FullWidth,
   Hero,
   P,
   A,
@@ -52,6 +53,10 @@ function isAsideNode(node: RootContent): boolean {
   return node.type === 'mdxJsxFlowElement' && 'name' in node && (node as { name?: string }).name === 'Aside'
 }
 
+function isFullWidthNode(node: RootContent): boolean {
+  return node.type === 'mdxJsxFlowElement' && 'name' in node && (node as { name?: string }).name === 'FullWidth'
+}
+
 function isHeroNode(node: RootContent): boolean {
   return node.type === 'mdxJsxFlowElement' && 'name' in node && (node as { name?: string }).name === 'Hero'
 }
@@ -61,6 +66,8 @@ type MdastSection = {
   contentNodes: RootContent[]
   /** <Aside> nodes extracted from this section */
   asideNodes: RootContent[]
+  /** Section spans both content and aside columns */
+  fullWidth?: boolean
 }
 
 /** Split mdast root children into sections at ## (depth 2) headings.
@@ -77,6 +84,15 @@ function groupBySections(root: Root): MdastSection[] {
         sections.push(current)
       }
       current = { contentNodes: [node], asideNodes: [] }
+    } else if (isFullWidthNode(node)) {
+      /* Push current section, then push a fullWidth section with the
+         FullWidth wrapper's children as content nodes */
+      if (current.contentNodes.length > 0 || current.asideNodes.length > 0) {
+        sections.push(current)
+      }
+      const children = 'children' in node ? (node as { children: RootContent[] }).children : []
+      sections.push({ contentNodes: children, asideNodes: [], fullWidth: true })
+      current = { contentNodes: [], asideNodes: [] }
     } else if (isAsideNode(node)) {
       current.asideNodes.push(node)
     } else {
@@ -118,6 +134,7 @@ const mdxComponents = {
   PixelatedImage,
   Bleed,
   Aside,
+  FullWidth,
   Hero,
 }
 
@@ -173,6 +190,7 @@ export function IndexPage() {
     return {
       content: <RenderNodes nodes={section.contentNodes} />,
       aside,
+      fullWidth: section.fullWidth,
     }
   })
 

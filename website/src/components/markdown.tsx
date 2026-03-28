@@ -1425,6 +1425,12 @@ export function Aside({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+/** FullWidth is a marker component for MDX. Its children become a section that
+ *  spans both the content and aside columns in the grid layout. */
+export function FullWidth({ children }: { children: React.ReactNode }) {
+  return <>{children}</>
+}
+
 /* =========================================================================
    Hero — MDX component for page-level hero content (logo, heading, etc.).
    Extracted at parse time (like <Aside>) and rendered above the 3-column
@@ -1606,6 +1612,7 @@ export type HeaderLink = {
 export type EditorialSection = {
   content: React.ReactNode
   aside?: React.ReactNode
+  fullWidth?: boolean
 }
 
 export function EditorialPage({
@@ -1735,6 +1742,13 @@ export function EditorialPage({
               <div className='slot-main flex flex-col gap-5 lg:col-[1] lg:overflow-visible text-(length:--type-body-size)'></div>
             </div>
             {sections.map((section, i) => {
+              if (section.fullWidth) {
+                return (
+                  <div key={i} className='lg:col-[2/-1] text-(length:--type-body-size) my-5'>
+                    <div className='flex flex-col gap-5'>{section.content}</div>
+                  </div>
+                )
+              }
               return <SectionRow key={i} content={section.content} aside={section.aside} />
             })}
           </>
