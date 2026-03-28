@@ -181,10 +181,10 @@ function addPrefixes({ items }: { items: FlatTocItem[] }) {
       const lines = continuations
         .slice(1, level)
         .map((cont) => {
-          return cont ? '│  ' : '   '
+          return cont ? '│ ' : '  '
         })
         .join('')
-      item.prefix = lines + (isLast ? '└─ ' : '├─ ')
+      item.prefix = lines + (isLast ? '└ ' : '├ ')
     }
 
     continuations[level] = !isLast
@@ -369,6 +369,7 @@ function TocLink({
         alignItems: 'flex-start',
         fontSize: 'var(--type-toc-size)',
         fontWeight,
+        // marginLeft: item.prefix ? '-3px' : undefined,
         letterSpacing: 'normal',
         padding: '2px 8px',
         color: defaultColor,
@@ -389,7 +390,7 @@ function TocLink({
         e.currentTarget.style.background = bg
       }}
     >
-      <span aria-hidden='true' style={{ color: defaultPrefixColor, whiteSpace: 'pre', fontFamily: 'var(--font-code)' }}>
+      <span aria-hidden='true' style={{ color: defaultPrefixColor, whiteSpace: 'pre', fontFamily: 'var(--font-code)', fontSize: '1.2em', display: 'inline-flex', alignItems: 'center', margin: '-2px 0 -2px -2px' }}>
         {item.prefix}
       </span>
       <span style={{ overflowWrap: 'anywhere', fontFamily: 'var(--font-primary)', flex: 1 }}>{item.label}</span>
@@ -433,13 +434,17 @@ export function TableOfContents({ items, logo }: { items: FlatTocItem[]; logo?: 
     return first ? new Set([first.href]) : new Set()
   })
 
-  // Auto-expand ancestors of the active heading on scroll
+  // Auto-expand the active item (if expandable) and its ancestors
   useEffect(() => {
     if (!activeId) {
       return
     }
     const activeHref = `#${activeId}`
     const toExpand: string[] = []
+    // Expand the active item itself if it has children
+    if (expandableHrefs.has(activeHref) && !expanded.has(activeHref)) {
+      toExpand.push(activeHref)
+    }
     let current = itemByHref.get(activeHref)
     while (current?.parentHref) {
       if (!expanded.has(current.parentHref)) {
