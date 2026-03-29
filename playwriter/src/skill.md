@@ -90,17 +90,17 @@ playwriter browser list
 
 **Limitations in direct mode:** screen recording (`recording.start/stop`) is unavailable since it requires the Chrome extension's `tabCapture` API.
 
-For MCP, use the `PLAYWRITER_DIRECT` env var or `--direct` flag:
+For MCP, set the `PLAYWRITER_DIRECT` env var in your MCP client config:
 
 ```bash
-# Auto-discover
+# Auto-discover Chrome on port 9222
 PLAYWRITER_DIRECT=auto playwriter
-# or
-playwriter --direct
 
 # Explicit endpoint
 PLAYWRITER_DIRECT=ws://127.0.0.1:9222/devtools/browser/abc playwriter
 ```
+
+Chrome 136+ may show an approval dialog the first time a direct connection is made.
 
 ### Execute code
 

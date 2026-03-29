@@ -56,6 +56,32 @@ Auto-create a tab when Playwright connects (no manual extension click needed).
 
 The auto-created tab starts at `about:blank`. Navigate it to any URL.
 
+## Direct CDP (no extension needed)
+
+Connect directly to Chrome's DevTools Protocol without the extension. Set `PLAYWRITER_DIRECT` in your MCP config:
+
+```json
+{
+  "mcpServers": {
+    "playwriter": {
+      "command": "npx",
+      "args": ["-y", "playwriter@latest"],
+      "env": {
+        "PLAYWRITER_DIRECT": "auto"
+      }
+    }
+  }
+}
+```
+
+Enable debugging in Chrome first: open `chrome://inspect/#remote-debugging` or launch with `--remote-debugging-port=9222`.
+
+Chrome 136+ may show an approval dialog the first time a connection is made.
+
+You can also pass an explicit WebSocket endpoint: `PLAYWRITER_DIRECT=ws://127.0.0.1:9222/devtools/browser/abc`.
+
+**Limitation:** screen recording is unavailable in direct mode.
+
 ## Remote Agents (Devcontainers, VMs, SSH)
 
 Run agents in isolated environments while controlling Chrome on your host.
