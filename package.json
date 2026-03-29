@@ -28,6 +28,10 @@
     "mcp-extension": "workspace:^"
   },
   "pnpm": {
-    "neverBuiltDependencies": []
+    "onlyBuiltDependencies": [
+      "bufferutil",
+      "esbuild",
+      "sharp"
+    ]
   }
 }
