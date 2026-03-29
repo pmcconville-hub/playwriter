@@ -19,6 +19,20 @@
  */
 
 /* ========================================================================
+   Inter — variable font (v4.1). Only roman (no italic) to keep payload
+   small (~350 KB woff2). Covers all weights 100-900.
+   Source: github.com/rsms/inter
+   ======================================================================== */
+
+@font-face {
+  font-family: 'Inter var';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/InterVariable.woff2') format('woff2');
+}
+
+/* ========================================================================
    JetBrainsMono Nerd Font Mono — patched with box-drawing glyphs that
    tile perfectly (no gaps). Only load regular 400 to keep payload small.
    Source: github.com/ryanoasis/nerd-fonts
@@ -29,8 +43,7 @@
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('https://raw.githubusercontent.com/ryanoasis/nerd-fonts/refs/tags/v3.3.0/patched-fonts/JetBrainsMono/Ligatures/Regular/JetBrainsMonoNerdFontMono-Regular.ttf')
-    format('truetype');
+  src: url('/fonts/JetBrainsMonoNerdFontMono-Regular.ttf') format('truetype');
 }
 
 /* ========================================================================
