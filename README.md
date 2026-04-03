@@ -189,6 +189,18 @@ Color-coded: yellow=links, orange=buttons, coral=inputs, pink=checkboxes, peach=
 | Network interception | Limited              | Full                    |
 | Raw CDP access       | No                   | Yes                     |
 
+### vs Built-in Chrome CDP (`--remote-debugging-port`)
+
+|                       | Built-in CDP                          | Playwriter                   |
+| --------------------- | ------------------------------------- | ---------------------------- |
+| Setup                 | Restart Chrome with special flags     | Click extension icon         |
+| Confirmation dialog   | Shows automation infobar agents can't dismiss | No blocking dialog   |
+| Autonomous agents     | Interrupted by debug banners          | Fully autonomous             |
+| User disruption       | Banners appear mid-workflow           | Silent — no interruption     |
+| Existing session      | Must relaunch Chrome (lose state)     | Uses your running browser    |
+
+> Chrome's `--remote-debugging-port` flag shows a persistent "controlled by automated software" banner that agents cannot dismiss. It pops up in the middle of your workflow whenever you're using the browser. Playwriter runs silently — agents work autonomously without any confirmation dialogs, so you're never interrupted.
+
 ## Architecture
 
 ```

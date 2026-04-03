@@ -337,6 +337,18 @@ Why use this over the alternatives.
   ]}
 />
 
+<ComparisonTable
+  title='vs Built-in Chrome CDP (--remote-debugging-port)'
+  headers={['', 'Built-in CDP', 'Playwriter']}
+  rows={[
+    ['Setup', 'Restart Chrome with special flags', 'Click extension icon'],
+    ['Confirmation dialog', 'Automation infobar agents can\'t dismiss', 'No blocking dialog'],
+    ['Autonomous agents', 'Interrupted by debug banners', 'Fully autonomous'],
+    ['User disruption', 'Banners appear mid-workflow', 'Silent — no interruption'],
+    ['Existing session', 'Must relaunch Chrome (lose state)', 'Uses your running browser'],
+  ]}
+/>
+
 ## Remote access
 
 ### Tunnel
