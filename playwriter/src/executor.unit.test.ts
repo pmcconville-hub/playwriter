@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { shouldAutoReturn, wrapCode } from './executor.js'
+import { shouldAutoReturn, wrapCode, isPlaywrightChannelOwner } from './executor.js'
 
 describe('shouldAutoReturn', () => {
   it('returns true for simple expressions', () => {
@@ -133,5 +133,36 @@ describe('wrapCode', () => {
 
   it('wraps assignment expressions without return', () => {
     expect(wrapCode('x = 5')).toBe('(async () => { x = 5 })()')
+  })
+})
+
+describe('isPlaywrightChannelOwner', () => {
+  it('detects ChannelOwner-shaped objects', () => {
+    const fakeResponse = {
+      _type: 'Response',
+      _guid: 'response@abc123',
+      _connection: { _platform: { env: {} } },
+    }
+    expect(isPlaywrightChannelOwner(fakeResponse)).toBe(true)
+  })
+
+  it('rejects plain objects and primitives', () => {
+    expect(isPlaywrightChannelOwner(null)).toBe(false)
+    expect(isPlaywrightChannelOwner(undefined)).toBe(false)
+    expect(isPlaywrightChannelOwner('string')).toBe(false)
+    expect(isPlaywrightChannelOwner(42)).toBe(false)
+    expect(isPlaywrightChannelOwner({})).toBe(false)
+    expect(isPlaywrightChannelOwner([])).toBe(false)
+    expect(isPlaywrightChannelOwner({ url: 'https://example.com', status: 200 })).toBe(false)
+  })
+
+  it('rejects partial matches missing required fields', () => {
+    expect(isPlaywrightChannelOwner({ _type: 'Response' })).toBe(false)
+    expect(isPlaywrightChannelOwner({ _guid: 'abc' })).toBe(false)
+    expect(isPlaywrightChannelOwner({ _type: 'x', _guid: 'y' })).toBe(false)
+    // Missing _connection
+    expect(isPlaywrightChannelOwner({ _type: 'x', _guid: 'y' })).toBe(false)
+    // _type must be a string
+    expect(isPlaywrightChannelOwner({ _type: 123, _guid: 'y', _connection: {} })).toBe(false)
   })
 })

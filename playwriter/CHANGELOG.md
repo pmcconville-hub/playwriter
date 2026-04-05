@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.103
+
+1. **Auto-returned Playwright handles are silently skipped** (#82). `await page.goto(url)` and similar single-expression code previously dumped the Playwright Response object, which is useless output — it's a programmatic handle, not display data. That same dump also leaked every process env var because `util.inspect` traversed `_connection._platform.env` at depth 4 (secrets, API keys, tokens). The CLI now skips return values that are Playwright handles (Response, Page, Browser, Request, Frame, BrowserContext, etc.) entirely. Return specific fields (`return response.url()`) or `console.log(response)` to see data.
+2. **`@xmorse/playwright-core`** now has custom `util.inspect` handlers on `ChannelOwner` and channel proxies. `console.log(response)` renders a concise summary like `Response@response@abc123 { url: '...', status: 200 }` without leaking internals.
+
 ## 0.0.102
 
 1. **`browser` exposed in sandbox** — user code can now call `browser.contexts()` to access pages from all open Chrome profiles when using `--direct` mode. The `browser` variable is available alongside `page`, `context`, etc. in all sandbox code.

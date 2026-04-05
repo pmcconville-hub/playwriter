@@ -1035,7 +1035,7 @@ describe('Relay Core Tests', () => {
       expect(result.content).toMatchInlineSnapshot(`
         [
           {
-            "text": "[return value] { matchesDark: false, matchesLight: true }",
+            "text": "[return value] { matchesDark: true, matchesLight: false }",
             "type": "text",
           },
         ]

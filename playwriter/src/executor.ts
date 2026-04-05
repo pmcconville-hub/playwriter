@@ -263,6 +263,23 @@ function isPromise(value: any): value is Promise<unknown> {
   return typeof value === 'object' && value !== null && typeof value.then === 'function'
 }
 
+/**
+ * Duck-type check for a Playwright ChannelOwner (Response, Page, Browser,
+ * Request, Frame, BrowserContext, etc.). Used to skip auto-printing these
+ * objects from the REPL — they're meant for programmatic use, and dumping
+ * them risks leaking internal fields. Users can still `console.log(obj)` to
+ * inspect them via the safe handler in playwright-core. See issue #82.
+ */
+export function isPlaywrightChannelOwner(value: any): boolean {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    typeof value._type === 'string' &&
+    typeof value._guid === 'string' &&
+    value._connection !== undefined
+  )
+}
+
 export class PlaywrightExecutor {
   private isConnected = false
   private page: Page | null = null
@@ -1190,7 +1207,12 @@ export class PlaywrightExecutor {
       // Only show return value if user explicitly used return
       if (hasExplicitReturn) {
         const resolvedResult = isPromise(result) ? await result : result
-        if (resolvedResult !== undefined) {
+        // Auto-returned Playwright handles (Response, Page, Browser, Request,
+        // Frame, etc.) are silently skipped — they're programmatic references,
+        // not useful display data. Users can `console.log(response)` or
+        // return specific fields (`return response.url()`) to see values.
+        // See issue #82.
+        if (resolvedResult !== undefined && !isPlaywrightChannelOwner(resolvedResult)) {
           const formatted =
             typeof resolvedResult === 'string'
               ? resolvedResult
