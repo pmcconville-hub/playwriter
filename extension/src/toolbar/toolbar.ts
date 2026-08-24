@@ -83,9 +83,10 @@ export function initPlaywriterToolbar(): void {
   const initTop = savedPos ? `${savedPos.topPct}%` : '12px'
 
   // pointer-events:none on the host so the shadow-DOM children (pointer-events:all)
-  // control interactivity without the host element itself blocking page events
+  // control interactivity without the host element itself blocking page events.
+  // No contain:paint — it clips box-shadow to the host's rectangular bounds.
   host.style.cssText =
-    `position:fixed;top:${initTop};left:${initLeft};transform:translateX(-50%);z-index:2147483647;pointer-events:none;font-size:0;line-height:0;contain:layout style paint;`
+    `position:fixed;top:${initTop};left:${initLeft};transform:translateX(-50%);z-index:2147483647;pointer-events:none;font-size:0;line-height:0;contain:layout style;`
 
   // Closed shadow root: page scripts cannot access our toolbar DOM
   const shadow = host.attachShadow({ mode: 'closed' })
@@ -106,7 +107,7 @@ export function initPlaywriterToolbar(): void {
       user-select: none;
       box-shadow: 0 12px 60px rgba(0,0,0,0.6), 0 4px 20px rgba(0,0,0,0.4), 0 0 0 1px rgba(0,0,0,0.15);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      contain: layout style paint;
+      contain: layout style;
       opacity: 1;
       transition: opacity 200ms cubic-bezier(0.23, 1, 0.32, 1);
       @starting-style {
