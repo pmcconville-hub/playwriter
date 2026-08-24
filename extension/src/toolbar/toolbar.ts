@@ -654,14 +654,15 @@ export function initPlaywriterToolbar(): void {
         { kind: 'noise', filterType: 'highpass', filterFreq: 3000, filterQ: 0.5, attack: 0.001, decay: 0.025, peak: 0.018 },
       ],
     },
-    // Rising unresolved lift (recording started)
-    loading: {
-      masterGain: 0.42,
+    // Lock-on sweep that resolves (recording started)
+    record: {
+      masterGain: 0.48,
       layers: [
-        { kind: 'noise', filterType: 'lowpass', filterFreq: 1400, filterQ: 0.6, attack: 0.035, decay: 0.14, peak: 0.035 },
-        { kind: 'tone', waveform: 'sine', frequency: 420, glideTo: 630, glideTime: 0.18, attack: 0.025, decay: 0.18, peak: 0.05 },
+        { kind: 'noise', filterType: 'bandpass', filterFreq: 3600, filterQ: 1.8, attack: 0.001, decay: 0.02, peak: 0.11 },
+        { kind: 'tone', waveform: 'triangle', frequency: 330, glideTo: 660, glideTime: 0.12, offset: 0.012, attack: 0.004, decay: 0.16, peak: 0.055 },
+        { kind: 'tone', waveform: 'sine', frequency: 990, offset: 0.13, attack: 0.004, decay: 0.22, peak: 0.06 },
       ],
-      shimmer: { delay: 0.11, feedback: 0.18, wet: 0.12, lowpass: 2800 },
+      shimmer: { delay: 0.1, feedback: 0.16, wet: 0.1, lowpass: 4200 },
     },
   }
 
@@ -801,8 +802,8 @@ export function initPlaywriterToolbar(): void {
 
   recordBtn.addEventListener('click', (e: MouseEvent) => {
     e.stopPropagation()
-    playSound('click')
     if (isRecording) {
+      playSound('click')
       window.__playwriterToolbarStopRecording?.()
       return
     }
@@ -813,7 +814,7 @@ export function initPlaywriterToolbar(): void {
       showToast('Relay not connected')
       return
     }
-    playSound('loading')
+    playSound('record')
     startInFlight = true
     updateRecordBtn()
     window.__playwriterToolbarStartRecording()
