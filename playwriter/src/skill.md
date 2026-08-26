@@ -453,7 +453,7 @@ Every browser interaction must follow **observe → act → observe**. Never cha
 ```js
 // Each step should be a separate execute call:
 // Step 1: navigate + observe
-state.page = context.pages().find((p) => p.url() === 'about:blank') ?? (await context.newPage())
+state.page = context.pages().findLast((p) => p.url() === 'about:blank') ?? (await context.newPage())
 await state.page.goto('https://example.com', { waitUntil: 'domcontentloaded' })
 console.log('URL:', state.page.url())
 console.log('Page logs:', await getLatestLogs({ page: state.page, sinceLastCall: true }))
@@ -571,7 +571,7 @@ await waitForPageLoad({ page: state.page, timeout: 5000 })
 Do NOT waste context trying webfetch, curl, or Playwright CLI screenshots on SPAs (Instagram, Twitter, etc.). These return empty HTML shells. Use playwriter directly:
 
 ```js
-state.page = context.pages().find((p) => p.url() === 'about:blank') ?? (await context.newPage())
+state.page = context.pages().findLast((p) => p.url() === 'about:blank') ?? (await context.newPage())
 await state.page.goto('https://www.instagram.com/p/ABC123/', { waitUntil: 'domcontentloaded' })
 await waitForPageLoad({ page: state.page, timeout: 8000 })
 await snapshot({ page: state.page, search: /cookie|consent|accept/i }).then(console.log)
@@ -733,9 +733,10 @@ On your very first execute call, reuse an existing empty tab or create a new one
 
 ```js
 // Reuse an empty about:blank tab if available, otherwise create a new one.
+// findLast picks the most recently opened blank tab, not the oldest one.
 // IMPORTANT: always navigate immediately in the same call to avoid another
 // agent grabbing the same about:blank tab between execute calls.
-state.page = context.pages().find((p) => p.url() === 'about:blank') ?? (await context.newPage())
+state.page = context.pages().findLast((p) => p.url() === 'about:blank') ?? (await context.newPage())
 await state.page.goto('https://example.com')
 // Use state.page for ALL subsequent operations
 ```
@@ -746,20 +747,20 @@ The user may close your page by accident (e.g., closing a tab in Chrome). Always
 
 ```js
 if (!state.page || state.page.isClosed()) {
-  state.page = context.pages().find((p) => p.url() === 'about:blank') ?? (await context.newPage())
+  state.page = context.pages().findLast((p) => p.url() === 'about:blank') ?? (await context.newPage())
 }
 await state.page.goto('https://example.com')
 ```
 
 **Use an existing page only when the user asks:**
 
-Only use a page from `context.pages()` if the user explicitly asks you to control a specific tab they already opened (e.g., they're logged into an app). Find it by URL pattern and store it in state:
+Only use a page from `context.pages()` if the user explicitly asks you to control a specific tab they already opened (e.g., they're logged into an app). Find it by URL pattern and store it in state. Always take the **last** match, because `context.pages()` is ordered oldest first and the most recently opened tab is almost always the one the user means:
 
 ```js
-const pages = context.pages().filter((x) => x.url().includes('myapp.com'))
-if (pages.length === 0) throw new Error('No myapp.com page found. Ask user to enable playwriter on it.')
-if (pages.length > 1) throw new Error(`Found ${pages.length} matching pages, expected 1`)
-state.targetPage = pages[0]
+const matches = context.pages().filter((x) => x.url().includes('myapp.com'))
+if (matches.length === 0) throw new Error('No myapp.com page found. Ask user to enable playwriter on it.')
+if (matches.length > 1) console.log(`Found ${matches.length} matching pages, using the last opened one`)
+state.targetPage = matches[matches.length - 1]
 ```
 
 **List all available pages:**

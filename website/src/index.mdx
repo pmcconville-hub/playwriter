@@ -217,7 +217,7 @@ Create your own page to **avoid interference** from other agents. Reuse an exist
 `about:blank` tab or create a fresh one, and store it in `state`.
 
 ```bash
-playwriter -s 1 -e "state.myPage = context.pages().find(p => p.url() === 'about:blank') ?? context.newPage(); state.myPage.goto('https://example.com')"
+playwriter -s 1 -e "state.myPage = context.pages().findLast(p => p.url() === 'about:blank') ?? context.newPage(); state.myPage.goto('https://example.com')"
 
 # All subsequent calls use state.myPage
 playwriter -s 1 -e "state.myPage.title()"

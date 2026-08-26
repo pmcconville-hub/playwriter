@@ -34,7 +34,7 @@ The `state` object persists between execute calls **within the same session**. U
 
 ```js
 // Call 1: store data
-state.page = context.pages().find(p => p.url() === 'about:blank') ?? await context.newPage()
+state.page = context.pages().findLast(p => p.url() === 'about:blank') ?? await context.newPage()
 await state.page.goto('https://example.com')
 state.results = []
 
@@ -49,7 +49,7 @@ state.results.push(await state.page.title())
 
 ```js
 // First call: grab an empty tab or create one, navigate immediately
-state.page = context.pages().find(p => p.url() === 'about:blank') ?? await context.newPage()
+state.page = context.pages().findLast(p => p.url() === 'about:blank') ?? await context.newPage()
 await state.page.goto('https://example.com')
 // Store in state.page and use it for ALL subsequent operations
 ```
@@ -62,7 +62,7 @@ The user may close your tab. Always check before using it:
 
 ```js
 if (!state.page || state.page.isClosed()) {
-  state.page = context.pages().find(p => p.url() === 'about:blank') ?? await context.newPage()
+  state.page = context.pages().findLast(p => p.url() === 'about:blank') ?? await context.newPage()
 }
 await state.page.goto('https://example.com')
 ```

@@ -1522,7 +1522,7 @@ export class PlaywrightExecutor {
       }
 
       const inspectPinnedElement = async (pageUrl: string, elementExpression: string) => {
-        const targetPage = context.pages().find((candidate) => candidate.url() === pageUrl) || context.pages()[0]
+        const targetPage = context.pages().findLast((candidate) => candidate.url() === pageUrl) || context.pages()[0]
         if (!targetPage) {
           throw new Error('No Playwright pages are available')
         }

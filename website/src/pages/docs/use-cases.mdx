@@ -49,7 +49,7 @@ Automate repetitive browser tasks that need your logged-in session.
 
 ```bash
 playwriter -s 1 -e $'
-state.page = context.pages().find(p => p.url() === "about:blank") ?? await context.newPage()
+state.page = context.pages().findLast(p => p.url() === "about:blank") ?? await context.newPage()
 await state.page.goto("https://www.youtube.com/playlist?list=PLxxxxxx")
 await waitForPageLoad({ page: state.page, timeout: 5000 })
 const videos = await state.page.$$eval("a#video-title", els => els.map(e => ({ title: e.textContent.trim(), href: e.href })))
@@ -68,7 +68,7 @@ playwriter -s 1 -f fill-forms.js
 
 ```bash
 playwriter -s 1 -e $'
-state.page = context.pages().find(p => p.url() === "about:blank") ?? await context.newPage()
+state.page = context.pages().findLast(p => p.url() === "about:blank") ?? await context.newPage()
 await state.page.goto("https://analytics.example.com/export")
 const [download] = await Promise.all([
   state.page.waitForEvent("download"),
@@ -86,7 +86,7 @@ Use **network interception** to discover undocumented APIs behind JavaScript-ren
 ```bash
 # Start intercepting API calls
 playwriter -s 1 -e $'
-state.page = context.pages().find(p => p.url() === "about:blank") ?? await context.newPage()
+state.page = context.pages().findLast(p => p.url() === "about:blank") ?? await context.newPage()
 state.responses = []
 state.page.on("response", async res => {
   if (res.url().includes("/api/")) {
@@ -146,7 +146,7 @@ Sites like Instagram, Twitter, and Facebook return empty HTML shells to `curl` a
 
 ```bash
 playwriter -s 1 -e $'
-state.page = context.pages().find(p => p.url() === "about:blank") ?? await context.newPage()
+state.page = context.pages().findLast(p => p.url() === "about:blank") ?? await context.newPage()
 await state.page.goto("https://www.instagram.com/p/ABC123/", { waitUntil: "domcontentloaded" })
 await waitForPageLoad({ page: state.page, timeout: 8000 })
 const content = await getPageMarkdown({ page: state.page, showDiffSinceLastCall: false })
