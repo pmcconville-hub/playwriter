@@ -16,7 +16,8 @@ import type { ExtensionCommandMessage, ExtensionResponseMessage } from 'playwrit
 import { handleGhostBrowserCommand, type GhostBrowserCommandParams } from 'playwriter/src/ghost-browser'
 import { RemoteTunnel } from './remote-tunnel'
 import {
-  REMOTE_TUNNEL_BASE_DOMAIN,
+  REMOTE_TUNNEL_BASE_URL,
+  buildRemoteHelloMessage,
   buildRemoteControlPrompt,
   buildRemoteTabNotSharedError,
   generateTunnelId,
@@ -262,7 +263,7 @@ interface BufferedChunk {
 const recordingChunkBuffer: BufferedChunk[] = []
 
 // ============================================================================
-// Remote control: share a tab with a remote agent through a traforo tunnel.
+// Remote control: share a tab with a remote agent through a playwriter.dev tunnel.
 // One tunnel per shared root tab; popups/new tabs the tab opens join its scope.
 // Runtime objects (WebSockets) live here; only the evidence needed to rebuild
 // tunnels after a service-worker restart is persisted in chrome.storage.session
@@ -1990,24 +1991,18 @@ async function announceConnectedTabsToLocalRelay(): Promise<void> {
   }
 }
 
-// Send identity + the shared tab targets to a freshly connected tunneled relay.
-// On the inbound local flow identity travels as /extension query params, but the
-// relay dials tunnels blind, so the extension introduces itself with `hello`.
+// Introduce the extension without exposing local profile identity, then announce
+// the shared tab targets to the freshly connected tunneled relay.
 async function sendRemoteHelloAndTargets(conn: { send(message: any): void; scope: RemoteScope }): Promise<void> {
-  const identity = await getExtensionIdentity().catch(() => {
-    return null
+  const browser = await detectBrowserName().catch(() => {
+    return undefined
   })
-  conn.send({
-    method: 'hello',
-    params: {
-      browser: identity?.browser,
-      email: identity?.email,
-      id: identity?.id,
-      installId: identity?.installId,
+  conn.send(
+    buildRemoteHelloMessage({
+      browser,
       version: typeof __PLAYWRITER_VERSION__ !== 'undefined' ? __PLAYWRITER_VERSION__ : undefined,
-      remote: true,
-    },
-  })
+    }),
+  )
 
   const { tabs } = store.getState()
   for (const tabId of conn.scope.tabIds) {
@@ -2061,7 +2056,7 @@ async function startRemoteControlForTab(
   const tunnelId = options.tunnelId || generateTunnelId()
   const tunnel = new RemoteTunnel({
     tunnelId,
-    baseDomain: REMOTE_TUNNEL_BASE_DOMAIN,
+    baseUrl: REMOTE_TUNNEL_BASE_URL,
     logger,
     onStatusChange: (status, detail) => {
       const runtime = remoteTunnels.get(tabId)

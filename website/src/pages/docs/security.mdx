@@ -5,7 +5,7 @@ description: How Playwriter keeps your browser safe with localhost-only architec
 icon: lucide:shield
 ---
 
-Everything runs **on your machine**. The relay binds to `localhost:19988` and only accepts connections from the extension. No remote server, no account, no telemetry.
+By default, everything runs **on your machine**. The relay binds to `localhost:19988` and only accepts connections from the extension. No traffic leaves the machine unless you explicitly enable Remote control or configure remote access.
 
 ## Architecture
 
@@ -18,13 +18,13 @@ Everything runs **on your machine**. The relay binds to `localhost:19988` and on
 │  │  (Chrome)   │    WS     │  localhost:19988  │   WS     │  (Agent)    │                │
 │  └─────────────┘          └──────────────────┘          └──────────────┘                 │
 │                                                                                          │
-│  Nothing leaves localhost unless you explicitly set up remote access                     │
+│  Nothing leaves localhost unless you explicitly enable a remote feature                  │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Security guarantees
 
-**Local only.** The WebSocket server binds to localhost. Nothing leaves your machine unless you explicitly configure [remote access](./remote-access.mdx) with a tunnel and auth token.
+**Local by default.** The WebSocket server binds to localhost. Traffic leaves your machine only when you confirm [Remote control](./remote-access.mdx) for a tab or configure full relay access with a tunnel and auth token.
 
 **Origin validation.** The extension WebSocket endpoint only accepts the Playwriter extension origin. Browsers cannot spoof the `Origin` header, so malicious websites cannot connect and control your browser. CLI and MCP connect as local Node.js clients on localhost; for remote access, always use [token authentication](./remote-access.mdx).
 
@@ -56,7 +56,15 @@ The execution sandbox runs in a controlled environment:
 
 ## Remote access security
 
-When using [remote access](./remote-access.mdx) via Traforo tunnels:
+When using one-tab **Remote control**:
+
+- **Explicit consent.** A native confirmation explains that the agent can read and control the shared tab before the tunnel starts.
+- **Scoped access.** The agent receives only the selected tab and popups it opens. Browser-wide destructive commands and new-tab creation are blocked.
+- **Minimal handshake.** The extension sends the browser name and Playwriter version, not the user's email, Google account ID, or install ID.
+- **Revocable bearer link.** Anyone with the secret URL can connect until the user clicks **Remote control** again. Treat the URL like a password.
+- **First-party domain.** Shared links are `https://playwriter.dev/r/{id}`. Frames are relayed in memory only; they are never stored, and response caching is off for these tunnels.
+
+When exposing the full relay through [remote access](./remote-access.mdx):
 
 - **Token authentication** is required. The `--token` flag on `playwriter serve` enforces auth on all connections.
 - **Encrypted transport.** Traforo tunnels use Cloudflare's TLS infrastructure.

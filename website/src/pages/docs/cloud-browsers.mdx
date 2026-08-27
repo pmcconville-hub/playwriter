@@ -195,11 +195,12 @@ when they need stealth browsing, geo-targeted access, or CAPTCHA bypass without 
 Cloud browsers are **fresh machines**: no cookies, no logins, no history. Sometimes you need the
 opposite — an agent acting inside a browser where the user is **already logged in**. For that,
 Playwriter has **Remote control**: the user clicks the light-blue cloud button in the Playwriter
-toolbar on a tab, gets a secret tunnel URL copied to their clipboard, and sends it to the agent.
+toolbar on a tab, confirms the sharing disclosure, gets a secret tunnel URL copied to their
+clipboard, and sends it to the agent.
 The agent connects from any machine:
 
 ```bash
-playwriter session new --remote-control https://xxx-tunnel.traforo.dev
+playwriter session new --remote-control https://playwriter.dev/r/xxx
 ```
 
 The user needs no playwriter install — only the extension. The agent controls just that one tab

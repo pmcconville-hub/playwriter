@@ -917,6 +917,14 @@ export function initPlaywriterToolbar(): void {
       showToast('Extension not connected')
       return
     }
+    if (
+      !remoteActive &&
+      !window.confirm(
+        'Share this tab with a remote agent?\n\nThe agent can read and control this tab and its popups as you. Traffic passes through playwriter.dev, and anyone with the copied link has access until you turn Remote control off.',
+      )
+    ) {
+      return
+    }
     window.__playwriterToolbarToggleRemote()
   })
 

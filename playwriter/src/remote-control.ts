@@ -2,16 +2,21 @@
  * Remote control: share a browser tab with a remote agent through a traforo tunnel.
  *
  * The extension acts as a traforo "upstream" client (the thing being exposed).
- * The relay on the agent's machine dials wss://{tunnelId}-tunnel.{baseDomain}/extension,
+ * The relay on the agent's machine dials wss://playwriter.dev/r/{tunnelId}/extension,
  * traforo forwards the connection to the extension, and the extension treats it as a
  * normal relay connection speaking the exact same extension WS protocol.
+ *
+ * Tunnels are path-routed on playwriter.dev so shared links stay on a domain the
+ * user already trusts. The traforo worker strips the /r/{tunnelId} prefix before
+ * the tunnel sees the request, so the extension still answers on /extension.
  *
  * This module is shared between the extension (browser) and the relay (node):
  * keep it dependency-free and runtime-agnostic (globalThis.crypto works in both).
  */
 import dedent from 'string-dedent'
 
-export const REMOTE_TUNNEL_BASE_DOMAIN = 'traforo.dev'
+export const REMOTE_TUNNEL_BASE_URL = 'https://playwriter.dev'
+export const REMOTE_TUNNEL_PATH_PREFIX = '/r/'
 
 // ---------------------------------------------------------------------------
 // Traforo tunnel protocol (JSON over one WebSocket).
@@ -70,7 +75,7 @@ export type TraforoDownstreamMessage =
 // URL helpers
 // ---------------------------------------------------------------------------
 
-/** 128 bits of entropy, 32 hex chars. Subdomain label "{id}-tunnel" stays under 63 chars. */
+/** 128 bits of entropy, 32 hex chars. Fits the traforo tunnel id charset (lowercase, <= 63). */
 export function generateTunnelId(): string {
   const bytes = new Uint8Array(16)
   globalThis.crypto.getRandomValues(bytes)
@@ -81,19 +86,40 @@ export function generateTunnelId(): string {
     .join('')
 }
 
+/** The link the user shares. Anyone holding it can drive the shared tab. */
 export function buildRemoteControlUrl({
   tunnelId,
-  baseDomain = REMOTE_TUNNEL_BASE_DOMAIN,
+  baseUrl = REMOTE_TUNNEL_BASE_URL,
 }: {
   tunnelId: string
-  baseDomain?: string
+  baseUrl?: string
 }): string {
-  return `https://${tunnelId}-tunnel.${baseDomain}`
+  return `${baseUrl}${REMOTE_TUNNEL_PATH_PREFIX}${tunnelId}`
 }
+
+/** WebSocket URL the extension dials to register itself as the tunnel upstream. */
+export function buildRemoteUpstreamWsUrl({
+  tunnelId,
+  baseUrl = REMOTE_TUNNEL_BASE_URL,
+}: {
+  tunnelId: string
+  baseUrl?: string
+}): string {
+  const httpUrl = buildRemoteControlUrl({ tunnelId, baseUrl })
+  return `${httpUrl.replace(/^http/, 'ws')}/traforo-upstream?_tunnelId=${encodeURIComponent(tunnelId)}`
+}
+
+// Built from the constant so the link format and the parser can never drift.
+const REMOTE_TUNNEL_PATH_RE = new RegExp(`^${REMOTE_TUNNEL_PATH_PREFIX}([a-z0-9-]{1,63})(?:/|$)`)
 
 /**
  * Normalize a user-provided remote control URL to the /extension WebSocket URL
  * the relay must dial. Accepts https://, http://, wss://, ws:// forms.
+ *
+ * Both link formats are accepted, because an older extension keeps producing
+ * subdomain links long after the relay is updated:
+ *   https://playwriter.dev/r/{tunnelId}       (current)
+ *   https://{tunnelId}-tunnel.traforo.dev     (legacy)
  */
 export function parseRemoteControlUrl(url: string): { wsUrl: string; httpUrl: string; host: string } {
   let parsed: URL
@@ -109,9 +135,12 @@ export function parseRemoteControlUrl(url: string): { wsUrl: string; httpUrl: st
   }
   const wsProtocol = isSecure ? 'wss:' : 'ws:'
   const httpProtocol = isSecure ? 'https:' : 'http:'
+  // Legacy subdomain links carry the id in the host, so their path is ignored.
+  const pathMatch = parsed.pathname.match(REMOTE_TUNNEL_PATH_RE)
+  const basePath = pathMatch ? `${REMOTE_TUNNEL_PATH_PREFIX}${pathMatch[1]}` : ''
   return {
-    wsUrl: `${wsProtocol}//${parsed.host}/extension`,
-    httpUrl: `${httpProtocol}//${parsed.host}`,
+    wsUrl: `${wsProtocol}//${parsed.host}${basePath}/extension`,
+    httpUrl: `${httpProtocol}//${parsed.host}${basePath}`,
     host: parsed.host,
   }
 }
@@ -195,7 +224,7 @@ export function buildRemoteControlPrompt({ url }: { url: string }): string {
   `
 }
 
-/** Identity message the extension sends first on every tunneled relay connection. */
+/** Handshake accepted from current and older extension versions. */
 export type RemoteHelloMessage = {
   method: 'hello'
   id?: undefined
@@ -206,5 +235,22 @@ export type RemoteHelloMessage = {
     installId?: string
     version?: string
     remote?: boolean
+  }
+}
+
+export function buildRemoteHelloMessage({
+  browser,
+  version,
+}: {
+  browser?: string
+  version?: string
+}): RemoteHelloMessage {
+  return {
+    method: 'hello',
+    params: {
+      browser,
+      version,
+      remote: true,
+    },
   }
 }

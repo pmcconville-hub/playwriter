@@ -72,8 +72,8 @@ npx -y skills add https://playwriter.dev
 ### First commands
 
 The extension connects your browser to a **local WebSocket relay** on
-`localhost:19988`. The CLI sends Playwright code through the relay. No remote servers, no
-accounts, nothing leaves your machine.
+`localhost:19988`. The CLI sends Playwright code through the relay. By default, no remote
+server is involved and nothing leaves your machine.
 
 ```bash
 playwriter session new              # new sandbox, outputs id (e.g. 1)
@@ -325,10 +325,10 @@ support, multi-machine automation, dev from a VM or devcontainer.
 
 ## Security
 
-Everything runs **on your machine**. The relay binds to `localhost:19988` and only
+By default, everything runs **on your machine**. The relay binds to `localhost:19988` and only
 accepts connections from the extension. No remote server, no account, no telemetry.
 
-- **Local only:** WebSocket server binds to localhost. Nothing leaves your machine.
+- **Local by default:** WebSocket server binds to localhost. Traffic leaves your machine only when you explicitly enable Remote control, remote access, or cloud browsers.
 - **Origin validation:** only the Playwriter extension origin is accepted. Browsers cannot spoof the Origin header, so malicious websites cannot connect.
 - **Controlled tab scope:** tabs are controlled after an extension click. By default, Playwriter also creates a controlled `about:blank` tab when a client connects with no controlled tabs. Set `PLAYWRITER_AUTO_ENABLE=false` to require a manual click.
 - **Visible automation:** Chrome shows an automation banner on controlled tabs.

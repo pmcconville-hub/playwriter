@@ -65,7 +65,7 @@ Required to attach the debugger to tabs on any domain the user chooses to automa
 All extension code (JavaScript, HTML, CSS) is fully bundled within the extension package and statically reviewed.
 
 **WebSocket connections:**
-The extension normally connects to `ws://localhost:19988`, a relay on the user's machine. When the user explicitly enables **Remote control** for a tab, the extension also opens a secret, temporary traforo tunnel for that tab. These connections carry protocol messages only; they never download extension code.
+The extension normally connects to `ws://localhost:19988`, a relay on the user's machine. When the user confirms **Remote control** for a tab, the extension also opens a secret, temporary tunnel for that tab at `wss://playwriter.dev/r/{id}`. These connections carry protocol messages only; they never download extension code.
 
 **What the WebSocket is used for:**
 
@@ -84,8 +84,9 @@ This is functionally similar to Native Messaging but uses WebSockets for cross-p
 
 - No analytics, tracking, or telemetry is collected
 - Browser control normally stays local through Chrome DevTools Protocol
-- Remote-control traffic is transmitted only after the user clicks **Remote control** for a tab, and stops when the user revokes the link
-- Extension operates entirely on the user's machine
+- Remote-control traffic passes through `playwriter.dev` only after the user confirms a disclosure, and stops when the user revokes the link
+- The remote handshake sends only the browser name and Playwriter version, not the user's email, Google account ID, or extension install ID
+- Remote-control traffic is relayed in memory only; it is never stored, and response caching is not enabled for these tunnels
 
 ## Screenshots Required
 

@@ -10,12 +10,12 @@ Control a Chrome browser on any machine from anywhere over the internet. No VPN,
 
 The simplest way to give a remote agent access to your browser is the **Remote control** button (light-blue cloud) in the Playwriter toolbar. It requires **no playwriter install** on your machine — only the extension. The extension itself opens a secret tunnel and exposes the tab behind an unguessable URL.
 
-1. Click the **Remote control** button in the toolbar on the tab you want to share
+1. Click the **Remote control** button and confirm that the agent may read and control the tab
 2. A prompt containing the secret URL is copied to your clipboard — paste it to the agent
 3. The agent runs, on its own machine:
 
 ```bash
-playwriter session new --remote-control https://xxx-tunnel.traforo.dev
+playwriter session new --remote-control https://playwriter.dev/r/xxx
 playwriter -s 1 -e "console.log(await page.title())"
 ```
 
