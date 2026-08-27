@@ -1653,80 +1653,50 @@ export class PlaywrightExecutor {
         return process.getBuiltinModule(id)
       }
 
-      const DEFAULT_INSPECT_PROPERTIES = ['overflow-y', 'overflow-x', 'position', 'max-height', 'display', 'flex-direction', 'flex-shrink']
-      const INSPECT_ARIA_ATTRS = ['aria-expanded', 'aria-selected', 'aria-hidden', 'aria-disabled', 'aria-checked', 'aria-pressed', 'aria-current']
+      const DEFAULT_INSPECT_PROPS = ['overflow-y', 'overflow-x', 'position', 'max-height', 'display', 'flex-direction', 'flex-shrink']
+      const INSPECT_ARIA = ['aria-expanded', 'aria-selected', 'aria-hidden', 'aria-disabled', 'aria-checked', 'aria-pressed', 'aria-current']
 
       const inspect = async (options: { locator: Locator; properties?: string[] }) => {
         const { locator, properties } = options
         const box = await locator.boundingBox()
-        const info = await locator.evaluate((el, args) => {
-          const cs = window.getComputedStyle(el as any)
-          const htmlEl = el as any
-          // Aria attributes (only include ones that are actually set)
-          const aria: Record<string, string> = {}
-          for (const attr of args.ariaAttrs) {
-            const val = el.getAttribute(attr)
-            if (val !== null) aria[attr] = val
-          }
-          return {
-            tag: el.tagName.toLowerCase(),
-            className: (el.getAttribute('class') || '').slice(0, 80),
-            scrollHeight: el.scrollHeight,
-            clientHeight: el.clientHeight,
-            scrollWidth: el.scrollWidth,
-            clientWidth: el.clientWidth,
-            scrollTop: el.scrollTop,
-            scrollLeft: el.scrollLeft,
-            childCount: el.children.length,
-            textLength: (el.textContent || '').trim().length,
-            // Visibility
-            opacity: cs.opacity,
-            visibility: cs.visibility,
-            pointerEvents: cs.pointerEvents,
-            // Input state (only for actual form controls)
-            isFormControl: el.matches('input, textarea, select, button, option'),
-            value: el.matches('input, textarea, select, option') ? String(htmlEl.value).slice(0, 200) : null,
-            checked: el.matches('input') && 'checked' in htmlEl ? htmlEl.checked : null,
-            disabled: el.matches('input, textarea, select, button') && htmlEl.disabled ? true : null,
-            readOnly: el.matches('input, textarea') && htmlEl.readOnly ? true : null,
-            aria,
-            computed: Object.fromEntries(args.props.map((p: string) => [p, cs.getPropertyValue(p)])),
-          }
-        }, { props: properties?.length ? properties : DEFAULT_INSPECT_PROPERTIES, ariaAttrs: INSPECT_ARIA_ATTRS })
-        const firstClass = info.className.split(/\s+/).filter(Boolean)[0]
-        const tag = firstClass ? `${info.tag}.${firstClass}` : info.tag
         const boxStr = box ? `x=${Math.round(box.x)} y=${Math.round(box.y)} w=${Math.round(box.width)} h=${Math.round(box.height)}` : 'not visible'
-        const styles = Object.entries(info.computed).map(([k, v]) => `${k}=${v || 'unset'}`).join(' ')
-
-        // Visibility: only show if something is non-default
-        const visibilityParts: string[] = []
-        if (info.opacity !== '1') visibilityParts.push(`opacity=${info.opacity}`)
-        if (info.visibility !== 'visible') visibilityParts.push(`visibility=${info.visibility}`)
-        if (info.pointerEvents !== 'auto') visibilityParts.push(`pointer-events=${info.pointerEvents}`)
-        if (!box) visibilityParts.push('not rendered')
-
-        // Input state: only show for actual form controls
-        const inputParts: string[] = []
-        if (info.isFormControl) {
-          if (info.value !== null) inputParts.push(`value="${info.value}"`)
-          if (info.checked !== null) inputParts.push(`checked=${info.checked}`)
-          if (info.disabled) inputParts.push('disabled')
-          if (info.readOnly) inputParts.push('readOnly')
-        }
-
-        const lines = [
-          `Element: ${tag}`,
-          `Box: ${boxStr}`,
-          `Children: ${info.childCount}  Text length: ${info.textLength}`,
-          `Scroll Y: size=${info.scrollHeight} client=${info.clientHeight} overflowing=${info.scrollHeight > info.clientHeight} top=${info.scrollTop}`,
-          `Scroll X: size=${info.scrollWidth} client=${info.clientWidth} overflowing=${info.scrollWidth > info.clientWidth} left=${info.scrollLeft}`,
-          `Styles: ${styles}`,
-        ]
-        if (visibilityParts.length) lines.push(`Visibility: ${visibilityParts.join(' ')}`)
-        if (inputParts.length) lines.push(`Input: ${inputParts.join(' ')}`)
-        const ariaEntries = Object.entries(info.aria)
-        if (ariaEntries.length) lines.push(`Aria: ${ariaEntries.map(([k, v]) => `${k}=${v}`).join(' ')}`)
-        return lines.join('\n')
+        const domInfo = await locator.evaluate((el, args) => {
+          const cs = window.getComputedStyle(el as any)
+          const h = el as any
+          const tag = el.tagName.toLowerCase()
+          const cls = (el.getAttribute('class') || '').split(/\s+/).filter(Boolean)[0]
+          const lines = [
+            `Element: ${cls ? tag + '.' + cls : tag}`,
+            `Box: ${args.box}`,
+            `Children: ${el.children.length}  Text length: ${(el.textContent || '').trim().length}`,
+            `Scroll Y: size=${el.scrollHeight} client=${el.clientHeight} overflowing=${el.scrollHeight > el.clientHeight} top=${el.scrollTop}`,
+            `Scroll X: size=${el.scrollWidth} client=${el.clientWidth} overflowing=${el.scrollWidth > el.clientWidth} left=${el.scrollLeft}`,
+            `Styles: ${args.props.map((p: string) => `${p}=${cs.getPropertyValue(p) || 'unset'}`).join(' ')}`,
+          ]
+          // Visibility (only non-defaults)
+          const vis = [
+            cs.opacity !== '1' && `opacity=${cs.opacity}`,
+            cs.visibility !== 'visible' && `visibility=${cs.visibility}`,
+            cs.pointerEvents !== 'auto' && `pointer-events=${cs.pointerEvents}`,
+            !args.hasBox && 'not rendered',
+          ].filter(Boolean)
+          if (vis.length) lines.push(`Visibility: ${vis.join(' ')}`)
+          // Input state (form controls only)
+          if (el.matches('input, textarea, select, button, option')) {
+            const parts = [
+              el.matches('input, textarea, select, option') && `value="${String(h.value).slice(0, 200)}"`,
+              el.matches('input') && 'checked' in h && `checked=${h.checked}`,
+              h.disabled && 'disabled',
+              h.readOnly && 'readOnly',
+            ].filter(Boolean)
+            if (parts.length) lines.push(`Input: ${parts.join(' ')}`)
+          }
+          // Aria attributes (only ones that are set)
+          const aria = args.aria.map((a: string) => { const v = el.getAttribute(a); return v !== null ? `${a}=${v}` : null }).filter(Boolean)
+          if (aria.length) lines.push(`Aria: ${aria.join(' ')}`)
+          return lines.join('\n')
+        }, { props: properties?.length ? properties : DEFAULT_INSPECT_PROPS, aria: INSPECT_ARIA, box: boxStr, hasBox: !!box })
+        return domInfo
       }
 
       let vmContextObj: any = {
