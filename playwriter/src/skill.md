@@ -117,6 +117,26 @@ playwriter -s 1 -e "await page.goto('https://example.com')"
 
 **Limitations:** screen recording (`recording.start`/`recording.stop`) is not available in direct CDP mode since it relies on the extension's `chrome.tabCapture` API.
 
+### Remote control (drive a tab in another user's browser)
+
+When a user shares a tab with you, they send a secret tunnel URL like `https://xxx-tunnel.traforo.dev` (created by clicking the **Remote control** button in the Playwriter toolbar of their browser). The user needs no playwriter install — only the extension. Connect to it with:
+
+```bash
+playwriter session new --remote-control https://xxx-tunnel.traforo.dev
+# prints a session id; use it normally afterwards, no extra flags needed
+playwriter -s 1 -e "console.log(await page.title())"
+```
+
+Rules for remote-control sessions:
+
+- You control **only the shared tab**, plus popups/new tabs that tab opens by itself (OAuth redirects, payment popups, etc). Navigate the shared tab with `page.goto()` instead of opening new pages.
+- `context.newPage()` and any tab creation are rejected with an error. If you need another tab, ask the user to share one more (each shared tab gets its own URL).
+- The user revokes access anytime by clicking the Remote control button again; the URL then stops working permanently. If the connection dies, ask the user for a fresh URL.
+- Never print, log, or share the tunnel URL: whoever has it can control the user's tab as them.
+- Screen recording is not available on remote-control sessions.
+
+**Use cases:** the user is logged into a website and wants you (a remote agent like Devin, a cloud bot, or a CLI agent on another machine) to act in their authenticated session without sharing passwords.
+
 ### Headless browser (no extension, no user browser)
 
 Launch a headless Chrome automatically. No extension setup, no user browser involvement. Useful when the user doesn't want their personal browser used, in CI/server environments, or for fully autonomous automation.

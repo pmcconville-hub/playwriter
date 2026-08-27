@@ -17,6 +17,16 @@ import type { Protocol } from './cdp-types.js'
 // Types
 // ---------------------------------------------------------------------------
 
+/**
+ * Minimal socket interface for extension connections. Satisfied by both hono's
+ * WSContext (inbound /extension route) and the `ws` client WebSocket used when
+ * the relay dials out to a remote-control tunnel (see remote-control.ts).
+ */
+export type ExtensionSocket = {
+  send(data: string | ArrayBuffer | Uint8Array): void
+  close(code?: number, reason?: string): void
+}
+
 export type ConnectedTarget = {
   sessionId: string
   targetId: string
@@ -47,7 +57,7 @@ export type ExtensionEntry = {
   stableKey: string
   connectedTargets: Map<string, ConnectedTarget>
   // Runtime I/O fields
-  ws: WSContext | null
+  ws: ExtensionSocket | null
   pendingRequests: Map<number, ExtensionPendingRequest>
   messageId: number
   pingInterval: ReturnType<typeof setInterval> | null
@@ -149,7 +159,7 @@ export function addExtension(
     id: string
     info: ExtensionInfo
     stableKey: string
-    ws: WSContext | null
+    ws: ExtensionSocket | null
   },
 ): RelayState {
   const newExtensions = new Map(state.extensions)
@@ -244,7 +254,7 @@ export function updateExtensionIO(
     pingInterval,
   }: {
     extensionId: string
-    ws?: WSContext | null
+    ws?: ExtensionSocket | null
     pingInterval?: ReturnType<typeof setInterval> | null
   },
 ): RelayState {
@@ -258,6 +268,20 @@ export function updateExtensionIO(
     ...(ws !== undefined ? { ws } : {}),
     ...(pingInterval !== undefined ? { pingInterval } : {}),
   })
+  return { ...state, extensions: newExtensions }
+}
+
+/** Merge new identity fields into an extension's info (used by tunnel `hello` messages). */
+export function updateExtensionInfo(
+  state: RelayState,
+  { extensionId, info }: { extensionId: string; info: ExtensionInfo },
+): RelayState {
+  const ext = state.extensions.get(extensionId)
+  if (!ext) {
+    return state
+  }
+  const newExtensions = new Map(state.extensions)
+  newExtensions.set(extensionId, { ...ext, info: { ...ext.info, ...info } })
   return { ...state, extensions: newExtensions }
 }
 

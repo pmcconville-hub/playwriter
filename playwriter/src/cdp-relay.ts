@@ -36,6 +36,8 @@ import { RecordingRelay } from './recording-relay.js'
 import { StreamRelay } from './stream-relay.js'
 import { appendSessionToWsUrl } from './chrome-discovery.js'
 import * as relayState from './relay-state.js'
+import { WebSocket as NodeWebSocket } from 'ws'
+import { parseRemoteControlUrl, type RemoteHelloMessage } from './remote-control.js'
 
 /**
  * Checks if a target should be filtered out (not exposed to Playwright).
@@ -1479,9 +1481,47 @@ export async function startPlayWriterCDPRelayServer({
     upgradeWebSocket((c) => {
       const incomingExtensionInfo = getExtensionInfoFromRequest(c)
       const connectionId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+      const handlers = createExtensionSocketHandlers({ connectionId, initialInfo: incomingExtensionInfo })
       return {
         onOpen(_event, ws) {
-          const stableKey = relayState.buildStableExtensionKey(incomingExtensionInfo, connectionId)
+          handlers.onOpen(ws)
+        },
+        async onMessage(event, ws) {
+          await handlers.onMessage(event.data as string | ArrayBuffer | Buffer, ws)
+        },
+        onClose(event) {
+          handlers.onClose(event)
+        },
+        onError(event) {
+          logger?.error('Extension WebSocket error:', event)
+        },
+      }
+    }),
+  )
+
+  // Shared handlers for extension connections. Used by the inbound /extension
+  // WebSocket route and by outbound dials to remote-control tunnels: the relay
+  // dials wss://{id}-tunnel.traforo.dev/extension and the extension answers with
+  // the exact same protocol — only the dial direction inverts.
+  type ExtensionSocketHandlers = {
+    onOpen(ws: relayState.ExtensionSocket): void
+    onMessage(data: string | ArrayBuffer | Buffer, ws: relayState.ExtensionSocket): Promise<void> | void
+    onClose(event: { code?: number; reason?: string }): void
+  }
+
+  function createExtensionSocketHandlers({
+    connectionId,
+    initialInfo,
+    stableKeyOverride,
+  }: {
+    connectionId: string
+    initialInfo: relayState.ExtensionInfo
+    /** Remote dials pass `remote:{url}` so sessions survive tunnel reconnects. */
+    stableKeyOverride?: string
+  }): ExtensionSocketHandlers {
+    return {
+        onOpen(ws) {
+          const stableKey = stableKeyOverride || relayState.buildStableExtensionKey(initialInfo, connectionId)
 
           // Check for existing connection with same stableKey and close it
           const existingExt = relayState.findExtensionByStableKey(store.getState(), stableKey)
@@ -1495,14 +1535,14 @@ export async function startPlayWriterCDPRelayServer({
           // State transition: add extension with ws handle included.
           // Existing same-stableKey entry stays until old socket onClose.
           store.setState((s) => {
-            return relayState.addExtension(s, { id: connectionId, info: incomingExtensionInfo, stableKey, ws })
+            return relayState.addExtension(s, { id: connectionId, info: initialInfo, stableKey, ws })
           })
 
           startExtensionPing(connectionId)
           logger?.log(`Extension connected (${connectionId})`)
         },
 
-        async onMessage(event, ws) {
+        async onMessage(data, ws) {
           const ext = store.getState().extensions.get(connectionId)
           if (!ext) {
             ws.close(1000, 'Extension not registered')
@@ -1512,8 +1552,8 @@ export async function startPlayWriterCDPRelayServer({
           // the same WS messages; StreamRelay gets first pick and returns true
           // when the chunk belongs to an active stream (tabId sets are disjoint
           // because the extension refuses a second capture of the same tab).
-          if (event.data instanceof ArrayBuffer || Buffer.isBuffer(event.data)) {
-            const buffer = Buffer.isBuffer(event.data) ? event.data : Buffer.from(event.data)
+          if (data instanceof ArrayBuffer || Buffer.isBuffer(data)) {
+            const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data)
             const streamRelay = streamRelays.get(connectionId)
             if (streamRelay?.handleBinaryData(buffer)) {
               return
@@ -1525,12 +1565,37 @@ export async function startPlayWriterCDPRelayServer({
             return
           }
 
-          let message: ExtensionMessage
+          let message: ExtensionMessage | RemoteHelloMessage
 
           try {
-            message = JSON.parse(event.data.toString())
+            message = JSON.parse(data.toString())
           } catch {
             ws.close(1000, 'Invalid JSON')
+            return
+          }
+
+          // Identity sent by the extension on tunneled connections. On the inbound
+          // /extension route identity travels as query params instead, so the
+          // extension cannot control it when the relay dials out through traforo.
+          if (message.method === 'hello') {
+            const helloInfo = message.params || {}
+            store.setState((s) =>
+              relayState.updateExtensionInfo(s, {
+                extensionId: connectionId,
+                info: {
+                  browser: helloInfo.browser,
+                  email: helloInfo.email,
+                  id: helloInfo.id,
+                  installId: helloInfo.installId,
+                  version: helloInfo.version,
+                },
+              }),
+            )
+            logger?.log(
+              pc.green(
+                `Extension hello (${connectionId}): ${helloInfo.browser || 'unknown'} v${helloInfo.version || '?'}${helloInfo.remote ? ' (remote tunnel)' : ''}`,
+              ),
+            )
             return
           }
 
@@ -1925,13 +1990,151 @@ export async function startPlayWriterCDPRelayServer({
           // State transition: remove extension + its bound clients atomically
           store.setState((s) => relayState.removeExtension(s, { extensionId: connectionId }))
         },
+    }
+  }
 
-        onError(event) {
-          logger?.error('Extension WebSocket error:', event)
-        },
+  // ============================================================================
+  // Remote control dials — outbound extension connections through traforo.
+  //
+  // The user's extension exposes its /extension protocol behind a unique tunnel
+  // URL (Remote control toolbar button). The relay dials that URL and registers
+  // the socket as a normal extension connection. Sessions reference it via
+  // stableKey `remote:{url}` so they survive tunnel reconnects (extension
+  // service worker restarts, network blips). See remote-control.ts.
+  // ============================================================================
+
+  type RemoteDial = {
+    urlKey: string
+    wsUrl: string
+    stableKey: string
+    ws: NodeWebSocket | null
+    closed: boolean
+    retryTimer: ReturnType<typeof setTimeout> | null
+    sessionIds: Set<string>
+  }
+  const remoteDials = new Map<string, RemoteDial>()
+  const sessionRemoteUrlKeys = new Map<string, string>()
+  const REMOTE_DIAL_RETRY_MS = 3000
+
+  function startRemoteDial(dial: RemoteDial): void {
+    if (dial.closed) {
+      return
+    }
+    const connectionId = `remote_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+    const handlers = createExtensionSocketHandlers({
+      connectionId,
+      initialInfo: { browser: 'Remote browser' },
+      stableKeyOverride: dial.stableKey,
+    })
+    logger?.log(pc.blue(`Dialing remote extension: ${dial.wsUrl}`))
+    const socket = new NodeWebSocket(dial.wsUrl)
+    dial.ws = socket
+    const adapter: relayState.ExtensionSocket = {
+      send(payload) {
+        socket.send(payload)
+      },
+      close(code, reason) {
+        socket.close(code ?? 1000, reason)
+      },
+    }
+    let opened = false
+
+    socket.on('open', () => {
+      opened = true
+      handlers.onOpen(adapter)
+    })
+    socket.on('message', (raw, isBinary) => {
+      const payload = isBinary ? (raw as Buffer) : raw.toString()
+      void handlers.onMessage(payload, adapter)
+    })
+    socket.on('error', (error) => {
+      logger?.error(`Remote extension dial error (${dial.urlKey}):`, error.message)
+    })
+    socket.on('close', (code, reason) => {
+      dial.ws = null
+      if (opened) {
+        handlers.onClose({ code, reason: reason.toString() })
       }
-    }),
-  )
+      if (dial.closed) {
+        return
+      }
+      logger?.log(pc.yellow(`Remote extension dial closed (${dial.urlKey}), retrying in ${REMOTE_DIAL_RETRY_MS}ms`))
+      dial.retryTimer = setTimeout(() => {
+        dial.retryTimer = null
+        startRemoteDial(dial)
+      }, REMOTE_DIAL_RETRY_MS)
+    })
+  }
+
+  async function connectRemoteExtension({ url }: { url: string }): Promise<relayState.ExtensionEntry> {
+    const { wsUrl, httpUrl } = parseRemoteControlUrl(url)
+    const urlKey = httpUrl
+    const stableKey = `remote:${urlKey}`
+
+    let dial = remoteDials.get(urlKey)
+    if (!dial) {
+      dial = { urlKey, wsUrl, stableKey, ws: null, closed: false, retryTimer: null, sessionIds: new Set() }
+      remoteDials.set(urlKey, dial)
+      startRemoteDial(dial)
+    }
+
+    // Wait for the tunnel roundtrip: dial → traforo → extension hello + Target.attachedToTarget.
+    const deadline = Date.now() + 15000
+    while (Date.now() < deadline) {
+      const entry = relayState.findExtensionByStableKey(store.getState(), stableKey)
+      if (entry?.ws && entry.connectedTargets.size > 0) {
+        return entry
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200))
+    }
+    const entry = relayState.findExtensionByStableKey(store.getState(), stableKey)
+    if (entry?.ws) {
+      // Connected but no shared tab announced yet — surface a clear error.
+      throw new Error(
+        `Connected to ${urlKey} but no shared tab was announced. The user may have revoked remote control. Ask them to click the Remote control button again and share a fresh URL.`,
+      )
+    }
+    throw new Error(
+      `Could not reach the remote browser at ${urlKey}. Check that the Remote control button is still active in the user's browser and that the URL is correct. Remote control links die when the user clicks the button again or closes the browser.`,
+    )
+  }
+
+  function releaseRemoteDialForSession(sessionId: string): void {
+    const urlKey = sessionRemoteUrlKeys.get(sessionId)
+    if (!urlKey) {
+      return
+    }
+    sessionRemoteUrlKeys.delete(sessionId)
+    const dial = remoteDials.get(urlKey)
+    if (!dial) {
+      return
+    }
+    dial.sessionIds.delete(sessionId)
+    if (dial.sessionIds.size > 0) {
+      return
+    }
+    logger?.log(pc.yellow(`Closing remote extension dial (no sessions left): ${urlKey}`))
+    dial.closed = true
+    if (dial.retryTimer) {
+      clearTimeout(dial.retryTimer)
+      dial.retryTimer = null
+    }
+    dial.ws?.close(1000, 'No sessions left')
+    remoteDials.delete(urlKey)
+  }
+
+  function closeAllRemoteDials(): void {
+    for (const dial of remoteDials.values()) {
+      dial.closed = true
+      if (dial.retryTimer) {
+        clearTimeout(dial.retryTimer)
+        dial.retryTimer = null
+      }
+      dial.ws?.close(1000, 'Relay shutting down')
+    }
+    remoteDials.clear()
+    sessionRemoteUrlKeys.clear()
+  }
 
   // ============================================================================
   // CLI Execute Endpoints - For stateful code execution via CLI
@@ -2128,6 +2331,8 @@ export async function startPlayWriterCDPRelayServer({
       cwd?: string
       /** Direct CDP WebSocket URL — bypasses extension, connects straight to Chrome */
       cdpEndpoint?: string
+      /** Remote-control tunnel URL shared by another user's extension (Remote control button) */
+      remoteControlUrl?: string
       /** Launch a headless Chrome via chromium.launch() — no extension or relay CDP routing */
       headless?: boolean
       /** Browser name from discovery (e.g. "Chrome", "Brave") */
@@ -2234,6 +2439,40 @@ export async function startPlayWriterCDPRelayServer({
       })
     }
 
+    // Remote control mode: dial the tunnel URL shared by another user's extension
+    // and bind the session to that remote extension connection.
+    if (body.remoteControlUrl) {
+      let remoteEntry: relayState.ExtensionEntry
+      try {
+        remoteEntry = await connectRemoteExtension({ url: body.remoteControlUrl })
+      } catch (error) {
+        return c.json({ error: error instanceof Error ? error.message : String(error) }, 502)
+      }
+      const { httpUrl } = parseRemoteControlUrl(body.remoteControlUrl)
+      remoteDials.get(httpUrl)?.sessionIds.add(sessionId)
+      sessionRemoteUrlKeys.set(sessionId, httpUrl)
+
+      const manager = await getExecutorManager()
+      const executor = manager.getExecutor({
+        sessionId,
+        cwd: cwd || undefined,
+        sessionMetadata: {
+          extensionId: remoteEntry.stableKey,
+          browser: remoteEntry.info.browser || 'Remote browser',
+          profile: remoteEntry.info.email ? { email: remoteEntry.info.email, id: remoteEntry.info.id || '' } : null,
+        },
+      })
+      const metadata = executor.getSessionMetadata()
+      return c.json({
+        id: sessionId,
+        mode: 'remote' as const,
+        extensionId: metadata.extensionId,
+        browser: metadata.browser,
+        profile: metadata.profile,
+        warning: cwdWarning,
+      })
+    }
+
     // Extension mode (existing behavior)
     const extensionId = body.extensionId || null
     const allowDefault = !extensionId && store.getState().extensions.size === 1
@@ -2298,6 +2537,9 @@ export async function startPlayWriterCDPRelayServer({
       if (!deleted) {
         return c.json({ error: `Session ${sessionId} not found` }, 404)
       }
+
+      // Close the remote-control tunnel dial when its last session goes away
+      releaseRemoteDialForSession(sessionId)
 
       // If this was a cloud-backed session, stop the VM only if no other
       // relay session is still using the same cloud VM (reference counting).
@@ -2778,6 +3020,8 @@ export async function startPlayWriterCDPRelayServer({
   return {
     close() {
       const { extensions, playwrightClients } = store.getState()
+
+      closeAllRemoteDials()
 
       for (const client of playwrightClients.values()) {
         client.ws.close(1000, 'Server stopped')

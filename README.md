@@ -229,6 +229,27 @@ Color-coded: yellow=links, orange=buttons, coral=inputs, pink=checkboxes, peach=
 +---------------------+     (no extension click)      +-----------------+
 ```
 
+## Remote Control (share a tab with a remote agent)
+
+Let a remote agent (Devin, a cloud bot, a friend's CLI agent) drive **one tab of your own browser** — no playwriter install needed on your machine, only the extension.
+
+1. Click the light-blue **Remote control** cloud button in the Playwriter toolbar on the tab you want to share
+2. A prompt containing a secret tunnel URL is copied to your clipboard — paste it to the agent
+3. The agent runs `playwriter session new --remote-control https://xxx-tunnel.traforo.dev` on its machine
+4. Click the button again anytime to **revoke** — the URL dies instantly
+
+```
+YOUR MACHINE (extension only)                        AGENT MACHINE (any box with npx)
+┌───────────────────────────┐                       ┌────────────────────────────────┐
+│ Chrome + Extension        │   Cloudflare tunnel   │ playwriter CLI + local relay   │
+│  shared tab ◄─────────────┼───◄ {random}-tunnel ◄─┼── session new --remote-control │
+└───────────────────────────┘     .traforo.dev      └────────────────────────────────┘
+```
+
+The agent controls **only the shared tab** (plus popups it opens). New tabs are blocked, browser-wide commands like clearing all cookies are blocked, and everything happens visibly in your browser. The URL contains 128 bits of randomness and is never reusable after revocation — but treat it like a password and **never share it with anyone you don't trust**: the agent acts as you on any site it navigates the tab to.
+
+Use case: you are logged into a website and want an agent to do work in your authenticated session without giving it your password.
+
 ## Remote Access
 
 Control Chrome on a remote machine over the internet using [traforo](https://traforo.dev) tunnels:

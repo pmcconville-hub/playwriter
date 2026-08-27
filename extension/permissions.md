@@ -40,11 +40,19 @@ Required to detect when one tab opens a new tab/window via `window.open`, `targe
 
 The `scripting` permission was originally added for iframe cleanup before debugger attachment. It is now also used to:
 
-1. **Inject the in-page toolbar** (`initPlaywriterToolbar`) into the MAIN world of every tab the user connects Playwriter to. The toolbar is a closed Shadow DOM element that floats in the top-right corner and provides quick AI-integration tools (e.g. pin-element copy mode).
+1. **Inject the in-page toolbar** (`initPlaywriterToolbar`) into Chrome's isolated extension world for every tab the user connects Playwriter to. The toolbar is a closed Shadow DOM element that floats over the page and provides quick AI-integration tools without exposing privileged callbacks to website scripts.
 2. **Re-inject the toolbar** after page navigations via `chrome.webNavigation.onDOMContentLoaded`.
 3. **Destroy the toolbar** when the user disconnects Playwriter from a tab, so no extension UI is left behind on pages the user is actively browsing.
 
 Injections target manually connected tabs and the blank tab Playwriter auto-creates when a client connects with no controlled tabs. They target only the top-level frame (`allFrames: false`). Playwriter does not inject into other existing tabs.
+
+### offscreen
+
+Required for screen recording and user-requested clipboard writes. The hidden extension document owns `MediaRecorder` streams and copies toolbar prompts without exposing clipboard content to the website.
+
+### clipboardWrite
+
+Required to copy prompts when the user clicks toolbar actions such as **Remote control**, **Record Skill**, or **Pin element**. Clipboard writes happen only after a trusted user click and are performed by the extension's offscreen document.
 
 ### host_permissions (<all_urls>)
 
@@ -56,8 +64,8 @@ Required to attach the debugger to tabs on any domain the user chooses to automa
 
 All extension code (JavaScript, HTML, CSS) is fully bundled within the extension package and statically reviewed.
 
-**WebSocket Connection (localhost only):**
-The extension establishes a WebSocket connection to `ws://localhost:19988` - a local server running on the user's own machine. This connection is used exclusively for **message passing** (sending and receiving JSON data), NOT code execution.
+**WebSocket connections:**
+The extension normally connects to `ws://localhost:19988`, a relay on the user's machine. When the user explicitly enables **Remote control** for a tab, the extension also opens a secret, temporary traforo tunnel for that tab. These connections carry protocol messages only; they never download extension code.
 
 **What the WebSocket is used for:**
 
@@ -68,18 +76,16 @@ The extension establishes a WebSocket connection to `ws://localhost:19988` - a l
 **What it is NOT used for:**
 
 - Downloading or executing JavaScript, WebAssembly, or any other executable code
-- Connecting to external/remote servers (strictly localhost only)
 - Loading remote configurations that modify extension behavior
 
 This is functionally similar to Native Messaging but uses WebSockets for cross-platform compatibility with existing Playwright tooling. The WebSocket serves as a local IPC (inter-process communication) channel, not a remote code delivery mechanism.
 
 ## Data Collection & Privacy
 
-- No data is collected or transmitted to external servers
-- All browser control happens locally through Chrome DevTools Protocol
-- WebSocket connection is localhost-only (ws://localhost:19988)
+- No analytics, tracking, or telemetry is collected
+- Browser control normally stays local through Chrome DevTools Protocol
+- Remote-control traffic is transmitted only after the user clicks **Remote control** for a tab, and stops when the user revokes the link
 - Extension operates entirely on the user's machine
-- No analytics, tracking, or telemetry
 
 ## Screenshots Required
 

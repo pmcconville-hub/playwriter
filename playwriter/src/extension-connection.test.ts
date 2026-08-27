@@ -109,6 +109,96 @@ describe('Extension Connection Tests', () => {
     await page.close()
   }, 120000)
 
+  it('does not let page scripts trigger isolated toolbar actions', async () => {
+    const browserContext = getBrowserContext()
+    const serviceWorker = await getExtensionServiceWorker(browserContext)
+    const page = await browserContext.newPage()
+    await page.goto('https://example.com/')
+    await page.bringToFront()
+    await serviceWorker.evaluate(async () => {
+      await globalThis.toggleExtensionForActiveTab()
+    })
+    await page.locator('[data-playwriter-toolbar="1"]').first().waitFor()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    const pageCallbacks = await page.evaluate(() => {
+      return {
+        recorder: typeof window.__playwriterToolbarStartRecording,
+        remote: typeof window.__playwriterToolbarToggleRemote,
+      }
+    })
+    await page.evaluate(() => {
+      window.postMessage({ __playwriter: 'remote_toggle' }, '*')
+      window.postMessage({ __playwriter: 'recorder_start' }, '*')
+    })
+    await new Promise((resolve) => setTimeout(resolve, 250))
+
+    const remoteState = await serviceWorker.evaluate(() => {
+      return globalThis.getRemoteControlState()
+    })
+    if (remoteState.length > 0) {
+      await serviceWorker.evaluate((tabId) => {
+        globalThis.stopRemoteControlForTab(tabId)
+      }, remoteState[0].rootTabId)
+    }
+
+    const clipboardResult = await serviceWorker.evaluate(async () => {
+      const offscreenUrl = chrome.runtime.getURL('src/offscreen.html')
+      const existing = await chrome.runtime.getContexts({
+        contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+        documentUrls: [offscreenUrl],
+      })
+      if (existing.length === 0) {
+        await chrome.offscreen.createDocument({
+          url: 'src/offscreen.html',
+          reasons: [chrome.offscreen.Reason.CLIPBOARD],
+          justification: 'Test isolated clipboard and message routing',
+        })
+      }
+      return await chrome.runtime.sendMessage({ action: 'copyText', text: 'isolated toolbar test' })
+    })
+
+    const pinResult = await serviceWorker.evaluate(async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      if (!tab?.id) {
+        throw new Error('No active tab')
+      }
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, frameIds: [0] },
+        world: 'ISOLATED',
+        func: async () => {
+          const target = document.querySelector('h1')
+          if (!target) {
+            return null
+          }
+          const markerBytes = new Uint8Array(16)
+          crypto.getRandomValues(markerBytes)
+          const marker = Array.from(markerBytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+          target.setAttribute('data-playwriter-pin-target', marker)
+          try {
+            return await chrome.runtime.sendMessage({ action: 'pinToolbarElement', marker })
+          } finally {
+            target.removeAttribute('data-playwriter-pin-target')
+          }
+        },
+      })
+      return result.result
+    })
+    await serviceWorker.evaluate(async () => {
+      await chrome.offscreen.closeDocument()
+    })
+    const pinnedText = await page.evaluate(() => {
+      return window.playwriterPinnedElem1?.textContent
+    })
+    await page.close()
+
+    expect(pageCallbacks).toEqual({ recorder: 'undefined', remote: 'undefined' })
+    expect(remoteState).toEqual([])
+    expect(clipboardResult).toEqual({ success: true })
+    expect(pinResult).toEqual({ pinNumber: 1 })
+    expect(pinnedText).toContain('Example Domain')
+  }, 120000)
+
   it('should handle new pages and toggling with persistent connection', async () => {
     const browserContext = getBrowserContext()
     const serviceWorker = await getExtensionServiceWorker(browserContext)

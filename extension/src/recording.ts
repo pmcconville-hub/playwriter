@@ -34,7 +34,7 @@ export function getActiveRecordings(): Map<number, RecordingInfo> {
   return activeRecordings
 }
 
-async function ensureOffscreenDocument(): Promise<void> {
+export async function ensureOffscreenDocument(): Promise<void> {
   // Check if already exists
   const existingContexts = await chrome.runtime.getContexts({
     contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
@@ -52,8 +52,8 @@ async function ensureOffscreenDocument(): Promise<void> {
 
   offscreenDocumentCreating = chrome.offscreen.createDocument({
     url: 'src/offscreen.html',
-    reasons: [chrome.offscreen.Reason.USER_MEDIA],
-    justification: 'Screen recording via chrome.tabCapture',
+    reasons: [chrome.offscreen.Reason.USER_MEDIA, chrome.offscreen.Reason.CLIPBOARD],
+    justification: 'Record tabs and copy toolbar prompts',
   })
 
   try {

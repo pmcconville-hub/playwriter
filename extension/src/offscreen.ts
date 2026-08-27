@@ -1,9 +1,9 @@
 /**
- * Offscreen document for Playwriter screen recording.
+ * Offscreen document for screen recording and extension-owned clipboard writes.
  *
  * WHY OFFSCREEN DOCUMENT?
  * Manifest V3 service workers cannot use MediaRecorder or getUserMedia directly.
- * This hidden document provides access to Web APIs while the service worker orchestrates.
+ * This hidden document provides media and clipboard Web APIs while the service worker orchestrates.
  *
  * RECORDING FLOW:
  *
@@ -43,10 +43,12 @@ import type {
   OffscreenStopRecordingMessage,
   OffscreenIsRecordingMessage,
   OffscreenCancelRecordingMessage,
+  OffscreenCopyTextMessage,
   OffscreenStartRecordingResult,
   OffscreenStopRecordingResult,
   OffscreenIsRecordingResult,
   OffscreenCancelRecordingResult,
+  OffscreenCopyTextResult,
   ChromeTabCaptureAudioConstraints,
   ChromeTabCaptureVideoConstraints,
 } from './offscreen-types'
@@ -60,14 +62,25 @@ interface OffscreenRecordingState {
 
 // Map of tabId -> recording state for concurrent recording support
 const recordings = new Map<number, OffscreenRecordingState>()
+const OFFSCREEN_ACTIONS = new Set<OffscreenMessage['action']>([
+  'startRecording',
+  'stopRecording',
+  'isRecording',
+  'cancelRecording',
+  'copyText',
+])
 
 type OffscreenResult =
   | OffscreenStartRecordingResult
   | OffscreenStopRecordingResult
   | OffscreenIsRecordingResult
   | OffscreenCancelRecordingResult
+  | OffscreenCopyTextResult
 
 chrome.runtime.onMessage.addListener((message: OffscreenMessage, _sender, sendResponse) => {
+  if (!OFFSCREEN_ACTIONS.has(message.action)) {
+    return false
+  }
   void handleMessage(message).then(sendResponse)
   return true // Keep channel open for async response
 })
@@ -82,8 +95,27 @@ async function handleMessage(message: OffscreenMessage): Promise<OffscreenResult
       return handleIsRecording(message)
     case 'cancelRecording':
       return handleCancelRecording(message)
-    default:
-      return { success: false, error: 'Unknown action' }
+    case 'copyText':
+      return handleCopyText(message)
+  }
+}
+
+async function handleCopyText(message: OffscreenCopyTextMessage): Promise<OffscreenCopyTextResult> {
+  try {
+    const textarea = document.querySelector<HTMLTextAreaElement>('#clipboard-text')
+    if (!textarea) {
+      return { success: false, error: 'Clipboard textarea is missing' }
+    }
+    textarea.value = message.text
+    textarea.select()
+    const copied = document.execCommand('copy')
+    textarea.value = ''
+    if (!copied) {
+      return { success: false, error: 'Clipboard copy command failed' }
+    }
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
   }
 }
 

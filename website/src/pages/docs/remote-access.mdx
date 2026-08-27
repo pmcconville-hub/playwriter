@@ -6,6 +6,33 @@ icon: lucide:globe
 
 Control a Chrome browser on any machine from anywhere over the internet. No VPN, no firewall rules, no port forwarding.
 
+## Remote control: share one tab, zero setup
+
+The simplest way to give a remote agent access to your browser is the **Remote control** button (light-blue cloud) in the Playwriter toolbar. It requires **no playwriter install** on your machine — only the extension. The extension itself opens a secret tunnel and exposes the tab behind an unguessable URL.
+
+1. Click the **Remote control** button in the toolbar on the tab you want to share
+2. A prompt containing the secret URL is copied to your clipboard — paste it to the agent
+3. The agent runs, on its own machine:
+
+```bash
+playwriter session new --remote-control https://xxx-tunnel.traforo.dev
+playwriter -s 1 -e "console.log(await page.title())"
+```
+
+4. Click the button again anytime to **revoke access** — the URL dies instantly and is never reused
+
+The agent controls **only the shared tab** (plus popups it opens, so OAuth and payment flows keep working). Creating new tabs and browser-wide commands like clearing all cookies are blocked with helpful errors. Everything happens visibly in your browser.
+
+<Aside>
+<Warning>
+The URL grants control of your tab **as you** — the agent can navigate the tab to any site where you are logged in. Never share it with anyone you don't trust, and never post it in public channels. Revoke it with the button when the agent is done. The link also dies when you close your browser.
+</Warning>
+</Aside>
+
+Typical use case: you are logged into a website and want an agent (Devin, a cloud bot, a teammate's CLI agent) to do work in your authenticated session without ever sharing a password.
+
+The rest of this page covers the full-relay setup: exposing your **entire relay server** with `playwriter serve` + traforo, which gives a remote machine access to all controlled tabs and requires playwriter installed on the host.
+
 ## How it works
 
 Playwriter's relay server runs on the host machine alongside Chrome. A [traforo](https://traforo.dev) tunnel exposes it to the internet through Cloudflare, giving you a **secure public URL**. The remote machine connects through this URL to control Chrome.

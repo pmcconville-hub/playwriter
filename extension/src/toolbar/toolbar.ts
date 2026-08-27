@@ -1,12 +1,11 @@
-// Toolbar injected into the page's MAIN world via chrome.scripting.executeScript({ func }).
+// Toolbar injected into Chrome's ISOLATED world via chrome.scripting.executeScript({ func }).
 //
 // CRITICAL: entirely self-contained. The function is serialized via
 // Function.prototype.toString(), so no external imports, no module-level refs,
 // all helpers as inner functions, all constants defined inline. TS type
 // annotations are stripped at compile time — safe to use.
 //
-// window.__playwriterPinCount is a shared MAIN-world counter so toolbar pins
-// and right-click menu pins never collide on globalThis.playwriterPinnedElemN.
+// Privileged actions call chrome.runtime directly. Never bridge through page events.
 
 declare global {
   interface Window {
@@ -15,6 +14,8 @@ declare global {
     __playwriterToolbarSetRecording?: (recording: boolean) => void
     __playwriterToolbarStopRecording?: (() => void) | null
     __playwriterToolbarStartRecording?: (() => void) | null
+    __playwriterToolbarSetRemote?: (active: boolean) => void
+    __playwriterToolbarToggleRemote?: (() => void) | null
     __playwriterToolbarShowToast?: (msg: string) => void
     __playwriterToolbarPlaySound?: (name: string) => void
     __playwriterPinCount?: number
@@ -35,7 +36,6 @@ export function initPlaywriterToolbar(): void {
   }
 
   let pinModeActive = false
-  let pinCount = 0
   let toastTimer: number | null = null
   let overlayEl: HTMLDivElement | null = null
   let pinMoveRaf = 0
@@ -81,6 +81,8 @@ export function initPlaywriterToolbar(): void {
   const savedPos = loadPosition()
   const initLeft = savedPos ? `${savedPos.leftPct}%` : '50%'
   const initTop = savedPos ? `${savedPos.topPct}%` : '12px'
+  let intendedLeft = initLeft
+  let intendedTop = initTop
 
   // pointer-events:none on the host so the shadow-DOM children (pointer-events:all)
   // control interactivity without the host element itself blocking page events.
@@ -208,6 +210,17 @@ export function initPlaywriterToolbar(): void {
     .record-btn.loading {
       cursor: default;
       pointer-events: none;
+    }
+    .remote-btn svg {
+      color: #7dd3fc;
+    }
+    .remote-btn.remote-active {
+      color: #7dd3fc;
+      background: rgba(125,211,252,0.10);
+    }
+    .remote-btn.remote-active:hover {
+      background: rgba(125,211,252,0.18);
+      color: #bae6fd;
     }
     .record-btn .spinner {
       display: block;
@@ -415,6 +428,26 @@ export function initPlaywriterToolbar(): void {
     return e.composedPath().some((node) => node === host)
   }
 
+  function isTrustedToolbarClick(e: MouseEvent): boolean {
+    if (!e.isTrusted || !navigator.userActivation.isActive) {
+      return false
+    }
+    const style = getComputedStyle(host)
+    if (style.display === 'none' || style.visibility !== 'visible' || Number(style.opacity) < 0.9) {
+      return false
+    }
+    if (document.elementFromPoint(e.clientX, e.clientY) !== host) {
+      return false
+    }
+    const resolvePosition = (value: string, viewportSize: number): number => {
+      return value.endsWith('%') ? (parseFloat(value) / 100) * viewportSize : parseFloat(value)
+    }
+    const rect = host.getBoundingClientRect()
+    const expectedCenterX = resolvePosition(intendedLeft, window.innerWidth)
+    const expectedTop = resolvePosition(intendedTop, window.innerHeight)
+    return Math.abs(rect.left + rect.width / 2 - expectedCenterX) < 2 && Math.abs(rect.top - expectedTop) < 2
+  }
+
   // ── Helper: flash green outline on a pinned element ────────────────────────
 
   function flashElement(el: Element, persistent = false): { prevOutline: string; prevOffset: string } {
@@ -443,34 +476,32 @@ export function initPlaywriterToolbar(): void {
     accumulatedPins = []
   }
 
-  // ── Helper: copy text to clipboard with execCommand fallback ───────────────
+  // ── Helper: copy text through the extension-owned offscreen document ───────
 
   function copyText(text: string): void {
-    navigator.clipboard.writeText(text).catch(() => {
-      // Fallback for pages where the Clipboard API is blocked by Permissions-Policy
-      try {
-        const ta = document.createElement('textarea')
-        ta.value = text
-        ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none;'
-        document.body.appendChild(ta)
-        ta.focus()
-        ta.select()
-        document.execCommand('copy')
-        ta.remove()
-      } catch {}
-    })
+    void chrome.runtime.sendMessage({ action: 'copyToolbarText', text })
   }
 
-  // ── Pin mode: allocate the next reference name ─────────────────────────────
+  // ── Pin mode: expose a selected element to Playwright's MAIN world ─────────
 
-  function allocatePinName(): `playwriterPinnedElem${number}` {
-    // Sync with the shared MAIN-world counter so right-click and toolbar
-    // pins never produce conflicting globalThis.playwriterPinnedElemN names
-    const shared = window.__playwriterPinCount
-    if (typeof shared === 'number' && shared > pinCount) pinCount = shared
-    pinCount++
-    window.__playwriterPinCount = pinCount
-    return `playwriterPinnedElem${pinCount}`
+  async function pinTarget(target: Element): Promise<number | null> {
+    const markerBytes = new Uint8Array(16)
+    crypto.getRandomValues(markerBytes)
+    const marker = Array.from(markerBytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+    target.setAttribute('data-playwriter-pin-target', marker)
+    try {
+      const result: { pinNumber?: number } | undefined = await chrome.runtime.sendMessage({
+        action: 'pinToolbarElement',
+        marker,
+      })
+      return result?.pinNumber || null
+    } catch {
+      return null
+    } finally {
+      if (target.getAttribute('data-playwriter-pin-target') === marker) {
+        target.removeAttribute('data-playwriter-pin-target')
+      }
+    }
   }
 
   // ── Pin mode event handlers ────────────────────────────────────────────────
@@ -503,18 +534,21 @@ export function initPlaywriterToolbar(): void {
     return `inspectPinnedElement(${URL_LIT},"globalThis.playwriterPinnedElem${n}")`
   }
 
-  function onClick(e: MouseEvent): void {
+  async function onClick(e: MouseEvent): Promise<void> {
+    if (!e.isTrusted) return
     if (isOverToolbar(e)) return
     e.preventDefault()
     e.stopImmediatePropagation()
 
     const target = getTargetAt(e.clientX, e.clientY)
     if (!target) return
+    const n = await pinTarget(target)
+    if (!pinModeActive) return
+    if (!n) {
+      showToast('Could not pin element')
+      return
+    }
     playSound('success')
-
-    const name = allocatePinName()
-    const n = pinCount
-    window[name] = target
     const url = location.href
 
     if (e.shiftKey) {
@@ -628,6 +662,9 @@ export function initPlaywriterToolbar(): void {
 
   // Stop square icon (red filled square)
   const STOP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="#ef4444"/></svg>`
+
+  // Lucide cloud icon (light blue via .remote-btn svg color)
+  const CLOUD_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>`
 
   const SPINNER_SVG = `<svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="2.5" stroke-opacity="0.25"/><path d="M20 12a8 8 0 0 0-8-8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>`
 
@@ -803,6 +840,9 @@ export function initPlaywriterToolbar(): void {
 
   recordBtn.addEventListener('click', (e: MouseEvent) => {
     e.stopPropagation()
+    if (!isTrustedToolbarClick(e)) {
+      return
+    }
     if (isRecording) {
       playSound('click')
       window.__playwriterToolbarStopRecording?.()
@@ -823,6 +863,47 @@ export function initPlaywriterToolbar(): void {
 
   const sep2 = document.createElement('div')
   sep2.className = 'separator'
+
+  // Remote control button — shares this tab with a remote agent via a secret
+  // tunnel URL. Toggling off kills the link. See extension/src/remote-tunnel.ts.
+  let remoteActive = false
+  const remoteBtn = document.createElement('button')
+  remoteBtn.className = 'record-btn remote-btn'
+
+  function updateRemoteBtn(): void {
+    remoteBtn.classList.toggle('remote-active', remoteActive)
+    if (remoteActive) {
+      remoteBtn.innerHTML = CLOUD_SVG + ' <span>Remote ON</span>'
+      remoteBtn.setAttribute('data-tooltip', 'Stop remote control and revoke the link')
+      remoteBtn.setAttribute('aria-label', 'Stop remote control')
+      return
+    }
+    remoteBtn.innerHTML = CLOUD_SVG + ' <span>Remote control</span>'
+    remoteBtn.setAttribute('data-tooltip', 'Share this tab with a remote agent (copies prompt)')
+    remoteBtn.setAttribute('aria-label', 'Start remote control')
+  }
+  updateRemoteBtn()
+
+  function setRemote(active: boolean): void {
+    remoteActive = active
+    updateRemoteBtn()
+  }
+
+  remoteBtn.addEventListener('click', (e: MouseEvent) => {
+    e.stopPropagation()
+    if (!isTrustedToolbarClick(e)) {
+      return
+    }
+    playSound('click')
+    if (!window.__playwriterToolbarToggleRemote) {
+      showToast('Extension not connected')
+      return
+    }
+    window.__playwriterToolbarToggleRemote()
+  })
+
+  const sep3 = document.createElement('div')
+  sep3.className = 'separator'
 
   // Close button
   const closeBtn = document.createElement('button')
@@ -869,8 +950,10 @@ export function initPlaywriterToolbar(): void {
     const topPx = Math.round(e.clientY - dragOffset.y)
     const clampedLeft = Math.max(0, Math.min(window.innerWidth, leftPx))
     const clampedTop = Math.max(0, Math.min(window.innerHeight - 40, topPx))
-    host.style.left = clampedLeft + 'px'
-    host.style.top = clampedTop + 'px'
+    intendedLeft = clampedLeft + 'px'
+    intendedTop = clampedTop + 'px'
+    host.style.left = intendedLeft
+    host.style.top = intendedTop
   }
 
   function onDragMouseUp(): void {
@@ -897,6 +980,8 @@ export function initPlaywriterToolbar(): void {
     toolbarEl.appendChild(sep1)
     toolbarEl.appendChild(recordBtn)
     toolbarEl.appendChild(sep2)
+    toolbarEl.appendChild(remoteBtn)
+    toolbarEl.appendChild(sep3)
     toolbarEl.appendChild(closeBtn)
     toolbarEl.appendChild(dragHandle)
   }
@@ -919,6 +1004,20 @@ export function initPlaywriterToolbar(): void {
 
   window.__playwriterToolbarSetRecording = setRecording
 
+  window.__playwriterToolbarSetRemote = setRemote
+
+  window.__playwriterToolbarStartRecording = () => {
+    void chrome.runtime.sendMessage({ action: 'actionRecorderStart' })
+  }
+
+  window.__playwriterToolbarStopRecording = () => {
+    void chrome.runtime.sendMessage({ action: 'actionRecorderStop' })
+  }
+
+  window.__playwriterToolbarToggleRemote = () => {
+    void chrome.runtime.sendMessage({ action: 'remoteControlToggle' })
+  }
+
   // ── Cleanup hook called by background.ts on tab disconnect ─────────────────
 
   window.__playwriterToolbarDestroy = function (): void {
@@ -931,8 +1030,9 @@ export function initPlaywriterToolbar(): void {
     delete window.__playwriterToolbarSetRecording
     delete window.__playwriterToolbarStopRecording
     delete window.__playwriterToolbarStartRecording
+    delete window.__playwriterToolbarSetRemote
+    delete window.__playwriterToolbarToggleRemote
     delete window.__playwriterToolbarShowToast
     delete window.__playwriterToolbarPlaySound
-    delete window.__playwriterPinCount
   }
 }

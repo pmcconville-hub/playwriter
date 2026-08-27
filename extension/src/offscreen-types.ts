@@ -48,11 +48,17 @@ export interface OffscreenCancelRecordingMessage {
   tabId: number
 }
 
+export interface OffscreenCopyTextMessage {
+  action: 'copyText'
+  text: string
+}
+
 export type OffscreenMessage =
   | OffscreenStartRecordingMessage
   | OffscreenStopRecordingMessage
   | OffscreenIsRecordingMessage
   | OffscreenCancelRecordingMessage
+  | OffscreenCopyTextMessage
 
 // Offscreen document response types
 export type OffscreenStartRecordingResult =
@@ -93,6 +99,8 @@ export type OffscreenCancelRecordingResult =
       success: false
       error: string
     }
+
+export type OffscreenCopyTextResult = { success: true } | { success: false; error: string }
 
 // Messages sent FROM offscreen TO background
 export interface OffscreenRecordingChunkMessage {
