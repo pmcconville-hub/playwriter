@@ -1670,7 +1670,7 @@ export class PlaywrightExecutor {
           }
           return {
             tag: el.tagName.toLowerCase(),
-            className: (el.className?.toString() || '').slice(0, 80),
+            className: (el.getAttribute('class') || '').slice(0, 80),
             scrollHeight: el.scrollHeight,
             clientHeight: el.clientHeight,
             scrollWidth: el.scrollWidth,
@@ -1683,16 +1683,18 @@ export class PlaywrightExecutor {
             opacity: cs.opacity,
             visibility: cs.visibility,
             pointerEvents: cs.pointerEvents,
-            // Input state (only for form elements)
-            value: 'value' in htmlEl ? String(htmlEl.value).slice(0, 200) : null,
-            checked: 'checked' in htmlEl ? htmlEl.checked : null,
-            disabled: 'disabled' in htmlEl ? htmlEl.disabled : null,
-            readOnly: 'readOnly' in htmlEl ? htmlEl.readOnly : null,
+            // Input state (only for actual form controls)
+            isFormControl: el.matches('input, textarea, select, button, option'),
+            value: el.matches('input, textarea, select, option') ? String(htmlEl.value).slice(0, 200) : null,
+            checked: el.matches('input') && 'checked' in htmlEl ? htmlEl.checked : null,
+            disabled: el.matches('input, textarea, select, button') && htmlEl.disabled ? true : null,
+            readOnly: el.matches('input, textarea') && htmlEl.readOnly ? true : null,
             aria,
             computed: Object.fromEntries(args.props.map((p: string) => [p, cs.getPropertyValue(p)])),
           }
         }, { props: properties?.length ? properties : DEFAULT_INSPECT_PROPERTIES, ariaAttrs: INSPECT_ARIA_ATTRS })
-        const tag = info.className ? `${info.tag}.${info.className.split(' ')[0]}` : info.tag
+        const firstClass = info.className.split(/\s+/).filter(Boolean)[0]
+        const tag = firstClass ? `${info.tag}.${firstClass}` : info.tag
         const boxStr = box ? `x=${Math.round(box.x)} y=${Math.round(box.y)} w=${Math.round(box.width)} h=${Math.round(box.height)}` : 'not visible'
         const styles = Object.entries(info.computed).map(([k, v]) => `${k}=${v || 'unset'}`).join(' ')
 
@@ -1701,14 +1703,16 @@ export class PlaywrightExecutor {
         if (info.opacity !== '1') visibilityParts.push(`opacity=${info.opacity}`)
         if (info.visibility !== 'visible') visibilityParts.push(`visibility=${info.visibility}`)
         if (info.pointerEvents !== 'auto') visibilityParts.push(`pointer-events=${info.pointerEvents}`)
-        if (!box) visibilityParts.push('offscreen')
+        if (!box) visibilityParts.push('not rendered')
 
-        // Input state: only show for form elements
+        // Input state: only show for actual form controls
         const inputParts: string[] = []
-        if (info.value !== null) inputParts.push(`value="${info.value}"`)
-        if (info.checked !== null) inputParts.push(`checked=${info.checked}`)
-        if (info.disabled !== null && info.disabled) inputParts.push('disabled')
-        if (info.readOnly !== null && info.readOnly) inputParts.push('readOnly')
+        if (info.isFormControl) {
+          if (info.value !== null) inputParts.push(`value="${info.value}"`)
+          if (info.checked !== null) inputParts.push(`checked=${info.checked}`)
+          if (info.disabled) inputParts.push('disabled')
+          if (info.readOnly) inputParts.push('readOnly')
+        }
 
         const lines = [
           `Element: ${tag}`,
