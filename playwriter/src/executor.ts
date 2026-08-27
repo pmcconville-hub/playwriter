@@ -1653,6 +1653,78 @@ export class PlaywrightExecutor {
         return process.getBuiltinModule(id)
       }
 
+      const DEFAULT_INSPECT_PROPERTIES = ['overflow-y', 'overflow-x', 'position', 'max-height', 'display', 'flex-direction', 'flex-shrink']
+      const INSPECT_ARIA_ATTRS = ['aria-expanded', 'aria-selected', 'aria-hidden', 'aria-disabled', 'aria-checked', 'aria-pressed', 'aria-current']
+
+      const inspect = async (options: { locator: Locator; properties?: string[] }) => {
+        const { locator, properties } = options
+        const box = await locator.boundingBox()
+        const info = await locator.evaluate((el, args) => {
+          const cs = window.getComputedStyle(el as any)
+          const htmlEl = el as any
+          // Aria attributes (only include ones that are actually set)
+          const aria: Record<string, string> = {}
+          for (const attr of args.ariaAttrs) {
+            const val = el.getAttribute(attr)
+            if (val !== null) aria[attr] = val
+          }
+          return {
+            tag: el.tagName.toLowerCase(),
+            className: (el.className?.toString() || '').slice(0, 80),
+            scrollHeight: el.scrollHeight,
+            clientHeight: el.clientHeight,
+            scrollWidth: el.scrollWidth,
+            clientWidth: el.clientWidth,
+            scrollTop: el.scrollTop,
+            scrollLeft: el.scrollLeft,
+            childCount: el.children.length,
+            textLength: (el.textContent || '').trim().length,
+            // Visibility
+            opacity: cs.opacity,
+            visibility: cs.visibility,
+            pointerEvents: cs.pointerEvents,
+            // Input state (only for form elements)
+            value: 'value' in htmlEl ? String(htmlEl.value).slice(0, 200) : null,
+            checked: 'checked' in htmlEl ? htmlEl.checked : null,
+            disabled: 'disabled' in htmlEl ? htmlEl.disabled : null,
+            readOnly: 'readOnly' in htmlEl ? htmlEl.readOnly : null,
+            aria,
+            computed: Object.fromEntries(args.props.map((p: string) => [p, cs.getPropertyValue(p)])),
+          }
+        }, { props: properties?.length ? properties : DEFAULT_INSPECT_PROPERTIES, ariaAttrs: INSPECT_ARIA_ATTRS })
+        const tag = info.className ? `${info.tag}.${info.className.split(' ')[0]}` : info.tag
+        const boxStr = box ? `x=${Math.round(box.x)} y=${Math.round(box.y)} w=${Math.round(box.width)} h=${Math.round(box.height)}` : 'not visible'
+        const styles = Object.entries(info.computed).map(([k, v]) => `${k}=${v || 'unset'}`).join(' ')
+
+        // Visibility: only show if something is non-default
+        const visibilityParts: string[] = []
+        if (info.opacity !== '1') visibilityParts.push(`opacity=${info.opacity}`)
+        if (info.visibility !== 'visible') visibilityParts.push(`visibility=${info.visibility}`)
+        if (info.pointerEvents !== 'auto') visibilityParts.push(`pointer-events=${info.pointerEvents}`)
+        if (!box) visibilityParts.push('offscreen')
+
+        // Input state: only show for form elements
+        const inputParts: string[] = []
+        if (info.value !== null) inputParts.push(`value="${info.value}"`)
+        if (info.checked !== null) inputParts.push(`checked=${info.checked}`)
+        if (info.disabled !== null && info.disabled) inputParts.push('disabled')
+        if (info.readOnly !== null && info.readOnly) inputParts.push('readOnly')
+
+        const lines = [
+          `Element: ${tag}`,
+          `Box: ${boxStr}`,
+          `Children: ${info.childCount}  Text length: ${info.textLength}`,
+          `Scroll Y: size=${info.scrollHeight} client=${info.clientHeight} overflowing=${info.scrollHeight > info.clientHeight} top=${info.scrollTop}`,
+          `Scroll X: size=${info.scrollWidth} client=${info.clientWidth} overflowing=${info.scrollWidth > info.clientWidth} left=${info.scrollLeft}`,
+          `Styles: ${styles}`,
+        ]
+        if (visibilityParts.length) lines.push(`Visibility: ${visibilityParts.join(' ')}`)
+        if (inputParts.length) lines.push(`Input: ${inputParts.join(' ')}`)
+        const ariaEntries = Object.entries(info.aria)
+        if (ariaEntries.length) lines.push(`Aria: ${ariaEntries.map(([k, v]) => `${k}=${v}`).join(' ')}`)
+        return lines.join('\n')
+      }
+
       let vmContextObj: any = {
         page,
         context,
@@ -1661,6 +1733,7 @@ export class PlaywrightExecutor {
         console: customConsole,
         snapshot,
         accessibilitySnapshot: snapshot, // backward compat alias
+        inspect,
         refToLocator,
         getCleanHTML,
         getPageMarkdown,

@@ -200,6 +200,15 @@ playwriter -s 1 -e '...'
 ```
 
 PLAYWRITER_EXEC_TIMEOUT is the default fallback. --timeout overrides it, and MCP clients can set the env var or pass a per-call timeout.
+
+**File-based execution:** for complex multi-line code, write a `.js` file and run it with `-f` instead of fighting with bash quoting:
+
+```bash
+playwriter -s 1 -f ./scripts/my-automation.js
+```
+
+`-f` and `-e` cannot be used together. The file content is executed with the same sandbox context (page, context, state, snapshot, etc.).
+
 **Examples:**
 
 ```bash
@@ -435,7 +444,7 @@ Writing to any other path (e.g. `~/Downloads`, `~/Desktop`) throws `EPERM: opera
 - **Minimize timeouts**: prefer proper waits (`waitForSelector`, `waitForPageLoad`) over `state.page.waitForTimeout()`. Short timeouts (1-2s) are acceptable for non-deterministic events like animations, tab opens, or async UI updates where no specific selector is available
 - **Snapshot before screenshot**: always use `snapshot()` first to understand page state (text-based, fast, cheap). Only use `screenshot` when you specifically need visual/spatial information. Never take a screenshot just to check if a page loaded or to read text content — snapshot gives you that instantly without burning image tokens
 - **Always use absolute file paths for Playwright artifact APIs**: for `page.screenshot({ path })`, `locator.screenshot({ path })`, `elementHandle.screenshot({ path })`, `page.pdf({ path })`, `download.saveAs(path)`, and `video.saveAs(path)`, always pass an absolute path. Relative paths are resolved by Playwright client internals, not the sandboxed `fs`, so they may use the relay server cwd instead of your session cwd.
-- **Snapshot replaces page.evaluate() for inspection**: do NOT write `page.evaluate()` calls to manually query class names, bounding boxes, child counts, or visibility flags. `snapshot()` already shows every interactive element with its text, role, and a ready-to-use locator. If you catch yourself writing `document.querySelector` or `getBoundingClientRect` inside evaluate — stop and use `snapshot()` instead. Reserve `page.evaluate()` for actions that modify page state (e.g., `localStorage.clear()`, scroll manipulation) or extract non-DOM data (e.g., `window.__CONFIG__`)
+- **Use snapshot() for element discovery, inspect() for layout**: `snapshot()` shows roles, text, and locators — use it to find elements and check visibility. `inspect()` shows bounding boxes, scroll state, and computed styles — use it when you need layout or scroll info. Do NOT write `page.evaluate()` calls to query class names, bounding boxes, or visibility flags. Reserve `page.evaluate()` for state mutations (e.g., `localStorage.clear()`, `el.scrollTop += 300`) or extracting non-DOM data (e.g., `window.__CONFIG__`)
 
 ## interaction feedback loop
 
@@ -913,6 +922,36 @@ console.log('Saved', buf.length, 'bytes')
 For carousels or lazy-loaded galleries, you may need to click navigation arrows or scroll first, then re-extract. Use network interception (see "network interception" section) to capture high-resolution CDN URLs that may differ from the `img.src` thumbnails.
 
 ## utility functions
+
+**inspect** - get layout, scroll, visibility, input state, and aria attributes for a locator as formatted text. Use this instead of `page.evaluate()` for element inspection:
+
+```js
+const info = await inspect({ locator: state.page.locator('.sidebar') })
+console.log(info)
+// Element: div.sidebar
+// Box: x=1000 y=144 w=396 h=756
+// Children: 4  Text length: 1832
+// Scroll Y: size=1200 client=756 overflowing=true top=0
+// Scroll X: size=396 client=396 overflowing=false left=0
+// Styles: overflow-y=auto overflow-x=visible position=sticky max-height=756px display=flex flex-direction=column flex-shrink=0
+
+// Visibility line only appears when something is non-default:
+// Visibility: opacity=0 pointer-events=none
+
+// Input line only appears for form elements:
+// Input: value="hello" checked=true disabled
+
+// Aria line only appears when aria attributes are set:
+// Aria: aria-expanded=true aria-selected=false
+
+// Custom CSS properties
+const info = await inspect({
+  locator: state.page.locator('.card'),
+  properties: ['background-color', 'border-radius', 'gap', 'padding']
+})
+```
+
+Default CSS properties: `overflow-y`, `overflow-x`, `position`, `max-height`, `display`, `flex-direction`, `flex-shrink`. Override with the `properties` array. Visibility, input state, and aria attributes are always checked regardless of `properties`.
 
 **getLatestLogs** - retrieve captured browser console logs and page errors (up to 5000 per page):
 
