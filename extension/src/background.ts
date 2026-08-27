@@ -2997,7 +2997,13 @@ async function copyTextInOffscreenDocument(text: string): Promise<void> {
 // Handle messages from content scripts (recorder commands) and offscreen document (recording chunks)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'copyToolbarText') {
-    if (!sender.tab?.id || sender.frameId !== 0 || typeof message.text !== 'string') {
+    const senderTabId = sender.tab?.id
+    if (
+      !senderTabId ||
+      sender.frameId !== 0 ||
+      store.getState().tabs.get(senderTabId)?.state !== 'connected' ||
+      typeof message.text !== 'string'
+    ) {
       return false
     }
     void copyTextInOffscreenDocument(message.text).then(
@@ -3014,7 +3020,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.action === 'pinToolbarElement') {
     const senderTabId = sender.tab?.id
-    if (!senderTabId || sender.frameId !== 0 || typeof message.marker !== 'string') {
+    if (
+      !senderTabId ||
+      sender.frameId !== 0 ||
+      store.getState().tabs.get(senderTabId)?.state !== 'connected' ||
+      typeof message.marker !== 'string'
+    ) {
       return false
     }
     void chrome.scripting
@@ -3051,7 +3062,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // and warn the user never to share it. On disable: kill the tunnel/link.
   if (message.action === 'remoteControlToggle') {
     const senderTabId = sender.tab?.id
-    if (!senderTabId || sender.frameId !== 0) {
+    if (!senderTabId || sender.frameId !== 0 || store.getState().tabs.get(senderTabId)?.state !== 'connected') {
       return false
     }
     void (async () => {
@@ -3084,7 +3095,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Action recorder start/stop: isolated toolbar → service worker → relay HTTP endpoint.
   if (message.action === 'actionRecorderStart') {
     const senderTabId = sender.tab?.id
-    if (!senderTabId || sender.frameId !== 0) {
+    if (!senderTabId || sender.frameId !== 0 || store.getState().tabs.get(senderTabId)?.state !== 'connected') {
       return false
     }
     if (toolbarRecordingId || toolbarStartInFlight) {
@@ -3130,7 +3141,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.action === 'actionRecorderStop') {
     const senderTabId = sender.tab?.id
-    if (!senderTabId || sender.frameId !== 0) {
+    if (!senderTabId || sender.frameId !== 0 || store.getState().tabs.get(senderTabId)?.state !== 'connected') {
       return false
     }
     fetch(`http://${RELAY_HOST}:${RELAY_PORT}/recorder/stop`, {
@@ -3159,10 +3170,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           'Then run:',
           'playwriter recorder events -r ' + result.recordingId,
         ].join('\n')
-        await copyTextInOffscreenDocument(prompt)
         setRecorderStateInTab(senderTabId, false)
-        toastToolbar(senderTabId, 'Prompt copied to clipboard')
-        playToolbarSound(senderTabId, 'success')
+        try {
+          await copyTextInOffscreenDocument(prompt)
+          toastToolbar(senderTabId, 'Prompt copied to clipboard')
+          playToolbarSound(senderTabId, 'success')
+        } catch (error) {
+          logger.error('Could not copy recorder prompt:', error)
+          toastToolbar(senderTabId, `Copy failed. Run: playwriter recorder events -r ${result.recordingId}`)
+        }
       })
       .catch((err) => {
         logger.error('Action recorder stop failed:', err)

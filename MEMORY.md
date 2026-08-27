@@ -215,3 +215,19 @@ disconnecting everything` also fails on clean HEAD (verified via worktree).
 slower than the 10s exec timeout. `relay-session.test.ts > list scripts with
 Debugger class` flakes intermittently (passes on retry).
 Neither is a regression signal for unrelated changes.
+
+## Toolbar runs in ISOLATED world, never MAIN (Apr 2026)
+
+Privileged toolbar buttons must call `chrome.runtime.sendMessage` from the
+ISOLATED world. A `window.postMessage` bridge lets any page script start
+recording or remote control. Page CSS still styles the light-DOM host, so it
+needs `all:initial`; `example.com` ships `div{opacity:.8}` which silently
+disabled both buttons until the click guard started toasting on rejection.
+
+## Offscreen document must filter chrome.runtime messages (Apr 2026)
+
+`chrome.runtime.sendMessage` broadcasts to every extension context. An
+unfiltered offscreen listener that returns `true` answers service-worker
+actions first and breaks them. Offscreen clipboard writes also need
+`document.execCommand('copy')` on a textarea: offscreen documents can never be
+focused, so `navigator.clipboard.writeText` always rejects there.

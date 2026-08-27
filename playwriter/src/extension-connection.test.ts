@@ -142,20 +142,26 @@ describe('Extension Connection Tests', () => {
       }, remoteState[0].rootTabId)
     }
 
-    const clipboardResult = await serviceWorker.evaluate(async () => {
+    // chrome.runtime.sendMessage broadcasts to every extension context, so the
+    // offscreen document must ignore actions it does not own. Keep the pin check
+    // below while this document is alive: an unfiltered offscreen listener answers
+    // 'pinToolbarElement' before the service worker and silently breaks pinning.
+    const clipboard = await serviceWorker.evaluate(async () => {
       const offscreenUrl = chrome.runtime.getURL('src/offscreen.html')
       const existing = await chrome.runtime.getContexts({
         contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
         documentUrls: [offscreenUrl],
       })
-      if (existing.length === 0) {
+      const created = existing.length === 0
+      if (created) {
         await chrome.offscreen.createDocument({
           url: 'src/offscreen.html',
           reasons: [chrome.offscreen.Reason.CLIPBOARD],
           justification: 'Test isolated clipboard and message routing',
         })
       }
-      return await chrome.runtime.sendMessage({ action: 'copyText', text: 'isolated toolbar test' })
+      const result = await chrome.runtime.sendMessage({ action: 'copyText', text: 'isolated toolbar test' })
+      return { result, created }
     })
 
     const pinResult = await serviceWorker.evaluate(async () => {
@@ -184,9 +190,11 @@ describe('Extension Connection Tests', () => {
       })
       return result.result
     })
-    await serviceWorker.evaluate(async () => {
-      await chrome.offscreen.closeDocument()
-    })
+    if (clipboard.created) {
+      await serviceWorker.evaluate(async () => {
+        await chrome.offscreen.closeDocument()
+      })
+    }
     const pinnedText = await page.evaluate(() => {
       return window.playwriterPinnedElem1?.textContent
     })
@@ -194,9 +202,52 @@ describe('Extension Connection Tests', () => {
 
     expect(pageCallbacks).toEqual({ recorder: 'undefined', remote: 'undefined' })
     expect(remoteState).toEqual([])
-    expect(clipboardResult).toEqual({ success: true })
+    expect(clipboard.result).toEqual({ success: true })
     expect(pinResult).toEqual({ pinNumber: 1 })
     expect(pinnedText).toContain('Example Domain')
+  }, 120000)
+
+  // Clicks the real button instead of calling the handler, so the trusted-click guard
+  // stays covered. Keep example.com: it ships `div{opacity:0.8}`, which once matched the
+  // toolbar host and disabled Record Skill and Remote control on every page.
+  it('starts and stops Record Skill from a real toolbar click', async () => {
+    const browserContext = getBrowserContext()
+    const serviceWorker = await getExtensionServiceWorker(browserContext)
+    const page = await browserContext.newPage()
+    await page.goto('https://example.com/')
+    await page.bringToFront()
+    await serviceWorker.evaluate(async () => {
+      await globalThis.toggleExtensionForActiveTab()
+    })
+    const toolbar = page.locator('[data-playwriter-toolbar="1"]').first()
+    await toolbar.waitFor()
+    const box = await toolbar.boundingBox()
+    if (!box) {
+      throw new Error('Toolbar is not visible')
+    }
+
+    await page.mouse.click(box.x + 90, box.y + box.height / 2)
+    await expect
+      .poll(async () => {
+        const response = await fetch(`http://127.0.0.1:${TEST_PORT}/recorder/status`)
+        const status = (await response.json()) as { recordings: Array<{ recordingId: string }> }
+        return status.recordings.length
+      })
+      .toBe(1)
+
+    const activeBox = await toolbar.boundingBox()
+    if (!activeBox) {
+      throw new Error('Active toolbar is not visible')
+    }
+    await page.mouse.click(activeBox.x + 90, activeBox.y + activeBox.height / 2)
+    await expect
+      .poll(async () => {
+        const response = await fetch(`http://127.0.0.1:${TEST_PORT}/recorder/status`)
+        const status = (await response.json()) as { recordings: Array<{ recordingId: string }> }
+        return status.recordings.length
+      })
+      .toBe(0)
+    await page.close()
   }, 120000)
 
   it('should handle new pages and toggling with persistent connection', async () => {

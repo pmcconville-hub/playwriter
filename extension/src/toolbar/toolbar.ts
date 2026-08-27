@@ -88,7 +88,7 @@ export function initPlaywriterToolbar(): void {
   // control interactivity without the host element itself blocking page events.
   // No contain:paint — it clips box-shadow to the host's rectangular bounds.
   host.style.cssText =
-    `position:fixed;top:${initTop};left:${initLeft};transform:translateX(-50%);z-index:2147483647;pointer-events:none;font-size:0;line-height:0;contain:layout style;`
+    `all:initial;position:fixed;top:${initTop};left:${initLeft};transform:translateX(-50%);z-index:2147483647;pointer-events:none;opacity:1;visibility:visible;display:block;filter:none;font-size:0;line-height:0;contain:layout style;`
 
   // Closed shadow root: page scripts cannot access our toolbar DOM
   const shadow = host.attachShadow({ mode: 'closed' })
@@ -277,7 +277,7 @@ export function initPlaywriterToolbar(): void {
   const toastHost = document.createElement('div')
   toastHost.setAttribute('data-playwriter-toolbar', '1')
   toastHost.style.cssText =
-    'position:fixed;inset:0;z-index:2147483647;pointer-events:none;'
+    'all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none;opacity:1;visibility:visible;display:block;filter:none;'
   const toastShadow = toastHost.attachShadow({ mode: 'closed' })
   const toastStyle = document.createElement('style')
   toastStyle.textContent = `
@@ -428,24 +428,42 @@ export function initPlaywriterToolbar(): void {
     return e.composedPath().some((node) => node === host)
   }
 
+  // Guards the privileged buttons (Record Skill, Remote control) against UI redress.
+  // The shadow root is closed, so a page cannot click the buttons directly, but the
+  // host lives in the page's light DOM and page CSS can still restyle it. The host
+  // therefore uses `all:initial` and these checks reject clicks when the bar is
+  // hidden, filtered, covered, or moved away from where the user last put it.
+  // ALWAYS toast on rejection: a silent guard once hid a real bug where
+  // example.com's `div{opacity:.8}` disabled both buttons on every page.
+  // Tolerance is relative because `html{zoom}` scales getBoundingClientRect.
   function isTrustedToolbarClick(e: MouseEvent): boolean {
     if (!e.isTrusted || !navigator.userActivation.isActive) {
       return false
     }
     const style = getComputedStyle(host)
-    if (style.display === 'none' || style.visibility !== 'visible' || Number(style.opacity) < 0.9) {
-      return false
-    }
-    if (document.elementFromPoint(e.clientX, e.clientY) !== host) {
-      return false
-    }
+    const restyled =
+      style.display === 'none' ||
+      style.visibility !== 'visible' ||
+      Number(style.opacity) < 0.9 ||
+      style.filter !== 'none' ||
+      style.backdropFilter !== 'none'
     const resolvePosition = (value: string, viewportSize: number): number => {
       return value.endsWith('%') ? (parseFloat(value) / 100) * viewportSize : parseFloat(value)
+    }
+    const tolerance = (expected: number): number => {
+      return Math.max(2, Math.abs(expected) * 0.25)
     }
     const rect = host.getBoundingClientRect()
     const expectedCenterX = resolvePosition(intendedLeft, window.innerWidth)
     const expectedTop = resolvePosition(intendedTop, window.innerHeight)
-    return Math.abs(rect.left + rect.width / 2 - expectedCenterX) < 2 && Math.abs(rect.top - expectedTop) < 2
+    const moved =
+      Math.abs(rect.left + rect.width / 2 - expectedCenterX) >= tolerance(expectedCenterX) ||
+      Math.abs(rect.top - expectedTop) >= tolerance(expectedTop)
+    if (restyled || moved || document.elementFromPoint(e.clientX, e.clientY) !== host) {
+      showToast('Blocked: this page is restyling the Playwriter toolbar')
+      return false
+    }
+    return true
   }
 
   // ── Helper: flash green outline on a pinned element ────────────────────────
