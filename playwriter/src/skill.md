@@ -119,10 +119,11 @@ playwriter -s 1 -e "await page.goto('https://example.com')"
 
 ### Remote control (drive a tab in another user's browser)
 
-When a user shares a tab with you, they send a secret tunnel URL like `https://playwriter.dev/r/xxx` (created by clicking the **Remote control** button in the Playwriter toolbar of their browser). The user needs no playwriter install — only the extension. Connect to it with:
+When a user shares a tab with you, they send a secret link like `https://playwriter.dev/remote-control#xxx` (created by clicking the **Remote control** button in the Playwriter toolbar of their browser). The user needs no playwriter install — only the extension. Connect to it with:
 
 ```bash
-playwriter session new --remote-control https://playwriter.dev/r/xxx
+# quote the URL: an unquoted # starts a shell comment and drops the id
+playwriter session new --remote-control 'https://playwriter.dev/remote-control#xxx'
 # prints a session id; use it normally afterwards, no extra flags needed
 playwriter -s 1 -e "console.log(await page.title())"
 ```

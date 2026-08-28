@@ -16,7 +16,7 @@ import type { ExtensionCommandMessage, ExtensionResponseMessage } from 'playwrit
 import { handleGhostBrowserCommand, type GhostBrowserCommandParams } from 'playwriter/src/ghost-browser'
 import { RemoteTunnel } from './remote-tunnel'
 import {
-  REMOTE_TUNNEL_BASE_URL,
+  REMOTE_TUNNEL_BASE_DOMAIN,
   buildRemoteHelloMessage,
   buildRemoteControlPrompt,
   buildRemoteTabNotSharedError,
@@ -2056,7 +2056,7 @@ async function startRemoteControlForTab(
   const tunnelId = options.tunnelId || generateTunnelId()
   const tunnel = new RemoteTunnel({
     tunnelId,
-    baseUrl: REMOTE_TUNNEL_BASE_URL,
+    baseDomain: REMOTE_TUNNEL_BASE_DOMAIN,
     logger,
     onStatusChange: (status, detail) => {
       const runtime = remoteTunnels.get(tabId)

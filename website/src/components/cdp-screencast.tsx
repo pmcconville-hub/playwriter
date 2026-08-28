@@ -1,10 +1,26 @@
-// CDP screencast viewer: connects to a raw Chrome DevTools Protocol WebSocket,
-// streams Page.screencastFrame JPEG images onto a canvas, and relays mouse/keyboard
-// input back via Input.dispatch* commands. Inspired by RedPlanetHQ/core's cdp-viewer.
+// CDP screencast viewer: streams Page.screencastFrame JPEG images onto a canvas and
+// relays mouse/keyboard input back via Input.dispatch* commands.
+// Inspired by RedPlanetHQ/core's cdp-viewer.
+//
+// Two transports are supported:
+//   'raw'       a Chrome DevTools Protocol WebSocket (cloud browsers)
+//   'extension' a Playwriter remote-control tunnel, which wraps CDP in the
+//               extension protocol (see playwriter/src/remote-control.ts)
+//
+// The transports also differ in how the page session is found and in how much the
+// viewer is allowed to change. A cloud browser is ours to resize; a shared tab
+// belongs to a real person, so 'extension' never overrides device metrics.
 'use client'
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  decodeExtensionCdpMessage,
+  encodeExtensionCdpCommand,
+  readAttachedTargetSession,
+} from 'playwriter/src/remote-control'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '../lib/utils.ts'
+
+export type CdpTransport = 'raw' | 'extension'
 
 // ── CdpClient ──────────────────────────────────────────────────────
 // Minimal CDP client over a browser WebSocket. Handles id-based request/response
@@ -17,7 +33,10 @@ class CdpClient {
   private pending = new Map<number, (msg: { result?: unknown; error?: { message: string } }) => void>()
   private listeners = new Map<string, Set<CdpListener>>()
 
-  constructor(private ws: WebSocket) {
+  constructor(
+    private ws: WebSocket,
+    private transport: CdpTransport = 'raw',
+  ) {
     try {
       ws.binaryType = 'arraybuffer'
     } catch {
@@ -48,6 +67,11 @@ class CdpClient {
       return
     }
 
+    if (this.transport === 'extension') {
+      this.onExtensionMessage(data)
+      return
+    }
+
     let msg: { id?: number; result?: unknown; error?: { message: string }; method?: string; params?: unknown; sessionId?: string }
     try {
       msg = JSON.parse(data)
@@ -65,17 +89,38 @@ class CdpClient {
       return
     }
 
-    // Event dispatch
-    const sid = msg.sessionId ?? ''
-    const subs = this.listeners.get(sid)
+    this.emit(msg.sessionId ?? '', msg.method!, msg.params)
+  }
+
+  private onExtensionMessage(data: string): void {
+    const decoded = decodeExtensionCdpMessage(data)
+    if (decoded.kind === 'response') {
+      const r = this.pending.get(decoded.id)
+      if (r) {
+        this.pending.delete(decoded.id)
+        // The extension reports errors as a plain string, not { message }.
+        r({ result: decoded.result, error: decoded.error ? { message: decoded.error } : undefined })
+      }
+      return
+    }
+    if (decoded.kind === 'event') {
+      this.emit(decoded.sessionId, decoded.method, decoded.params)
+    }
+  }
+
+  private emit(sessionId: string, method: string, params: unknown): void {
+    const subs = this.listeners.get(sessionId)
     if (subs) {
-      for (const sub of subs) sub(msg.method!, msg.params)
+      for (const sub of subs) sub(method, params)
     }
   }
 
   send<T = unknown>(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<T> {
     const id = this.nextId++
-    const frame = JSON.stringify({ id, method, params, sessionId })
+    const frame =
+      this.transport === 'extension'
+        ? encodeExtensionCdpCommand({ id, method, params, sessionId })
+        : JSON.stringify({ id, method, params, sessionId })
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, (msg) => {
         if (msg.error) {
@@ -97,6 +142,43 @@ class CdpClient {
     set.add(listener)
     return () => set!.delete(listener)
   }
+}
+
+/**
+ * Find the page session to drive.
+ *
+ * raw: discover targets and attach ourselves.
+ * extension: the extension pushes `Target.attachedToTarget` for the shared tab
+ * right after `hello`, so we only listen. There is nothing to attach to, and
+ * `Target.attachToTarget` is not part of the shared-tab surface.
+ */
+function attachToPage({ cdp, transport, timeoutMs = 15_000 }: { cdp: CdpClient; transport: CdpTransport; timeoutMs?: number }): Promise<{ sessionId: string; url: string }> {
+  if (transport === 'raw') {
+    return (async () => {
+      await cdp.send('Target.setDiscoverTargets', { discover: true })
+      const { targetInfos } = await cdp.send<{ targetInfos: Array<{ targetId: string; type: string; url?: string }> }>('Target.getTargets')
+      const pageTarget = targetInfos.find((t) => {
+        return t.type === 'page'
+      })
+      if (!pageTarget) throw new Error('No page target found')
+      const { sessionId } = await cdp.send<{ sessionId: string }>('Target.attachToTarget', { targetId: pageTarget.targetId, flatten: true })
+      return { sessionId, url: pageTarget.url || '' }
+    })()
+  }
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      off()
+      reject(new Error('The shared tab never announced itself. The link may have been revoked.'))
+    }, timeoutMs)
+    const off = cdp.on('', (method, params) => {
+      const attached = readAttachedTargetSession({ kind: 'event', method, sessionId: '', params })
+      if (!attached) return
+      clearTimeout(timer)
+      off()
+      resolve(attached)
+    })
+  })
 }
 
 /** Bitmask matching CDP Input.dispatchKeyEvent.modifiers. */
@@ -146,6 +228,10 @@ function macEditorCommands(e: { key: string; altKey: boolean; ctrlKey: boolean; 
 
 type ScreencastStatus = 'connecting' | 'running' | 'ended' | 'error'
 
+/** No live frame for this long means the screencast stalled; start polling screenshots. */
+const SCREENCAST_STALL_MS = 1500
+const SCREENSHOT_POLL_MS = 700
+
 interface ScreencastFrameParams {
   data: string // base64 jpeg
   sessionId: number // CDP screencast ack id (not Target sessionId)
@@ -174,6 +260,8 @@ interface NavigationHistory {
 interface ScreencastApi {
   status: ScreencastStatus
   errorMsg: string
+  /** True while frames come from polled screenshots instead of the live screencast. */
+  degraded: boolean
   canvasRef: React.RefObject<HTMLCanvasElement | null>
   pageUrl: string
   navigate: (url: string) => void
@@ -201,7 +289,7 @@ interface ScreencastApi {
  *   6. Page.startScreencast -> Chromium begins emitting JPEG frames
  *   7. Each frame ack'd via Page.screencastFrameAck
  */
-function useCdpScreencast({ wsUrl, quality = 70, maxWidth = 1280 }: { wsUrl: string; quality?: number; maxWidth?: number }): ScreencastApi {
+function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1280 }: { wsUrl: string; transport?: CdpTransport; quality?: number; maxWidth?: number }): ScreencastApi {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const cdpRef = useRef<CdpClient | null>(null)
   const pageSessionRef = useRef<string>('')
@@ -211,11 +299,42 @@ function useCdpScreencast({ wsUrl, quality = 70, maxWidth = 1280 }: { wsUrl: str
   const [errorMsg, setErrorMsg] = useState<string>('')
   const [pageUrl, setPageUrl] = useState<string>('')
   const [reconnectKey, setReconnectKey] = useState(0)
+  const [degraded, setDegraded] = useState(false)
+  const lastFrameAtRef = useRef(0)
 
   useEffect(() => {
     let cancelled = false
+    let stallTimer: ReturnType<typeof setInterval> | null = null
     setStatus('connecting')
     setErrorMsg('')
+    setDegraded(false)
+
+    // Paint one JPEG onto the canvas. Shared by live screencast frames and by the
+    // screenshot fallback so both paths behave identically.
+    const paintJpegBase64 = (base64: string): void => {
+      const bin = atob(base64)
+      const bytes = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+      createImageBitmap(new Blob([bytes], { type: 'image/jpeg' }))
+        .then((bm) => {
+          if (cancelled) {
+            bm.close()
+            return
+          }
+          const c = canvasRef.current
+          if (!c) {
+            bm.close()
+            return
+          }
+          if (c.width !== bm.width || c.height !== bm.height) {
+            c.width = bm.width
+            c.height = bm.height
+          }
+          c.getContext('2d')?.drawImage(bm, 0, 0)
+          bm.close()
+        })
+        .catch(() => {})
+    }
 
     let ws: WebSocket
     try {
@@ -225,7 +344,7 @@ function useCdpScreencast({ wsUrl, quality = 70, maxWidth = 1280 }: { wsUrl: str
       setErrorMsg(err instanceof Error ? err.message : `Invalid WebSocket URL: ${wsUrl}`)
       return
     }
-    const cdp = new CdpClient(ws)
+    const cdp = new CdpClient(ws, transport)
     cdpRef.current = cdp
 
     ws.addEventListener('error', () => {
@@ -243,23 +362,11 @@ function useCdpScreencast({ wsUrl, quality = 70, maxWidth = 1280 }: { wsUrl: str
     ws.addEventListener('open', async () => {
       if (cancelled) return
       try {
-        await cdp.send('Target.setDiscoverTargets', { discover: true })
-        const { targetInfos } = await cdp.send<{
-          targetInfos: Array<{ targetId: string; type: string; url?: string }>
-        }>('Target.getTargets')
-        const pageTarget = targetInfos.find((t) => {
-          return t.type === 'page'
-        })
-        if (!pageTarget) throw new Error('No page target found')
-
-        const { sessionId } = await cdp.send<{ sessionId: string }>('Target.attachToTarget', {
-          targetId: pageTarget.targetId,
-          flatten: true,
-        })
+        const { sessionId, url: targetUrl } = await attachToPage({ cdp, transport })
         pageSessionRef.current = sessionId
 
         await cdp.send('Page.enable', {}, sessionId)
-        if (pageTarget.url && !cancelled) setPageUrl(pageTarget.url)
+        if (targetUrl && !cancelled) setPageUrl(targetUrl)
 
         // Track navigation
         cdp.on(sessionId, (method, params) => {
@@ -275,37 +382,24 @@ function useCdpScreencast({ wsUrl, quality = 70, maxWidth = 1280 }: { wsUrl: str
           // Ack immediately so Chromium keeps shipping frames
           cdp.send('Page.screencastFrameAck', { sessionId: p.sessionId }, sessionId).catch(() => {})
 
-          const canvas = canvasRef.current
-          if (!canvas) return
+          // A shared tab keeps its own size, so learn the viewport from the frame
+          // instead of forcing one. Input coordinates are mapped against this.
+          if (transport === 'extension' && p.metadata.deviceWidth && p.metadata.deviceHeight) {
+            const prev = viewportRef.current
+            if (!prev || prev.width !== p.metadata.deviceWidth || prev.height !== p.metadata.deviceHeight) {
+              viewportRef.current = { width: p.metadata.deviceWidth, height: p.metadata.deviceHeight, dpr: 1 }
+            }
+          }
+
+          lastFrameAtRef.current = Date.now()
+          setDegraded(false)
           // Decode off main thread via createImageBitmap (avoids base64 data URL jank)
-          const bin = atob(p.data)
-          const bytes = new Uint8Array(bin.length)
-          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-          const blob = new Blob([bytes], { type: 'image/jpeg' })
-          createImageBitmap(blob)
-            .then((bm) => {
-              if (cancelled) {
-                bm.close()
-                return
-              }
-              const c = canvasRef.current
-              if (!c) {
-                bm.close()
-                return
-              }
-              if (c.width !== bm.width || c.height !== bm.height) {
-                c.width = bm.width
-                c.height = bm.height
-              }
-              const ctx = c.getContext('2d')
-              if (ctx) ctx.drawImage(bm, 0, 0)
-              bm.close()
-            })
-            .catch(() => {})
+          paintJpegBase64(p.data)
         })
 
-        // Apply any pre-set viewport
-        const v = viewportRef.current
+        // Only a cloud browser may be resized. Overriding device metrics on a
+        // shared tab would visibly resize the page of the person sharing it.
+        const v = transport === 'raw' ? viewportRef.current : null
         if (v) {
           await cdp.send('Emulation.setDeviceMetricsOverride', { width: v.width, height: v.height, deviceScaleFactor: v.dpr, mobile: false }, sessionId)
         }
@@ -323,6 +417,40 @@ function useCdpScreencast({ wsUrl, quality = 70, maxWidth = 1280 }: { wsUrl: str
         )
 
         if (!cancelled) setStatus('running')
+
+        // Screencast normally keeps running even after the user switches tabs,
+        // because chrome.debugger attachment stops Chrome from backgrounding the
+        // shared tab (measured: 231 frames active vs 231 frames backgrounded, and
+        // document.visibilityState stays "visible"). It can still stall when the
+        // whole window is minimised or occluded, and other Chrome builds may
+        // differ, so never assume frames will arrive: poll screenshots whenever
+        // they stop, and switch back the moment a real frame shows up.
+        if (transport === 'extension') {
+          lastFrameAtRef.current = Date.now()
+          let polling = false
+          stallTimer = setInterval(async () => {
+            if (cancelled || polling) return
+            if (Date.now() - lastFrameAtRef.current < SCREENCAST_STALL_MS) return
+            polling = true
+            try {
+              const shot = await cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'jpeg', quality }, sessionId)
+              if (cancelled || !shot?.data) return
+              setDegraded(true)
+              paintJpegBase64(shot.data)
+              // Screencast metadata is what normally fills the viewport, so read it
+              // directly here or clicks would have nothing to map against.
+              const metrics = await cdp.send<{ cssVisualViewport?: { clientWidth?: number; clientHeight?: number } }>('Page.getLayoutMetrics', {}, sessionId)
+              const vp = metrics?.cssVisualViewport
+              if (vp?.clientWidth && vp?.clientHeight) {
+                viewportRef.current = { width: Math.round(vp.clientWidth), height: Math.round(vp.clientHeight), dpr: 1 }
+              }
+            } catch {
+              /* tab may be gone; the socket close handler reports it */
+            } finally {
+              polling = false
+            }
+          }, SCREENSHOT_POLL_MS)
+        }
       } catch (err) {
         if (cancelled) return
         setStatus('error')
@@ -332,11 +460,12 @@ function useCdpScreencast({ wsUrl, quality = 70, maxWidth = 1280 }: { wsUrl: str
 
     return () => {
       cancelled = true
+      if (stallTimer) clearInterval(stallTimer)
       try {
         ws.close()
       } catch {}
     }
-  }, [wsUrl, reconnectKey, quality, maxWidth])
+  }, [wsUrl, transport, reconnectKey, quality, maxWidth])
 
   // ── Navigation helpers ──────────────────────────────────────────
 
@@ -387,29 +516,42 @@ function useCdpScreencast({ wsUrl, quality = 70, maxWidth = 1280 }: { wsUrl: str
 
   // ── Input dispatch ──────────────────────────────────────────────
 
-  // CDP Input.dispatchMouseEvent expects CSS pixels (matching the viewport set
-  // via Emulation.setDeviceMetricsOverride), not DPR-scaled bitmap pixels.
-  // On Retina (DPR 2), canvas.width is 2x the CSS rect, so dividing by
-  // canvas.width would send coordinates 2x too large. Instead we map the
-  // pointer position proportionally to the viewport dimensions.
+  // CDP Input.dispatchMouseEvent expects CSS pixels of the remote viewport, not
+  // DPR-scaled bitmap pixels. The canvas also uses object-contain, so the image is
+  // letterboxed inside the element whenever the aspect ratios differ. That happens
+  // constantly in 'extension' mode, where the tab keeps its own size because we are
+  // not allowed to resize someone else's page. Map the pointer into the drawn image
+  // rather than the element, otherwise every click lands offset.
+  const toViewportCoords = (clientX: number, clientY: number): { x: number; y: number } | null => {
+    const canvas = canvasRef.current
+    const viewport = viewportRef.current
+    if (!canvas || !viewport || !canvas.width || !canvas.height) return null
+    const rect = canvas.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return null
+
+    const scale = Math.min(rect.width / canvas.width, rect.height / canvas.height)
+    const drawnWidth = canvas.width * scale
+    const drawnHeight = canvas.height * scale
+    return {
+      x: ((clientX - rect.left - (rect.width - drawnWidth) / 2) / drawnWidth) * viewport.width,
+      y: ((clientY - rect.top - (rect.height - drawnHeight) / 2) / drawnHeight) * viewport.height,
+    }
+  }
+
   const dispatchMouse = (type: 'mouseMoved' | 'mousePressed' | 'mouseReleased', e: React.MouseEvent<HTMLCanvasElement>) => {
     const cdp = cdpRef.current
     const sid = pageSessionRef.current
-    const canvas = canvasRef.current
-    const viewport = viewportRef.current
-    if (!cdp || !sid || !canvas || !viewport) return
-
-    const rect = canvas.getBoundingClientRect()
-    const x = ((e.clientX - rect.left) / rect.width) * viewport.width
-    const y = ((e.clientY - rect.top) / rect.height) * viewport.height
+    if (!cdp || !sid) return
+    const point = toViewportCoords(e.clientX, e.clientY)
+    if (!point) return
 
     cdp
       .send(
         'Input.dispatchMouseEvent',
         {
           type,
-          x,
-          y,
+          x: point.x,
+          y: point.y,
           button: type === 'mouseMoved' ? 'none' : e.button === 2 ? 'right' : 'left',
           clickCount: type === 'mouseReleased' || type === 'mousePressed' ? 1 : 0,
           modifiers: eventModifiers(e),
@@ -422,21 +564,21 @@ function useCdpScreencast({ wsUrl, quality = 70, maxWidth = 1280 }: { wsUrl: str
   const dispatchWheel = (e: WheelEvent) => {
     const cdp = cdpRef.current
     const sid = pageSessionRef.current
-    const canvas = canvasRef.current
-    const viewport = viewportRef.current
-    if (!cdp || !sid || !canvas || !viewport) return
-
-    const rect = canvas.getBoundingClientRect()
-    const x = ((e.clientX - rect.left) / rect.width) * viewport.width
-    const y = ((e.clientY - rect.top) / rect.height) * viewport.height
+    if (!cdp || !sid) return
+    const point = toViewportCoords(e.clientX, e.clientY)
+    if (!point) return
 
     const lineHeight = 16
-    const pageHeight = rect.height || 800
+    const pageHeight = canvasRef.current?.getBoundingClientRect().height || 800
     const factor = e.deltaMode === 1 ? lineHeight : e.deltaMode === 2 ? pageHeight : 1
-    const deltaX = e.deltaX * factor
-    const deltaY = e.deltaY * factor
 
-    cdp.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX, deltaY, modifiers: eventModifiers(e) }, sid).catch(() => {})
+    cdp
+      .send(
+        'Input.dispatchMouseEvent',
+        { type: 'mouseWheel', x: point.x, y: point.y, deltaX: e.deltaX * factor, deltaY: e.deltaY * factor, modifiers: eventModifiers(e) },
+        sid,
+      )
+      .catch(() => {})
   }
 
   const setViewport = useCallback(
@@ -444,19 +586,27 @@ function useCdpScreencast({ wsUrl, quality = 70, maxWidth = 1280 }: { wsUrl: str
       const dprSafe = dpr > 0 ? dpr : 1
       const w = Math.max(1, Math.floor(width))
       const h = Math.max(1, Math.floor(height))
+      const cdp = cdpRef.current
+      const sid = pageSessionRef.current
+
+      // A shared tab owns its size. Never write viewportRef here in extension mode:
+      // it is filled from the screencast metadata and drives input coordinates.
+      if (transport === 'extension') {
+        if (!cdp || !sid) return
+        cdp.send('Page.startScreencast', { format: 'jpeg', quality, maxWidth: Math.ceil(w * dprSafe), maxHeight: Math.ceil(h * dprSafe), everyNthFrame: 2 }, sid).catch(() => {})
+        return
+      }
+
       const prev = viewportRef.current
       if (prev && prev.width === w && prev.height === h && prev.dpr === dprSafe) return
       viewportRef.current = { width: w, height: h, dpr: dprSafe }
-
-      const cdp = cdpRef.current
-      const sid = pageSessionRef.current
       if (!cdp || !sid) return
 
       cdp.send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: dprSafe, mobile: false }, sid).catch(() => {})
       // Re-issue screencast at new resolution
       cdp.send('Page.startScreencast', { format: 'jpeg', quality, maxWidth: Math.ceil(w * dprSafe), maxHeight: Math.ceil(h * dprSafe), everyNthFrame: 2 }, sid).catch(() => {})
     },
-    [quality],
+    [quality, transport],
   )
 
   const dispatchKey = (type: 'keyDown' | 'keyUp' | 'char', e: KeyboardEvent) => {
@@ -483,6 +633,7 @@ function useCdpScreencast({ wsUrl, quality = 70, maxWidth = 1280 }: { wsUrl: str
   return {
     status,
     errorMsg,
+    degraded,
     canvasRef,
     pageUrl,
     navigate,
@@ -505,14 +656,15 @@ function useCdpScreencast({ wsUrl, quality = 70, maxWidth = 1280 }: { wsUrl: str
 
 interface CdpViewerProps {
   wsUrl: string
+  transport?: CdpTransport
   quality?: number
   maxWidth?: number
 }
 
-export function CdpViewer({ wsUrl, quality = 70, maxWidth = 1280 }: CdpViewerProps) {
+export function CdpViewer({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1280 }: CdpViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const { status, errorMsg, canvasRef, pageUrl, navigate, goBack, goForward, reload, dispatchMouse, dispatchWheel, dispatchKey, reconnect, setViewport } =
-    useCdpScreencast({ wsUrl, quality, maxWidth })
+  const { status, errorMsg, degraded, canvasRef, pageUrl, navigate, goBack, goForward, reload, dispatchMouse, dispatchWheel, dispatchKey, reconnect, setViewport } =
+    useCdpScreencast({ wsUrl, transport, quality, maxWidth })
 
   // Resize remote viewport to match container (debounced)
   useEffect(() => {
@@ -677,6 +829,11 @@ export function CdpViewer({ wsUrl, quality = 70, maxWidth = 1280 }: CdpViewerPro
           )}
           {status === 'ended' && <span>Disconnected</span>}
           {status === 'error' && <span className="text-red-400">{errorMsg}</span>}
+          {isRunning && degraded && (
+            <span className="text-amber-400/80" title="The live stream stalled, so frames are polled as screenshots. Clicking still works.">
+              Low frame rate
+            </span>
+          )}
 
           {isRunning && (
             <button

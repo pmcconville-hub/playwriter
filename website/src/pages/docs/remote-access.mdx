@@ -15,13 +15,30 @@ The simplest way to give a remote agent access to your browser is the **Remote c
 3. The agent runs, on its own machine:
 
 ```bash
-playwriter session new --remote-control https://playwriter.dev/r/xxx
+# quote the URL: an unquoted # starts a shell comment and drops the id
+playwriter session new --remote-control 'https://playwriter.dev/remote-control#xxx'
 playwriter -s 1 -e "console.log(await page.title())"
 ```
 
 4. Click the button again anytime to **revoke access** — the URL dies instantly and is never reused
 
 The agent controls **only the shared tab** (plus popups it opens, so OAuth and payment flows keep working). Creating new tabs and browser-wide commands like clearing all cookies are blocked with helpful errors. Everything happens visibly in your browser.
+
+### Watch and click from any browser
+
+The same link is also a page. Open it and you get a **live view of the tab**, streamed frame by frame, with a URL bar and a **Take control** button for clicking, scrolling, and typing.
+
+That means you can share a tab with a person, not only an agent, and no install is needed on either side.
+
+The tunnel id lives in the **URL fragment** (`#xxx`). Fragments are never sent to a server, so the secret stays out of request paths, access logs, and Referer headers.
+
+<Aside>
+<Note>
+The stream **keeps running when the sharer switches tabs**. Playwriter holds a debugger attachment on the shared tab, which stops Chrome from backgrounding it, so frames keep arriving at the same rate.
+
+If the stream ever does stall, for example when the whole window is minimised, the viewer automatically falls back to polling screenshots and shows **Low frame rate**. Clicking and typing keep working either way.
+</Note>
+</Aside>
 
 <Aside>
 <Warning>

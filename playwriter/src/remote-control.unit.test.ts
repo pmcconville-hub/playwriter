@@ -5,6 +5,11 @@ import {
   buildRemoteTabNotSharedError,
   buildRemoteControlUrl,
   buildRemoteUpstreamWsUrl,
+  buildTunnelOrigin,
+  decodeExtensionCdpMessage,
+  encodeExtensionCdpCommand,
+  extractViewerTunnelId,
+  readAttachedTargetSession,
   generateTunnelId,
   getRemoteCdpCommandRejection,
   getRemoteExtensionMethodRejection,
@@ -20,26 +25,29 @@ describe('remote-control', () => {
     expect(id).toMatch(/^[0-9a-f]{32}$/)
   })
 
-  test('build and parse remote control urls', () => {
+  test('the shared link points at the viewer page and hides the id in the hash', () => {
     const url = buildRemoteControlUrl({ tunnelId: 'abc123' })
-    expect(url).toMatchInlineSnapshot(`"https://playwriter.dev/r/abc123"`)
-    expect(parseRemoteControlUrl(url)).toMatchInlineSnapshot(`
-      {
-        "host": "playwriter.dev",
-        "httpUrl": "https://playwriter.dev/r/abc123",
-        "wsUrl": "wss://playwriter.dev/r/abc123/extension",
-      }
-    `)
-    expect(buildRemoteUpstreamWsUrl({ tunnelId: 'abc123' })).toMatchInlineSnapshot(`"wss://playwriter.dev/r/abc123/traforo-upstream?_tunnelId=abc123"`)
-    expect(() => parseRemoteControlUrl('ftp://nope')).toThrowErrorMatchingInlineSnapshot(
-      `[Error: Invalid remote control URL protocol: ftp: (expected https:// or wss://)]`,
-    )
-    expect(() => parseRemoteControlUrl('not a url')).toThrowErrorMatchingInlineSnapshot(
-      `[Error: Invalid remote control URL: not a url]`,
-    )
+    expect(url).toMatchInlineSnapshot(`"https://playwriter.dev/remote-control#abc123"`)
+    // The hash never reaches a server, so the id stays out of logs and Referer headers.
+    expect(new URL(url).pathname).toMatchInlineSnapshot(`"/remote-control"`)
+    expect(extractViewerTunnelId(url)).toMatchInlineSnapshot(`"abc123"`)
   })
 
-  test('parses links shared by older extensions that still use subdomains', () => {
+  test('resolves a viewer link to the tunnel websocket', () => {
+    expect(parseRemoteControlUrl(buildRemoteControlUrl({ tunnelId: 'abc123' }))).toMatchInlineSnapshot(`
+      {
+        "host": "abc123-tunnel.playwriter.dev",
+        "httpUrl": "https://abc123-tunnel.playwriter.dev",
+        "wsUrl": "wss://abc123-tunnel.playwriter.dev/extension",
+      }
+    `)
+    expect(buildRemoteUpstreamWsUrl({ tunnelId: 'abc123' })).toMatchInlineSnapshot(`"wss://abc123-tunnel.playwriter.dev/traforo-upstream?_tunnelId=abc123"`)
+    expect(buildTunnelOrigin({ tunnelId: 'abc123' })).toMatchInlineSnapshot(`"https://abc123-tunnel.playwriter.dev"`)
+  })
+
+  // Remote-control hosts moved to playwriter.dev, but links minted by an older
+  // extension must keep working, and self-hosted tunnel domains must stay usable.
+  test('still accepts a tunnel host verbatim, including older and self-hosted domains', () => {
     expect(parseRemoteControlUrl('https://abc123-tunnel.traforo.dev')).toMatchInlineSnapshot(`
       {
         "host": "abc123-tunnel.traforo.dev",
@@ -51,20 +59,34 @@ describe('remote-control', () => {
     expect(parseRemoteControlUrl('wss://abc123-tunnel.traforo.dev/whatever').wsUrl).toBe(
       'wss://abc123-tunnel.traforo.dev/extension',
     )
-  })
-
-  test('keeps the tunnel path when normalizing a shared link', () => {
-    expect(parseRemoteControlUrl('https://playwriter.dev/r/abc123/')).toMatchInlineSnapshot(`
-      {
-        "host": "playwriter.dev",
-        "httpUrl": "https://playwriter.dev/r/abc123",
-        "wsUrl": "wss://playwriter.dev/r/abc123/extension",
-      }
-    `)
-    expect(parseRemoteControlUrl('wss://playwriter.dev/r/abc123/extension').wsUrl).toBe(
-      'wss://playwriter.dev/r/abc123/extension',
+    // a custom domain keeps its host instead of being rebuilt from the id
+    expect(parseRemoteControlUrl('https://abc123-tunnel.mycompany.com').wsUrl).toBe(
+      'wss://abc123-tunnel.mycompany.com/extension',
     )
   })
+
+  test('explains the unquoted-shell case when the hash is missing', () => {
+    // `#` starts a comment in a shell, so an unquoted link arrives without its id.
+    expect(() =>
+      parseRemoteControlUrl('https://playwriter.dev/remote-control'),
+    ).toThrowErrorMatchingInlineSnapshot(`
+      [Error: Remote control URL is missing its #id: https://playwriter.dev/remote-control
+      Quote the URL so the shell keeps the part after "#", for example:
+        playwriter session new --remote-control 'https://playwriter.dev/remote-control#your-id']
+    `)
+    expect(extractViewerTunnelId('https://playwriter.dev/remote-control#BAD_ID')).toBe(null)
+    expect(extractViewerTunnelId('https://playwriter.dev/other#abc123')).toBe(null)
+  })
+
+  test('rejects malformed urls', () => {
+    expect(() => parseRemoteControlUrl('ftp://nope')).toThrowErrorMatchingInlineSnapshot(
+      `[Error: Invalid remote control URL protocol: ftp: (expected https:// or wss://)]`,
+    )
+    expect(() => parseRemoteControlUrl('not a url')).toThrowErrorMatchingInlineSnapshot(
+      `[Error: Invalid remote control URL: not a url]`,
+    )
+  })
+
 
   test('cdp command guards', () => {
     expect(getRemoteCdpCommandRejection('Page.navigate')).toBeNull()
@@ -98,10 +120,77 @@ describe('remote-control', () => {
   })
 
   test('prompt contains the url and the warning', () => {
-    const prompt = buildRemoteControlPrompt({ url: 'https://abc-tunnel.traforo.dev' })
-    expect(prompt).toContain('session new --remote-control https://abc-tunnel.traforo.dev')
+    const prompt = buildRemoteControlPrompt({ url: buildRemoteControlUrl({ tunnelId: 'abc123' }) })
+    // Single-quoted: an unquoted `#` starts a shell comment and would drop the id.
+    expect(prompt).toContain("session new --remote-control 'https://playwriter.dev/remote-control#abc123'")
     expect(prompt).toContain('NEVER share this URL')
     expect(prompt).toContain('playwriter.dev/SKILL.md')
+  })
+
+  test('wraps cdp commands for the extension protocol', () => {
+    expect(
+      encodeExtensionCdpCommand({ id: 3, method: 'Page.enable', sessionId: 'pw-tab-1-2' }),
+    ).toMatchInlineSnapshot(`"{"id":3,"method":"forwardCDPCommand","params":{"method":"Page.enable","sessionId":"pw-tab-1-2","params":{}}}"`)
+  })
+
+  test('decodes every message shape the tunnel sends', () => {
+    expect(decodeExtensionCdpMessage('{"id":3,"result":{"ok":true}}')).toMatchInlineSnapshot(`
+      {
+        "error": undefined,
+        "id": 3,
+        "kind": "response",
+        "result": {
+          "ok": true,
+        },
+      }
+    `)
+    expect(decodeExtensionCdpMessage('{"id":3,"error":"boom"}')).toMatchInlineSnapshot(`
+      {
+        "error": "boom",
+        "id": 3,
+        "kind": "response",
+        "result": undefined,
+      }
+    `)
+    expect(
+      decodeExtensionCdpMessage(
+        '{"method":"forwardCDPEvent","params":{"method":"Page.screencastFrame","sessionId":"pw-tab-1-2","params":{"data":"x"}}}',
+      ),
+    ).toMatchInlineSnapshot(`
+      {
+        "kind": "event",
+        "method": "Page.screencastFrame",
+        "params": {
+          "data": "x",
+        },
+        "sessionId": "pw-tab-1-2",
+      }
+    `)
+    expect(decodeExtensionCdpMessage('{"method":"hello","params":{"browser":"chrome"}}')).toMatchInlineSnapshot(`
+      {
+        "browser": "chrome",
+        "kind": "hello",
+        "version": undefined,
+      }
+    `)
+    expect(decodeExtensionCdpMessage('not json')).toMatchInlineSnapshot(`
+      {
+        "kind": "ignored",
+      }
+    `)
+  })
+
+  test('finds the shared tab session in the pushed attach event', () => {
+    const attached = decodeExtensionCdpMessage(
+      '{"method":"forwardCDPEvent","params":{"method":"Target.attachedToTarget","params":{"sessionId":"pw-tab-7-1","targetInfo":{"url":"https://example.com","type":"page"}}}}',
+    )
+    expect(readAttachedTargetSession(attached)).toMatchInlineSnapshot(`
+      {
+        "sessionId": "pw-tab-7-1",
+        "url": "https://example.com",
+      }
+    `)
+    expect(readAttachedTargetSession(decodeExtensionCdpMessage('{"method":"hello","params":{}}'))).toBe(null)
   })
 
   test('remote hello excludes browser identity', () => {

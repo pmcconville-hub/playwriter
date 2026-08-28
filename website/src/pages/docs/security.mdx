@@ -62,7 +62,8 @@ When using one-tab **Remote control**:
 - **Scoped access.** The agent receives only the selected tab and popups it opens. Browser-wide destructive commands and new-tab creation are blocked.
 - **Minimal handshake.** The extension sends the browser name and Playwriter version, not the user's email, Google account ID, or install ID.
 - **Revocable bearer link.** Anyone with the secret URL can connect until the user clicks **Remote control** again. Treat the URL like a password.
-- **First-party domain.** Shared links are `https://playwriter.dev/r/{id}`. Frames are relayed in memory only; they are never stored, and response caching is off for these tunnels.
+- **Secret stays in the fragment.** Shared links are `https://playwriter.dev/remote-control#{id}`. A URL fragment is never sent to a server, so the id stays out of request paths, access logs, and Referer headers.
+- **Nothing is stored.** Tunnel frames are relayed in memory only, and response caching is off for these tunnels.
 
 When exposing the full relay through [remote access](./remote-access.mdx):
 

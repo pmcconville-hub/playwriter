@@ -27,6 +27,7 @@
     "clsx": "^2.1.1",
     "db": "workspace:^",
     "drizzle-orm": "1.0.0-beta.22",
+    "playwriter": "workspace:^",
     "radix-ui": "^1.6.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",

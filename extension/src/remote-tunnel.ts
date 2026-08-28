@@ -1,6 +1,7 @@
-// Traforo upstream client running inside the extension service worker.
-// Exposes the extension WS protocol at wss://playwriter.dev/r/{tunnelId}/extension
-// so a remote playwriter relay can dial the tab without any local playwriter install.
+// Tunnel upstream client running inside the extension service worker.
+// Exposes the extension WS protocol at wss://{tunnelId}-tunnel.playwriter.dev/extension
+// so a remote playwriter relay, or the playwriter.dev viewer page, can dial the tab
+// without any local playwriter install.
 // See playwriter/src/remote-control.ts for the shared protocol types and guards.
 
 import {
@@ -20,8 +21,8 @@ export type TunnelConnectionHandlers = {
 
 export type RemoteTunnelOptions = {
   tunnelId: string
-  /** Origin the tunnel is published under, e.g. https://playwriter.dev */
-  baseUrl: string
+  /** Domain the tunnel subdomain lives under, e.g. playwriter.dev */
+  baseDomain: string
   logger: { debug(...args: unknown[]): void; error(...args: unknown[]): void }
   /**
    * Called when a remote relay dials /extension through the tunnel.
@@ -54,11 +55,9 @@ export class RemoteTunnel {
     this.options = options
   }
 
+  /** Link the user shares. Points at the viewer page, not at the tunnel host. */
   get url(): string {
-    return buildRemoteControlUrl({
-      tunnelId: this.options.tunnelId,
-      baseUrl: this.options.baseUrl,
-    })
+    return buildRemoteControlUrl({ tunnelId: this.options.tunnelId })
   }
 
   start(): void {
@@ -68,7 +67,7 @@ export class RemoteTunnel {
     this.options.onStatusChange('connecting')
     const wsUrl = buildRemoteUpstreamWsUrl({
       tunnelId: this.options.tunnelId,
-      baseUrl: this.options.baseUrl,
+      baseDomain: this.options.baseDomain,
     })
     this.options.logger.debug('Remote tunnel connecting:', this.url)
 

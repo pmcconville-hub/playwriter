@@ -284,6 +284,13 @@ export const app = new Spiceflow()
     return <LivePage />
   })
 
+  // ── Remote control viewer for a tab shared from the extension ───
+  // The tunnel id travels in the URL hash, so it never reaches this handler.
+  .page('/remote-control', async () => {
+    const { default: RemoteControlPage } = await import('./pages/remote-control.tsx')
+    return <RemoteControlPage />
+  })
+
   // Skill discovery for `npx skills add https://playwriter.dev` (skills.sh).
   // The url is relative to this index file per the discovery schema.
   .route({

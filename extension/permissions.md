@@ -65,7 +65,7 @@ Required to attach the debugger to tabs on any domain the user chooses to automa
 All extension code (JavaScript, HTML, CSS) is fully bundled within the extension package and statically reviewed.
 
 **WebSocket connections:**
-The extension normally connects to `ws://localhost:19988`, a relay on the user's machine. When the user confirms **Remote control** for a tab, the extension also opens a secret, temporary tunnel for that tab at `wss://playwriter.dev/r/{id}`. These connections carry protocol messages only; they never download extension code.
+The extension normally connects to `ws://localhost:19988`, a relay on the user's machine. When the user confirms **Remote control** for a tab, the extension also opens a secret, temporary tunnel for that tab at `wss://{id}-tunnel.playwriter.dev`. These connections carry protocol messages only; they never download extension code.
 
 **What the WebSocket is used for:**
 

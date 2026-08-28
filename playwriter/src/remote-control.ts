@@ -2,21 +2,30 @@
  * Remote control: share a browser tab with a remote agent through a traforo tunnel.
  *
  * The extension acts as a traforo "upstream" client (the thing being exposed).
- * The relay on the agent's machine dials wss://playwriter.dev/r/{tunnelId}/extension,
- * traforo forwards the connection to the extension, and the extension treats it as a
- * normal relay connection speaking the exact same extension WS protocol.
+ * A client dials wss://{tunnelId}-tunnel.playwriter.dev/extension. That host is a
+ * Cloudflare tunnel worker which forwards the connection to the extension, and the
+ * extension treats it as a normal relay connection speaking the exact same extension
+ * WS protocol. Every remote-control host is under playwriter.dev, so sharing a tab
+ * never sends traffic to a domain the user has not already trusted.
  *
- * Tunnels are path-routed on playwriter.dev so shared links stay on a domain the
- * user already trusts. The traforo worker strips the /r/{tunnelId} prefix before
- * the tunnel sees the request, so the extension still answers on /extension.
+ * The link the user shares is NOT the tunnel host. It points at the viewer page on
+ * playwriter.dev and carries the tunnel id in the URL hash:
  *
- * This module is shared between the extension (browser) and the relay (node):
- * keep it dependency-free and runtime-agnostic (globalThis.crypto works in both).
+ *     https://playwriter.dev/remote-control#{tunnelId}
+ *
+ * The hash never leaves the browser, so the tunnel id (a bearer secret) stays out of
+ * request paths, server logs, and Referer headers. Humans who open the link get an
+ * interactive view of the tab; agents paste the same link into
+ * `playwriter session new --remote-control`, and the CLI resolves it to the tunnel.
+ *
+ * This module is shared between the extension (browser), the relay (node), and the
+ * website viewer: keep it dependency-free and runtime-agnostic.
  */
 import dedent from 'string-dedent'
 
-export const REMOTE_TUNNEL_BASE_URL = 'https://playwriter.dev'
-export const REMOTE_TUNNEL_PATH_PREFIX = '/r/'
+export const REMOTE_TUNNEL_BASE_DOMAIN = 'playwriter.dev'
+export const REMOTE_VIEWER_BASE_URL = 'https://playwriter.dev'
+export const REMOTE_VIEWER_PATH = '/remote-control'
 
 // ---------------------------------------------------------------------------
 // Traforo tunnel protocol (JSON over one WebSocket).
@@ -89,37 +98,64 @@ export function generateTunnelId(): string {
 /** The link the user shares. Anyone holding it can drive the shared tab. */
 export function buildRemoteControlUrl({
   tunnelId,
-  baseUrl = REMOTE_TUNNEL_BASE_URL,
+  baseUrl = REMOTE_VIEWER_BASE_URL,
 }: {
   tunnelId: string
   baseUrl?: string
 }): string {
-  return `${baseUrl}${REMOTE_TUNNEL_PATH_PREFIX}${tunnelId}`
+  return `${baseUrl}${REMOTE_VIEWER_PATH}#${tunnelId}`
+}
+
+/** Origin traforo serves this tunnel from. */
+export function buildTunnelOrigin({
+  tunnelId,
+  baseDomain = REMOTE_TUNNEL_BASE_DOMAIN,
+}: {
+  tunnelId: string
+  baseDomain?: string
+}): string {
+  return `https://${tunnelId}-tunnel.${baseDomain}`
 }
 
 /** WebSocket URL the extension dials to register itself as the tunnel upstream. */
 export function buildRemoteUpstreamWsUrl({
   tunnelId,
-  baseUrl = REMOTE_TUNNEL_BASE_URL,
+  baseDomain = REMOTE_TUNNEL_BASE_DOMAIN,
 }: {
   tunnelId: string
-  baseUrl?: string
+  baseDomain?: string
 }): string {
-  const httpUrl = buildRemoteControlUrl({ tunnelId, baseUrl })
-  return `${httpUrl.replace(/^http/, 'ws')}/traforo-upstream?_tunnelId=${encodeURIComponent(tunnelId)}`
+  return `wss://${tunnelId}-tunnel.${baseDomain}/traforo-upstream?_tunnelId=${encodeURIComponent(tunnelId)}`
 }
 
-// Built from the constant so the link format and the parser can never drift.
-const REMOTE_TUNNEL_PATH_RE = new RegExp(`^${REMOTE_TUNNEL_PATH_PREFIX}([a-z0-9-]{1,63})(?:/|$)`)
+/** Tunnel id carried in the hash of a viewer link, or null for any other URL. */
+export function extractViewerTunnelId(url: string): string | null {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+  if (parsed.pathname.replace(/\/$/, '') !== REMOTE_VIEWER_PATH) {
+    return null
+  }
+  const id = parsed.hash.slice(1)
+  return /^[a-z0-9-]{1,63}$/.test(id) ? id : null
+}
 
 /**
- * Normalize a user-provided remote control URL to the /extension WebSocket URL
- * the relay must dial. Accepts https://, http://, wss://, ws:// forms.
+ * Normalize a shared remote control URL to the /extension WebSocket URL a client
+ * must dial. Accepts https://, http://, wss://, ws:// forms.
  *
- * Both link formats are accepted, because an older extension keeps producing
- * subdomain links long after the relay is updated:
- *   https://playwriter.dev/r/{tunnelId}       (current)
- *   https://{tunnelId}-tunnel.traforo.dev     (legacy)
+ * Two link shapes are accepted:
+ *   https://playwriter.dev/remote-control#{tunnelId}   viewer link (current)
+ *   https://{tunnelId}-tunnel.playwriter.dev            tunnel host (older
+ *                                                        extensions, self-hosted
+ *                                                        tunnel domains)
+ *
+ * The tunnel host form keeps using the host verbatim, so links from older
+ * extensions and self-hosted tunnel domains still work; only the viewer form
+ * derives a host from the id.
  */
 export function parseRemoteControlUrl(url: string): { wsUrl: string; httpUrl: string; host: string } {
   let parsed: URL
@@ -133,16 +169,136 @@ export function parseRemoteControlUrl(url: string): { wsUrl: string; httpUrl: st
   if (!isKnown) {
     throw new Error(`Invalid remote control URL protocol: ${parsed.protocol} (expected https:// or wss://)`)
   }
+
+  // A viewer link without a hash almost always means an unquoted shell argument:
+  // `#` starts a comment, so the id is silently cut off before playwriter sees it.
+  if (parsed.pathname.replace(/\/$/, '') === REMOTE_VIEWER_PATH && !parsed.hash) {
+    throw new Error(
+      `Remote control URL is missing its #id: ${url}\nQuote the URL so the shell keeps the part after "#", for example:\n  playwriter session new --remote-control '${REMOTE_VIEWER_BASE_URL}${REMOTE_VIEWER_PATH}#your-id'`,
+    )
+  }
+
+  const viewerTunnelId = extractViewerTunnelId(url)
+  if (viewerTunnelId) {
+    const origin = buildTunnelOrigin({ tunnelId: viewerTunnelId })
+    return {
+      wsUrl: `${origin.replace(/^https/, 'wss')}/extension`,
+      httpUrl: origin,
+      host: new URL(origin).host,
+    }
+  }
+
   const wsProtocol = isSecure ? 'wss:' : 'ws:'
   const httpProtocol = isSecure ? 'https:' : 'http:'
-  // Legacy subdomain links carry the id in the host, so their path is ignored.
-  const pathMatch = parsed.pathname.match(REMOTE_TUNNEL_PATH_RE)
-  const basePath = pathMatch ? `${REMOTE_TUNNEL_PATH_PREFIX}${pathMatch[1]}` : ''
   return {
-    wsUrl: `${wsProtocol}//${parsed.host}${basePath}/extension`,
-    httpUrl: `${httpProtocol}//${parsed.host}${basePath}`,
+    wsUrl: `${wsProtocol}//${parsed.host}/extension`,
+    httpUrl: `${httpProtocol}//${parsed.host}`,
     host: parsed.host,
   }
+}
+
+// ---------------------------------------------------------------------------
+// Extension CDP transport codec
+// ---------------------------------------------------------------------------
+// The tunnel speaks the extension WS protocol, not raw CDP. Commands are wrapped
+// in `forwardCDPCommand`, events arrive as `forwardCDPEvent`, and errors come back
+// as a plain string instead of the raw-CDP `{ message }` object. The viewer page
+// on playwriter.dev uses these helpers so it can drive a shared tab with the same
+// screencast code it uses for raw-CDP cloud browsers.
+
+export function encodeExtensionCdpCommand({
+  id,
+  method,
+  params,
+  sessionId,
+}: {
+  id: number
+  method: string
+  params?: Record<string, unknown>
+  sessionId?: string
+}): string {
+  return JSON.stringify({
+    id,
+    method: 'forwardCDPCommand',
+    params: { method, sessionId, params: params || {} },
+  })
+}
+
+export type DecodedExtensionMessage =
+  | { kind: 'response'; id: number; result?: unknown; error?: string }
+  | { kind: 'event'; method: string; sessionId: string; params: unknown }
+  | { kind: 'hello'; browser?: string; version?: string }
+  | { kind: 'ping' }
+  | { kind: 'ignored' }
+
+export function decodeExtensionCdpMessage(raw: string): DecodedExtensionMessage {
+  let msg: object
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') {
+      return { kind: 'ignored' }
+    }
+    msg = parsed
+  } catch {
+    return { kind: 'ignored' }
+  }
+  const id = Reflect.get(msg, 'id')
+  const method = Reflect.get(msg, 'method')
+  const params = Reflect.get(msg, 'params')
+  if (typeof id === 'number' && method === undefined) {
+    const error = Reflect.get(msg, 'error')
+    return {
+      kind: 'response',
+      id,
+      result: Reflect.get(msg, 'result'),
+      error: typeof error === 'string' ? error : undefined,
+    }
+  }
+  if (method === 'forwardCDPEvent' && params && typeof params === 'object') {
+    const eventMethod = Reflect.get(params, 'method')
+    if (typeof eventMethod !== 'string') {
+      return { kind: 'ignored' }
+    }
+    const sessionId = Reflect.get(params, 'sessionId')
+    return {
+      kind: 'event',
+      method: eventMethod,
+      sessionId: typeof sessionId === 'string' ? sessionId : '',
+      params: Reflect.get(params, 'params'),
+    }
+  }
+  if (method === 'hello') {
+    const browser = params && typeof params === 'object' ? Reflect.get(params, 'browser') : undefined
+    const version = params && typeof params === 'object' ? Reflect.get(params, 'version') : undefined
+    return {
+      kind: 'hello',
+      browser: typeof browser === 'string' ? browser : undefined,
+      version: typeof version === 'string' ? version : undefined,
+    }
+  }
+  if (method === 'ping') {
+    return { kind: 'ping' }
+  }
+  return { kind: 'ignored' }
+}
+
+/**
+ * Session id of the tab the extension shared, taken from the
+ * `Target.attachedToTarget` event it pushes right after `hello`.
+ */
+export function readAttachedTargetSession(
+  message: DecodedExtensionMessage,
+): { sessionId: string; url: string } | null {
+  if (message.kind !== 'event' || message.method !== 'Target.attachedToTarget') {
+    return null
+  }
+  const params = message.params as
+    | { sessionId?: string; targetInfo?: { url?: string; type?: string } }
+    | undefined
+  if (!params?.sessionId) {
+    return null
+  }
+  return { sessionId: params.sessionId, url: params.targetInfo?.url || '' }
 }
 
 // ---------------------------------------------------------------------------
@@ -204,12 +360,14 @@ export function buildRemoteTabNotSharedError({ method, sessionId }: { method: st
 // ---------------------------------------------------------------------------
 
 export function buildRemoteControlPrompt({ url }: { url: string }): string {
+  // The URL is single-quoted on purpose: it ends with #<id>, and an unquoted `#`
+  // starts a shell comment, which would silently strip the id.
   return dedent`
     I am sharing one tab of my own browser with you through Playwriter remote control.
 
-    Create a session connected to my tab:
+    Create a session connected to my tab (keep the quotes, the URL ends with #id):
 
-    npx -y playwriter@latest session new --remote-control ${url}
+    npx -y playwriter@latest session new --remote-control '${url}'
 
     Then drive the tab with the printed session id, for example:
 
@@ -221,6 +379,7 @@ export function buildRemoteControlPrompt({ url }: { url: string }): string {
     - You control ONLY this shared tab (plus popups it opens). Do not try to open new tabs; navigate the shared tab instead.
     - This link grants control of my browser tab as me. NEVER share this URL with anyone or include it in logs, commits, or messages.
     - I can revoke access at any time by clicking the Remote control button again.
+    - Opening the same link in a browser shows a live view of my tab, so I can watch along.
   `
 }
 
