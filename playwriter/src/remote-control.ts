@@ -378,24 +378,11 @@ export function buildRemoteControlPrompt({ url }: { url: string }): string {
   // The URL is single-quoted on purpose: it ends with #<id>, and an unquoted `#`
   // starts a shell comment, which would silently strip the id.
   return dedent`
-    I am sharing one tab of my own browser with you through Playwriter remote control.
-
-    Create a session connected to my tab (keep the quotes, the URL ends with #id):
+    Connect to my shared Chrome tab. Keep the quotes; the URL ends with #id:
 
     npx -y playwriter@latest session new --remote-control '${url}'
 
-    Then drive the tab with the printed session id, for example:
-
-    npx -y playwriter@latest -s <id> -e "console.log(await page.title())"
-
-    Read https://playwriter.dev/SKILL.md first for the full API (snapshots, clicking, etc).
-
-    Rules:
-    - This share starts from one tab, but Remote control is not a security sandbox. You receive broad CDP access and must be fully trusted.
-    - Do not create new tabs. Navigate the shared tab instead.
-    - This link grants control of my browser tab as me. NEVER share this URL with anyone or include it in logs, commits, or messages.
-    - I can revoke access at any time by clicking the Remote control button again.
-    - Opening the same link in a browser shows a live view of my tab, so I can watch along.
+    Then use the printed session id. Read https://playwriter.dev/SKILL.md. Do not create new tabs. NEVER share this URL.
   `
 }
 

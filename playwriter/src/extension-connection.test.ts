@@ -311,7 +311,8 @@ describe('Extension Connection Tests', () => {
       throw new Error('Toolbar is not visible')
     }
 
-    await page.mouse.click(box.x + 90, box.y + box.height / 2)
+    // Copy Locator is the first labeled button; Record Skill sits after it.
+    await page.mouse.click(box.x + 155, box.y + box.height / 2)
     await expect
       .poll(async () => {
         const response = await fetch(`http://127.0.0.1:${TEST_PORT}/recorder/status`)
@@ -324,7 +325,7 @@ describe('Extension Connection Tests', () => {
     if (!activeBox) {
       throw new Error('Active toolbar is not visible')
     }
-    await page.mouse.click(activeBox.x + 90, activeBox.y + activeBox.height / 2)
+    await page.mouse.click(activeBox.x + 155, activeBox.y + activeBox.height / 2)
     await expect
       .poll(async () => {
         const response = await fetch(`http://127.0.0.1:${TEST_PORT}/recorder/status`)

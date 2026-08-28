@@ -168,9 +168,13 @@ describe('remote-control', () => {
   test('prompt contains the url and the warning', () => {
     const prompt = buildRemoteControlPrompt({ url: buildRemoteControlUrl({ tunnelId: 'abc123' }) })
     // Single-quoted: an unquoted `#` starts a shell comment and would drop the id.
-    expect(prompt).toContain("session new --remote-control 'https://playwriter.dev/remote-control#abc123'")
-    expect(prompt).toContain('NEVER share this URL')
-    expect(prompt).toContain('playwriter.dev/SKILL.md')
+    expect(prompt).toMatchInlineSnapshot(`
+      "Connect to my shared Chrome tab. Keep the quotes; the URL ends with #id:
+
+      npx -y playwriter@latest session new --remote-control 'https://playwriter.dev/remote-control#abc123'
+
+      Then use the printed session id. Read https://playwriter.dev/SKILL.md. Do not create new tabs. NEVER share this URL."
+    `)
   })
 
   test('wraps cdp commands for the extension protocol', () => {

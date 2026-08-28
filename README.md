@@ -236,7 +236,7 @@ Let a remote agent (Devin, a cloud bot, a friend's CLI agent) drive **one tab of
 1. Click the light-blue **Remote control** cloud button and confirm that the agent may read and control the tab
 2. A prompt containing a secret tunnel URL is copied to your clipboard — paste it to the agent
 3. The agent runs `playwriter session new --remote-control 'https://playwriter.dev/remote-control#xxx'` on its machine
-4. Click the button again anytime to **revoke** — the URL dies instantly
+4. Open **Remote ON** and click **Stop sharing** anytime to **revoke**. The URL dies instantly.
 
 Opening that same link in **any browser** shows a live, clickable view of the tab, so you can share with a person instead of an agent. The viewer page receives no tunnel id in its initial HTTP request because the id starts in the URL fragment. Its JavaScript then uses the id to connect to the tunnel hostname.
 

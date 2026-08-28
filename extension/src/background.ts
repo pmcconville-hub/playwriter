@@ -3128,6 +3128,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false
   }
 
+  if (message.action === 'remoteControlCopyUrl' || message.action === 'remoteControlCopyPrompt') {
+    const senderTabId = sender.tab?.id
+    if (!senderTabId || sender.frameId !== 0 || store.getState().tabs.get(senderTabId)?.state !== 'connected') {
+      return false
+    }
+    const runtime = findRemoteRuntimeForTab(senderTabId)
+    if (!runtime) {
+      toastToolbar(senderTabId, 'Remote control is not active')
+      return false
+    }
+    const copyPrompt = message.action === 'remoteControlCopyPrompt'
+    const text = copyPrompt ? buildRemoteControlPrompt({ url: runtime.tunnel.url }) : runtime.tunnel.url
+    void copyTextInOffscreenDocument(text)
+      .then(() => {
+        toastToolbar(senderTabId, copyPrompt ? 'Agent prompt copied' : 'Remote URL copied')
+        playToolbarSound(senderTabId, 'success')
+      })
+      .catch((error: Error) => {
+        logger.error('Remote control copy failed:', error)
+        toastToolbar(senderTabId, `Copy failed: ${error.message}`)
+      })
+    return false
+  }
+
   // Action recorder start/stop: isolated toolbar → service worker → relay HTTP endpoint.
   if (message.action === 'actionRecorderStart') {
     const senderTabId = sender.tab?.id
