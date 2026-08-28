@@ -20,7 +20,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '../lib/utils.ts'
 
-export type CdpTransport = 'raw' | 'extension'
+type CdpTransport = 'raw' | 'extension'
 
 // ── CdpClient ──────────────────────────────────────────────────────
 // Minimal CDP client over a browser WebSocket. Handles id-based request/response
@@ -35,7 +35,7 @@ class CdpClient {
 
   constructor(
     private ws: WebSocket,
-    private transport: CdpTransport = 'raw',
+    private transport: CdpTransport,
   ) {
     try {
       ws.binaryType = 'arraybuffer'
@@ -232,13 +232,8 @@ interface ScreencastFrameParams {
   data: string // base64 jpeg
   sessionId: number // CDP screencast ack id (not Target sessionId)
   metadata: {
-    offsetTop?: number
-    pageScaleFactor?: number
     deviceWidth?: number
     deviceHeight?: number
-    scrollOffsetX?: number
-    scrollOffsetY?: number
-    timestamp?: number
   }
 }
 
@@ -250,23 +245,11 @@ interface Viewport {
 
 interface NavigationHistory {
   currentIndex: number
-  entries: Array<{ id: number; url: string; title: string; transitionType: string }>
+  entries: Array<{ id: number }>
 }
 
-interface ScreencastApi {
-  status: ScreencastStatus
-  errorMsg: string
-  canvasRef: React.RefObject<HTMLCanvasElement | null>
-  pageUrl: string
-  navigate: (url: string) => void
-  goBack: () => void
-  goForward: () => void
-  reload: () => void
-  dispatchMouse: (type: 'mouseMoved' | 'mousePressed' | 'mouseReleased', e: React.MouseEvent<HTMLCanvasElement>) => void
-  dispatchWheel: (e: WheelEvent) => void
-  dispatchKey: (type: 'keyDown' | 'keyUp' | 'char', e: KeyboardEvent) => void
-  reconnect: () => void
-  setViewport: (width: number, height: number, dpr: number) => void
+function screencastParams({ quality, maxWidth, maxHeight }: { quality: number; maxWidth: number; maxHeight: number }): Record<string, unknown> {
+  return { format: 'jpeg', quality, maxWidth, maxHeight, everyNthFrame: 2 }
 }
 
 /**
@@ -283,16 +266,21 @@ interface ScreencastApi {
  *   6. Page.startScreencast -> Chromium begins emitting JPEG frames
  *   7. Each frame ack'd via Page.screencastFrameAck
  */
-function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1280 }: { wsUrl: string; transport?: CdpTransport; quality?: number; maxWidth?: number }): ScreencastApi {
+function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1280 }: { wsUrl: string; transport?: CdpTransport; quality?: number; maxWidth?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const cdpRef = useRef<CdpClient | null>(null)
-  const pageSessionRef = useRef<string>('')
+  const pageSessionRef = useRef<{ cdp: CdpClient; sessionId: string } | null>(null)
   const viewportRef = useRef<Viewport | null>(null)
 
   const [status, setStatus] = useState<ScreencastStatus>('connecting')
   const [errorMsg, setErrorMsg] = useState<string>('')
   const [pageUrl, setPageUrl] = useState<string>('')
   const [reconnectKey, setReconnectKey] = useState(0)
+
+  const sendToPage = useCallback((method: string, params: Record<string, unknown> = {}) => {
+    const pageSession = pageSessionRef.current
+    if (!pageSession) return
+    pageSession.cdp.send(method, params, pageSession.sessionId).catch(() => {})
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -334,7 +322,6 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
       return
     }
     const cdp = new CdpClient(ws, transport)
-    cdpRef.current = cdp
 
     ws.addEventListener('error', () => {
       if (cancelled) return
@@ -352,7 +339,8 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
       if (cancelled) return
       try {
         const { sessionId, url: targetUrl } = await attachToPage({ cdp, transport })
-        pageSessionRef.current = sessionId
+        if (cancelled) return
+        pageSessionRef.current = { cdp, sessionId }
 
         await cdp.send('Page.enable', {}, sessionId)
         if (targetUrl && !cancelled) setPageUrl(targetUrl)
@@ -393,13 +381,11 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
 
         await cdp.send(
           'Page.startScreencast',
-          {
-            format: 'jpeg',
+          screencastParams({
             quality,
             maxWidth: v ? Math.ceil(v.width * v.dpr) : maxWidth,
             maxHeight: v ? Math.ceil(v.height * v.dpr) : maxWidth * 2,
-            everyNthFrame: 2,
-          },
+          }),
           sessionId,
         )
 
@@ -414,6 +400,9 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
 
     return () => {
       cancelled = true
+      if (pageSessionRef.current?.cdp === cdp) {
+        pageSessionRef.current = null
+      }
       try {
         ws.close()
       } catch {}
@@ -433,30 +422,23 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
   }
 
   const navigate = (url: string) => {
-    const cdp = cdpRef.current
-    const sid = pageSessionRef.current
-    if (!cdp || !sid) return
     const target = coerceUrl(url)
     if (!target) return
-    cdp.send('Page.navigate', { url: target }, sid).catch(() => {})
+    sendToPage('Page.navigate', { url: target })
   }
 
   const reload = () => {
-    const cdp = cdpRef.current
-    const sid = pageSessionRef.current
-    if (!cdp || !sid) return
-    cdp.send('Page.reload', {}, sid).catch(() => {})
+    sendToPage('Page.reload')
   }
 
   const stepHistory = async (delta: -1 | 1): Promise<void> => {
-    const cdp = cdpRef.current
-    const sid = pageSessionRef.current
-    if (!cdp || !sid) return
+    const pageSession = pageSessionRef.current
+    if (!pageSession) return
     try {
-      const hist = await cdp.send<NavigationHistory>('Page.getNavigationHistory', {}, sid)
+      const hist = await pageSession.cdp.send<NavigationHistory>('Page.getNavigationHistory', {}, pageSession.sessionId)
       const target = hist.entries[hist.currentIndex + delta]
       if (!target) return
-      await cdp.send('Page.navigateToHistoryEntry', { entryId: target.id }, sid)
+      await pageSession.cdp.send('Page.navigateToHistoryEntry', { entryId: target.id }, pageSession.sessionId)
     } catch {}
   }
 
@@ -492,32 +474,20 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
   }
 
   const dispatchMouse = (type: 'mouseMoved' | 'mousePressed' | 'mouseReleased', e: React.MouseEvent<HTMLCanvasElement>) => {
-    const cdp = cdpRef.current
-    const sid = pageSessionRef.current
-    if (!cdp || !sid) return
     const point = toViewportCoords(e.clientX, e.clientY)
     if (!point) return
 
-    cdp
-      .send(
-        'Input.dispatchMouseEvent',
-        {
-          type,
-          x: point.x,
-          y: point.y,
-          button: type === 'mouseMoved' ? 'none' : e.button === 2 ? 'right' : 'left',
-          clickCount: type === 'mouseReleased' || type === 'mousePressed' ? 1 : 0,
-          modifiers: eventModifiers(e),
-        },
-        sid,
-      )
-      .catch(() => {})
+    sendToPage('Input.dispatchMouseEvent', {
+      type,
+      x: point.x,
+      y: point.y,
+      button: type === 'mouseMoved' ? 'none' : e.button === 2 ? 'right' : 'left',
+      clickCount: type === 'mouseReleased' || type === 'mousePressed' ? 1 : 0,
+      modifiers: eventModifiers(e),
+    })
   }
 
   const dispatchWheel = (e: WheelEvent) => {
-    const cdp = cdpRef.current
-    const sid = pageSessionRef.current
-    if (!cdp || !sid) return
     const point = toViewportCoords(e.clientX, e.clientY)
     if (!point) return
 
@@ -525,13 +495,14 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
     const pageHeight = canvasRef.current?.getBoundingClientRect().height || 800
     const factor = e.deltaMode === 1 ? lineHeight : e.deltaMode === 2 ? pageHeight : 1
 
-    cdp
-      .send(
-        'Input.dispatchMouseEvent',
-        { type: 'mouseWheel', x: point.x, y: point.y, deltaX: e.deltaX * factor, deltaY: e.deltaY * factor, modifiers: eventModifiers(e) },
-        sid,
-      )
-      .catch(() => {})
+    sendToPage('Input.dispatchMouseEvent', {
+      type: 'mouseWheel',
+      x: point.x,
+      y: point.y,
+      deltaX: e.deltaX * factor,
+      deltaY: e.deltaY * factor,
+      modifiers: eventModifiers(e),
+    })
   }
 
   const setViewport = useCallback(
@@ -539,33 +510,27 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
       const dprSafe = dpr > 0 ? dpr : 1
       const w = Math.max(1, Math.floor(width))
       const h = Math.max(1, Math.floor(height))
-      const cdp = cdpRef.current
-      const sid = pageSessionRef.current
+      const params = screencastParams({ quality, maxWidth: Math.ceil(w * dprSafe), maxHeight: Math.ceil(h * dprSafe) })
 
       // A shared tab owns its size. Never write viewportRef here in extension mode:
       // it is filled from the screencast metadata and drives input coordinates.
       if (transport === 'extension') {
-        if (!cdp || !sid) return
-        cdp.send('Page.startScreencast', { format: 'jpeg', quality, maxWidth: Math.ceil(w * dprSafe), maxHeight: Math.ceil(h * dprSafe), everyNthFrame: 2 }, sid).catch(() => {})
+        sendToPage('Page.startScreencast', params)
         return
       }
 
       const prev = viewportRef.current
       if (prev && prev.width === w && prev.height === h && prev.dpr === dprSafe) return
       viewportRef.current = { width: w, height: h, dpr: dprSafe }
-      if (!cdp || !sid) return
 
-      cdp.send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: dprSafe, mobile: false }, sid).catch(() => {})
+      sendToPage('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: dprSafe, mobile: false })
       // Re-issue screencast at new resolution
-      cdp.send('Page.startScreencast', { format: 'jpeg', quality, maxWidth: Math.ceil(w * dprSafe), maxHeight: Math.ceil(h * dprSafe), everyNthFrame: 2 }, sid).catch(() => {})
+      sendToPage('Page.startScreencast', params)
     },
-    [quality, transport],
+    [quality, sendToPage, transport],
   )
 
   const dispatchKey = (type: 'keyDown' | 'keyUp' | 'char', e: KeyboardEvent) => {
-    const cdp = cdpRef.current
-    const sid = pageSessionRef.current
-    if (!cdp || !sid) return
     const isPrintable = e.key.length === 1
     const cdpType = type === 'keyDown' && isPrintable ? 'rawKeyDown' : type
     const params: Record<string, unknown> = {
@@ -580,7 +545,7 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
       const commands = macEditorCommands(e)
       if (commands.length > 0) params.commands = commands
     }
-    cdp.send('Input.dispatchKeyEvent', params, sid).catch(() => {})
+    sendToPage('Input.dispatchKeyEvent', params)
   }
 
   return {
@@ -651,30 +616,6 @@ export function CdpViewer({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
   useEffect(() => {
     if (!isUrlFocusedRef.current) setUrlInput(pageUrl)
   }, [pageUrl])
-
-  // Wire keyboard events when control is active
-  useEffect(() => {
-    if (!hasControl) return
-    const node = containerRef.current
-    if (!node) return
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      e.preventDefault()
-      dispatchKey('keyDown', e)
-      if (e.key.length === 1) dispatchKey('char', e)
-    }
-    const onKeyUp = (e: KeyboardEvent) => {
-      e.preventDefault()
-      dispatchKey('keyUp', e)
-    }
-    node.addEventListener('keydown', onKeyDown)
-    node.addEventListener('keyup', onKeyUp)
-    node.focus()
-    return () => {
-      node.removeEventListener('keydown', onKeyDown)
-      node.removeEventListener('keyup', onKeyUp)
-    }
-  }, [hasControl, dispatchKey])
 
   // Non-passive wheel binding so we can preventDefault and forward to remote
   useEffect(() => {
@@ -785,9 +726,9 @@ export function CdpViewer({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
             <button
               type="button"
               onClick={() => {
-                setHasControl((v) => {
-                  return !v
-                })
+                const nextHasControl = !hasControl
+                setHasControl(nextHasControl)
+                if (nextHasControl) containerRef.current?.focus()
               }}
               className={cn(
                 'rounded-md px-2.5 py-1 text-xs font-medium transition',
@@ -810,6 +751,17 @@ export function CdpViewer({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
         ref={containerRef}
         tabIndex={0}
         className={cn('relative flex-1 overflow-hidden bg-neutral-950 outline-none', hasControl ? 'cursor-crosshair' : 'cursor-default')}
+        onKeyDown={(e) => {
+          if (!hasControl) return
+          e.preventDefault()
+          dispatchKey('keyDown', e.nativeEvent)
+          if (e.key.length === 1) dispatchKey('char', e.nativeEvent)
+        }}
+        onKeyUp={(e) => {
+          if (!hasControl) return
+          e.preventDefault()
+          dispatchKey('keyUp', e.nativeEvent)
+        }}
       >
         <canvas
           ref={canvasRef}
