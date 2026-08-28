@@ -10,8 +10,8 @@ Control a Chrome browser on any machine from anywhere over the internet. No VPN,
 
 The simplest way to give a remote agent access to your browser is the **Remote control** button (light-blue cloud) in the Playwriter toolbar. It requires **no playwriter install** on your machine — only the extension. The extension itself opens a secret tunnel and exposes the tab behind an unguessable URL.
 
-1. Click the **Remote control** button and confirm that the agent may read and control the tab
-2. A prompt containing the secret URL is copied to your clipboard — paste it to the agent
+1. Click the **Remote control** button and confirm that the agent may read and control the tab. [Read more about security](./remote-control.mdx).
+2. A prompt containing the secret URL is copied to your clipboard. Paste it to the agent.
 3. The agent runs, on its own machine:
 
 ```bash
@@ -20,7 +20,7 @@ playwriter session new --remote-control 'https://playwriter.dev/remote-control#x
 playwriter -s 1 -e "console.log(await page.title())"
 ```
 
-4. Click the button again anytime to **revoke access** — the URL dies instantly and is never reused
+4. Open the **Remote ON** dropdown and click **Stop sharing** anytime to **revoke access**. The URL dies instantly and is never reused.
 
 The shared tab is the **starting control surface**, not a security sandbox. Remote CDP access is powerful, so the recipient must be fully trusted. A short denylist blocks new-tab creation, explicit whole-profile cookie APIs, and obvious destructive clears.
 

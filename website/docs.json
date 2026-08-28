@@ -48,7 +48,8 @@
               "docs/streaming",
               "docs/headless",
               "docs/profiling",
-              "docs/security"
+              "docs/security",
+              "docs/remote-control"
             ]
           },
           {

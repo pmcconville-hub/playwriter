@@ -204,7 +204,7 @@ Add this feature description:
 > sandbox. Traffic can include screenshots, page content, URLs, input events,
 > network data, cookies, authentication data, and browser storage.
 > Playwriter routes tunnel payloads in memory and does not store them. Anyone with
-> the link has access until you click Remote ON again to revoke it.
+> the link has access until you open Remote ON and click Stop sharing.
 
 Replace the current **Permissions** list. It incorrectly names `activeTab` and
 `tabs`, which are not production manifest permissions. Use this shorter public
@@ -269,10 +269,10 @@ Delete or rewrite these current claims because they become false:
 
 1. Install the extension and click its icon on a normal HTTPS tab.
 2. Click the light-blue **Remote control** toolbar button.
-3. Verify that a disclosure appears before any tunnel starts.
+3. Verify that a short disclosure appears, with a Read more link, before any tunnel starts.
 4. Accept it and verify that the toolbar shows **Remote ON**.
 5. Open the copied link in another browser and verify the selected-tab viewer.
-6. Click **Remote ON** again and verify that the link disconnects immediately.
+6. Open the **Remote ON** dropdown, click **Stop sharing**, and verify that the link disconnects immediately.
 7. Note that remote logic uses only the policy-exempt Debugger API and that no
    remote JavaScript bundle is loaded by the extension.
 

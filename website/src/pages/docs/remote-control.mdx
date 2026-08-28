@@ -1,0 +1,81 @@
+---
+title: Remote Control Security
+sidebarTitle: Remote Control
+description: What happens when you share a tab, who can open the link, and how to revoke access.
+icon: lucide:cloud
+prompt: |
+  User prompt: change the dialog we show when enabling remote to a much
+  shorter one. and add a link to read more that points to a mdx page in
+  playwriter.dev explaining security of it.
+  Use @website/src/pages/docs/security.mdx,
+  @website/src/pages/docs/remote-access.mdx,
+  @website/src/pages/privacy.mdx, and
+  @extension/src/toolbar/toolbar.ts.
+---
+
+**Remote control** shares one tab of your Chrome with a person or agent. The
+link is a secret. Anyone who has it can view that tab and drive it as you.
+
+Only share it with people you **fully trust**.
+
+## What you give away
+
+The recipient can see and use whatever that tab can:
+
+- **Screenshots** of the page
+- **Page content**, URLs, and what you type
+- **Clicks**, scrolls, and other input
+- **Network data**, cookies, and site storage for that tab
+
+This is **not a sandbox**. Playwriter blocks a few obvious accidents (new tabs,
+whole-profile cookie APIs, destructive clears). It does not make a malicious
+recipient safe.
+
+```diagram
+   Your Chrome                         playwriter.dev                    Recipient
+  ┌──────────────────────┐            ┌────────────────┐            ┌────────────────┐
+  │  Shared tab          │            │  Encrypted     │            │  Agent CLI or  │
+  │  Remote ON           │ ──────────> │  tunnel        │ ──────────> │  live viewer   │
+  │                      │            │  (in memory)   │            │                │
+  └──────────────────────┘            └────────────────┘            └────────────────┘
+          ^                                                                   │
+          └────────── CDP commands, frames, cookies, page data <──────────────┘
+```
+
+## How sharing starts
+
+1. Click **Remote control** in the toolbar
+2. Read the short confirm and optionally **Read more** (this page)
+3. Click **Share**. Playwriter copies an agent prompt that includes the secret URL
+
+The same URL is also a **live view**. Open it in any browser to watch the tab.
+Use **Copy remote URL** on the **Remote ON** dropdown to copy just that link.
+
+## How to revoke
+
+Open the **Remote ON** dropdown and click **Stop sharing**. The link dies at
+once and is never reused.
+
+The share also ends if you **close the tab** or **close Chrome**.
+
+Treat the URL like a **password**. Do not paste it in public channels, issues,
+or logs.
+
+## What Playwriter does not do
+
+- It does **not** store tunnel payloads. Frames are relayed in memory.
+- It does **not** send your Google account email or install id in the handshake.
+- The secret sits in the URL **fragment** (`#id`), so the first viewer-page
+  request omits it. The viewer then connects to the tunnel host, which the
+  tunnel service and Cloudflare process.
+
+Cloudflare can still see **connection metadata**. Read the
+[privacy policy](../privacy.mdx) before sharing a sensitive tab.
+
+## Full relay access
+
+Remote control is one tab, from the extension, with no local CLI install.
+
+Exposing your **entire relay** (`playwriter serve` plus a tunnel) is a different
+mode. It needs a token and gives access to every controlled tab. See
+[Remote access](./remote-access.mdx).
