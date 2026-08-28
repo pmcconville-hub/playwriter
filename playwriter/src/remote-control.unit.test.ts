@@ -28,7 +28,7 @@ describe('remote-control', () => {
   test('the shared link points at the viewer page and hides the id in the hash', () => {
     const url = buildRemoteControlUrl({ tunnelId: 'abc123' })
     expect(url).toMatchInlineSnapshot(`"https://playwriter.dev/remote-control#abc123"`)
-    // The hash never reaches a server, so the id stays out of logs and Referer headers.
+    // The initial viewer request omits the hash; JS later uses it as the tunnel host.
     expect(new URL(url).pathname).toMatchInlineSnapshot(`"/remote-control"`)
     expect(extractViewerTunnelId(url)).toMatchInlineSnapshot(`"abc123"`)
   })
@@ -95,9 +95,61 @@ describe('remote-control', () => {
       `"This is a shared remote-control browser tab. You cannot create additional tabs and should not try to. The user shared exactly one tab with you (plus any popups that tab opens itself). Keep working inside the shared tab: navigate it with page.goto() instead of opening new pages. If you really need another tab, ask the user to open one and share it with you (they get a separate URL per shared tab)."`,
     )
     expect(getRemoteCdpCommandRejection('Network.clearBrowserCookies')).toMatchInlineSnapshot(
-      `"Network.clearBrowserCookies is not allowed on a shared remote-control tab: it clears cookies for EVERY site in the user profile. Use per-domain alternatives (e.g. Network.getCookies + Network.deleteCookies) instead."`,
+      `"Network.clearBrowserCookies is not allowed on a shared remote-control tab: it clears cookies for EVERY site in the user profile. Use APIs scoped to the shared page instead."`,
     )
     expect(getRemoteCdpCommandRejection('Network.clearBrowserCache')).toBeTruthy()
+  })
+
+  test('blocks profile-wide cookie access', () => {
+    const methods = [
+      'Network.deleteCookies',
+      'Network.getAllCookies',
+      'Network.getCookies',
+      'Network.setCookie',
+      'Network.setCookies',
+      'Storage.getCookies',
+      'Storage.setCookies',
+    ]
+    const rejections = methods.map((method) => {
+      return getRemoteCdpCommandRejection(method)
+    })
+    expect(rejections).not.toContain(null)
+    expect(
+      methods.map((method) => {
+        return { method, rejection: getRemoteCdpCommandRejection(method) }
+      }),
+    ).toMatchInlineSnapshot(`
+      [
+        {
+          "method": "Network.deleteCookies",
+          "rejection": "Network.deleteCookies is not allowed on a shared remote-control tab: it changes authentication cookies outside the shared page. Use APIs scoped to the shared page instead.",
+        },
+        {
+          "method": "Network.getAllCookies",
+          "rejection": "Network.getAllCookies is not allowed on a shared remote-control tab: it reads cookies for EVERY site in the user profile. Use APIs scoped to the shared page instead.",
+        },
+        {
+          "method": "Network.getCookies",
+          "rejection": "Network.getCookies is not allowed on a shared remote-control tab: it can read authentication cookies for URLs outside the shared page. Use APIs scoped to the shared page instead.",
+        },
+        {
+          "method": "Network.setCookie",
+          "rejection": "Network.setCookie is not allowed on a shared remote-control tab: it can change authentication cookies outside the shared page. Use APIs scoped to the shared page instead.",
+        },
+        {
+          "method": "Network.setCookies",
+          "rejection": "Network.setCookies is not allowed on a shared remote-control tab: it can change authentication cookies outside the shared page. Use APIs scoped to the shared page instead.",
+        },
+        {
+          "method": "Storage.getCookies",
+          "rejection": "Storage.getCookies is not allowed on a shared remote-control tab: it reads cookies for EVERY site in the user profile. Use APIs scoped to the shared page instead.",
+        },
+        {
+          "method": "Storage.setCookies",
+          "rejection": "Storage.setCookies is not allowed on a shared remote-control tab: it changes cookies outside the shared tab. Use APIs scoped to the shared page instead.",
+        },
+      ]
+    `)
   })
 
   test('extension method guards', () => {

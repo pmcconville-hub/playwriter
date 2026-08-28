@@ -13,9 +13,10 @@
  *
  *     https://playwriter.dev/remote-control#{tunnelId}
  *
- * The hash never leaves the browser, so the tunnel id (a bearer secret) stays out of
- * request paths, server logs, and Referer headers. Humans who open the link get an
- * interactive view of the tab; agents paste the same link into
+ * The initial viewer request and Referer omit the hash. Viewer JavaScript then uses
+ * the tunnel id in the tunnel hostname, which the tunnel service necessarily
+ * processes. Humans who open the link get an interactive view of the tab; agents
+ * paste the same link into
  * `playwriter session new --remote-control`, and the CLI resolves it to the tunnel.
  *
  * This module is shared between the extension (browser), the relay (node), and the
@@ -309,11 +310,18 @@ const REMOTE_NEW_TAB_ERROR = dedent`
   This is a shared remote-control browser tab. You cannot create additional tabs and should not try to. The user shared exactly one tab with you (plus any popups that tab opens itself). Keep working inside the shared tab: navigate it with page.goto() instead of opening new pages. If you really need another tab, ask the user to open one and share it with you (they get a separate URL per shared tab).
 `
 
-/** CDP commands with browser-wide destructive effects, never allowed from remote agents. */
+/** CDP commands with profile-wide effects, never allowed from remote agents. */
 const REMOTE_BLOCKED_CDP_COMMANDS = new Map<string, string>([
   ['Network.clearBrowserCookies', 'clears cookies for EVERY site in the user profile'],
   ['Network.clearBrowserCache', 'clears the browser cache for the whole user profile'],
+  ['Network.deleteCookies', 'changes authentication cookies outside the shared page'],
+  ['Network.getAllCookies', 'reads cookies for EVERY site in the user profile'],
+  ['Network.getCookies', 'can read authentication cookies for URLs outside the shared page'],
+  ['Network.setCookie', 'can change authentication cookies outside the shared page'],
+  ['Network.setCookies', 'can change authentication cookies outside the shared page'],
   ['Storage.clearCookies', 'clears cookies for EVERY site in the user profile'],
+  ['Storage.getCookies', 'reads cookies for EVERY site in the user profile'],
+  ['Storage.setCookies', 'changes cookies outside the shared tab'],
 ])
 
 /**
@@ -326,7 +334,7 @@ export function getRemoteCdpCommandRejection(method: string): string | null {
   }
   const blockedReason = REMOTE_BLOCKED_CDP_COMMANDS.get(method)
   if (blockedReason) {
-    return `${method} is not allowed on a shared remote-control tab: it ${blockedReason}. Use per-domain alternatives (e.g. Network.getCookies + Network.deleteCookies) instead.`
+    return `${method} is not allowed on a shared remote-control tab: it ${blockedReason}. Use APIs scoped to the shared page instead.`
   }
   return null
 }
