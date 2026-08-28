@@ -231,3 +231,12 @@ unfiltered offscreen listener that returns `true` answers service-worker
 actions first and breaks them. Offscreen clipboard writes also need
 `document.execCommand('copy')` on a textarea: offscreen documents can never be
 focused, so `navigator.clipboard.writeText` always rejects there.
+
+## Screencast keeps running on backgrounded debugged tabs (Apr 2026)
+
+Search results claim `Page.startScreencast` only works for visible tabs. Wrong
+when `chrome.debugger` is attached: after a real `chrome.tabs.update` switch the
+tab still reports `visibilityState === 'visible'` and frames keep arriving at the
+same rate (231 active vs 231 backgrounded). Pinned by
+`screencast-background-tab.test.ts`. `Page.bringToFront` does NOT switch the
+active Chrome tab, so any test using it measures nothing.
