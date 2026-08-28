@@ -98,11 +98,17 @@ export function initPlaywriterToolbar(): void {
   // Dark egaki-inspired toolbar: #1c1c1c bg, white/10 border, pill shape
   styleEl.textContent = `
     *,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+    .stack {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      pointer-events: none;
+    }
     .toolbar {
       display: flex;
       align-items: center;
-      gap: 2px;
-      padding: 3px 8px;
+      gap: 1px;
+      padding: 2px 6px;
       background: #1c1c1c;
       border: 1px solid rgba(255,255,255,0.1);
       border-radius: 9999px;
@@ -124,19 +130,19 @@ export function initPlaywriterToolbar(): void {
     }
     .separator {
       width: 1px;
-      height: 16px;
+      height: 14px;
       background: rgba(255,255,255,0.15);
-      margin: 0 2px;
+      margin: 0 1px;
       flex-shrink: 0;
     }
     .btn {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 28px;
-      height: 28px;
+      width: 24px;
+      height: 24px;
       border: none;
-      border-radius: 8px;
+      border-radius: 6px;
       background: transparent;
       color: rgba(161,161,170,1);
       cursor: pointer;
@@ -144,6 +150,15 @@ export function initPlaywriterToolbar(): void {
       padding: 0;
       flex-shrink: 0;
       outline: none;
+    }
+    .btn.labeled {
+      width: auto;
+      gap: 6px;
+      padding: 0 6px;
+      font-size: 11px;
+      font-weight: 500;
+      font-family: inherit;
+      white-space: nowrap;
     }
     .btn:hover {
       background: rgba(255,255,255,0.08);
@@ -160,8 +175,8 @@ export function initPlaywriterToolbar(): void {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 20px;
-      height: 28px;
+      width: 18px;
+      height: 24px;
       border: none;
       border-radius: 6px;
       background: transparent;
@@ -183,15 +198,15 @@ export function initPlaywriterToolbar(): void {
     .record-btn {
       display: flex;
       align-items: center;
-      gap: 5px;
+      gap: 3px;
       border: none;
-      border-radius: 8px;
+      border-radius: 6px;
       background: transparent;
       color: rgba(161,161,170,1);
       cursor: pointer;
       transition: background 0.15s, color 0.15s;
-      padding: 4px 10px;
-      font-size: 13px;
+      padding: 3px 7px;
+      font-size: 11px;
       font-weight: 500;
       outline: none;
       white-space: nowrap;
@@ -222,6 +237,92 @@ export function initPlaywriterToolbar(): void {
     .remote-btn.remote-active:hover {
       background: rgba(125,211,252,0.18);
       color: #bae6fd;
+    }
+    .remote-btn .chevron {
+      width: 10px;
+      height: 10px;
+      opacity: 0.75;
+      flex-shrink: 0;
+    }
+    .remote-btn.menu-open .chevron {
+      transform: rotate(180deg);
+    }
+    .remote-panel {
+      display: none;
+      flex-direction: column;
+      gap: 2px;
+      margin-top: 6px;
+      padding: 4px;
+      background: #1c1c1c;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      pointer-events: all;
+      box-shadow: 0 12px 60px rgba(0,0,0,0.6), 0 4px 20px rgba(0,0,0,0.4), 0 0 0 1px rgba(0,0,0,0.15);
+      min-width: 168px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    .remote-panel.open {
+      display: flex;
+    }
+    .remote-panel button {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      border: none;
+      background: transparent;
+      color: rgba(228,228,231,1);
+      text-align: left;
+      padding: 6px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .remote-panel button:hover {
+      background: rgba(255,255,255,0.08);
+    }
+    .remote-panel button svg {
+      flex-shrink: 0;
+      color: rgba(161,161,170,1);
+    }
+    .remote-panel button.danger svg {
+      color: #f87171;
+    }
+    .remote-panel p {
+      color: rgba(212,212,216,1);
+      font-size: 11px;
+      line-height: 1.4;
+      padding: 6px 8px 2px;
+      max-width: 220px;
+    }
+    .remote-panel a {
+      color: #7dd3fc;
+      font-size: 11px;
+      padding: 0 8px 4px;
+      text-decoration: none;
+    }
+    .remote-panel a:hover {
+      text-decoration: underline;
+    }
+    .remote-panel-actions {
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+    }
+    .remote-panel-actions button {
+      flex: 1;
+      width: auto;
+      justify-content: center;
+      text-align: center;
+    }
+    .remote-panel-actions button.primary {
+      background: rgba(125,211,252,0.16);
+      color: #7dd3fc;
+    }
+    .remote-panel-actions button.primary:hover {
+      background: rgba(125,211,252,0.24);
     }
     .record-btn .spinner {
       display: block;
@@ -263,6 +364,10 @@ export function initPlaywriterToolbar(): void {
       opacity: 1;
       transition: opacity 0.15s ease 0.3s;
     }
+    .tooltips-disabled [data-tooltip]:hover::after {
+      opacity: 0;
+      transition: none;
+    }
   `
 
   const toolbarEl = document.createElement('div')
@@ -270,8 +375,12 @@ export function initPlaywriterToolbar(): void {
   toolbarEl.setAttribute('role', 'toolbar')
   toolbarEl.setAttribute('aria-label', 'Playwriter tools')
 
+  const stack = document.createElement('div')
+  stack.className = 'stack'
+
   shadow.appendChild(styleEl)
-  shadow.appendChild(toolbarEl)
+  shadow.appendChild(stack)
+  stack.appendChild(toolbarEl)
 
   // Own overlay so position:fixed is viewport-relative. The toolbar host has
   // transform + contain, which would otherwise make the toast a child of the bar.
@@ -668,7 +777,7 @@ export function initPlaywriterToolbar(): void {
   // ── SVG icon strings (defined inside function — required for func injection) ─
 
   // Playwriter logo with cutout cursor (fill-rule evenodd punches a hole through the icon)
-  const PIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 424 424" aria-hidden="true"><path fill-rule="evenodd" d="M 0 212 C 0 112.063 0 62.095 31.037 31.037 C 62.116 0 112.063 0 212 0 C 311.937 0 361.905 0 392.942 31.037 C 424 62.116 424 112.063 424 212 C 424 311.937 424 361.905 392.942 392.942 C 361.926 424 311.937 424 212 424 C 112.063 424 62.095 424 31.037 392.942 C 0 361.926 0 311.937 0 212 Z M 225.732 260.521 L 277.905 312.673 C 283.311 318.1 286.003 320.793 289.014 322.043 C 293.042 323.718 297.557 323.718 301.585 322.043 C 304.596 320.793 307.309 318.1 312.694 312.694 C 318.1 307.288 320.793 304.596 322.043 301.585 C 323.722 297.563 323.722 293.036 322.043 289.014 C 320.793 286.003 318.1 283.29 312.694 277.905 L 260.521 225.732 L 276.442 209.789 C 292.766 193.465 300.907 185.325 298.999 176.548 C 297.07 167.792 286.237 163.785 264.591 155.814 L 192.384 129.208 C 149.2 113.308 127.618 105.358 116.488 116.488 C 105.358 127.618 113.308 149.2 129.208 192.384 L 155.814 264.591 C 163.785 286.237 167.792 297.07 176.548 298.999 C 185.303 300.928 193.465 292.766 209.789 276.442 Z" fill="currentColor"/></svg>`
+  const PIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 424 424" aria-hidden="true"><path fill-rule="evenodd" d="M 0 212 C 0 112.063 0 62.095 31.037 31.037 C 62.116 0 112.063 0 212 0 C 311.937 0 361.905 0 392.942 31.037 C 424 62.116 424 112.063 424 212 C 424 311.937 424 361.905 392.942 392.942 C 361.926 424 311.937 424 212 424 C 112.063 424 62.095 424 31.037 392.942 C 0 361.926 0 311.937 0 212 Z M 225.732 260.521 L 277.905 312.673 C 283.311 318.1 286.003 320.793 289.014 322.043 C 293.042 323.718 297.557 323.718 301.585 322.043 C 304.596 320.793 307.309 318.1 312.694 312.694 C 318.1 307.288 320.793 304.596 322.043 301.585 C 323.722 297.563 323.722 293.036 322.043 289.014 C 320.793 286.003 318.1 283.29 312.694 277.905 L 260.521 225.732 L 276.442 209.789 C 292.766 193.465 300.907 185.325 298.999 176.548 C 297.07 167.792 286.237 163.785 264.591 155.814 L 192.384 129.208 C 149.2 113.308 127.618 105.358 116.488 116.488 C 105.358 127.618 113.308 149.2 129.208 192.384 L 155.814 264.591 C 163.785 286.237 167.792 297.07 176.548 298.999 C 185.303 300.928 193.465 292.766 209.789 276.442 Z" fill="currentColor"/></svg>`
 
   // Lucide x icon
   const CLOSE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
@@ -684,6 +793,14 @@ export function initPlaywriterToolbar(): void {
 
   // Lucide cloud icon (light blue via .remote-btn svg color)
   const CLOUD_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>`
+
+  const CHEVRON_SVG = `<svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`
+
+  const LINK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`
+
+  const CLIPBOARD_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>`
+
+  const CLOUD_OFF_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.01 7.01 0 0 0 10 5.07"/></svg>`
 
   const SPINNER_SVG = `<svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="2.5" stroke-opacity="0.25"/><path d="M20 12a8 8 0 0 0-8-8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>`
 
@@ -808,10 +925,10 @@ export function initPlaywriterToolbar(): void {
 
   // Pin element button
   pinBtn = document.createElement('button')
-  pinBtn.className = 'btn'
+  pinBtn.className = 'btn labeled'
   pinBtn.setAttribute('data-tooltip', 'Select and copy element as prompt')
-  pinBtn.setAttribute('aria-label', 'Select and copy element as prompt')
-  pinBtn.innerHTML = PIN_SVG
+  pinBtn.setAttribute('aria-label', 'Copy Locator')
+  pinBtn.innerHTML = PIN_SVG + ' <span>Copy Locator</span>'
   pinBtn.addEventListener('click', (e: MouseEvent) => {
     e.stopPropagation()
     playSound('click')
@@ -883,28 +1000,113 @@ export function initPlaywriterToolbar(): void {
   const sep2 = document.createElement('div')
   sep2.className = 'separator'
 
-  // Remote control button — shares this tab with a remote agent via a secret
-  // tunnel URL. Toggling off kills the link. See extension/src/remote-tunnel.ts.
+  // Remote control: share this tab via a secret tunnel URL. While sharing, the
+  // button is a dropdown (copy viewer URL or stop sharing). See remote-tunnel.ts.
   let remoteActive = false
+  const REMOTE_SECURITY_URL = 'https://playwriter.dev/docs/remote-control'
   const remoteBtn = document.createElement('button')
   remoteBtn.className = 'record-btn remote-btn'
+
+  const remoteMenu = document.createElement('div')
+  remoteMenu.className = 'remote-panel'
+  remoteMenu.setAttribute('role', 'menu')
+  const copyUrlItem = document.createElement('button')
+  copyUrlItem.setAttribute('role', 'menuitem')
+  copyUrlItem.innerHTML = LINK_SVG + ' <span>Copy remote URL</span>'
+  const copyPromptItem = document.createElement('button')
+  copyPromptItem.setAttribute('role', 'menuitem')
+  copyPromptItem.innerHTML = CLIPBOARD_SVG + ' <span>Copy agent prompt</span>'
+  const stopShareItem = document.createElement('button')
+  stopShareItem.setAttribute('role', 'menuitem')
+  stopShareItem.className = 'danger'
+  stopShareItem.innerHTML = CLOUD_OFF_SVG + ' <span>Stop sharing</span>'
+  remoteMenu.appendChild(copyUrlItem)
+  remoteMenu.appendChild(copyPromptItem)
+  remoteMenu.appendChild(stopShareItem)
+
+  const remoteDialog = document.createElement('div')
+  remoteDialog.className = 'remote-panel'
+  remoteDialog.setAttribute('role', 'dialog')
+  remoteDialog.setAttribute('aria-label', 'Share this tab')
+  const dialogText = document.createElement('p')
+  dialogText.textContent = 'Share this tab? Anyone with the link can view and control it as you.'
+  const dialogMore = document.createElement('a')
+  dialogMore.href = REMOTE_SECURITY_URL
+  dialogMore.target = '_blank'
+  dialogMore.rel = 'noopener noreferrer'
+  dialogMore.textContent = 'Read more'
+  const dialogActions = document.createElement('div')
+  dialogActions.className = 'remote-panel-actions'
+  const dialogCancel = document.createElement('button')
+  dialogCancel.textContent = 'Cancel'
+  const dialogShare = document.createElement('button')
+  dialogShare.className = 'primary'
+  dialogShare.textContent = 'Share'
+  dialogActions.appendChild(dialogCancel)
+  dialogActions.appendChild(dialogShare)
+  remoteDialog.appendChild(dialogText)
+  remoteDialog.appendChild(dialogMore)
+  remoteDialog.appendChild(dialogActions)
+
+  stack.appendChild(remoteMenu)
+  stack.appendChild(remoteDialog)
+
+  function setTooltipsEnabled(enabled: boolean): void {
+    stack.classList.toggle('tooltips-disabled', !enabled)
+  }
+
+  function hideRemotePanels(): void {
+    remoteMenu.classList.remove('open')
+    remoteDialog.classList.remove('open')
+    remoteBtn.classList.remove('menu-open')
+    setTooltipsEnabled(true)
+    if (remoteActive) {
+      remoteBtn.setAttribute('aria-expanded', 'false')
+      remoteBtn.setAttribute('data-tooltip', 'Remote control options')
+    } else {
+      remoteBtn.setAttribute('data-tooltip', 'Share this tab with a person or agent (copies prompt)')
+    }
+  }
+
+  function alignRemotePanel(panel: HTMLElement): void {
+    const bar = toolbarEl.getBoundingClientRect()
+    const btn = remoteBtn.getBoundingClientRect()
+    panel.style.marginRight = Math.max(0, bar.right - btn.right) + 'px'
+  }
+
+  function showRemotePanel(panel: HTMLElement): void {
+    hideRemotePanels()
+    panel.classList.add('open')
+    alignRemotePanel(panel)
+    setTooltipsEnabled(false)
+    remoteBtn.removeAttribute('data-tooltip')
+    if (panel === remoteMenu) {
+      remoteBtn.classList.add('menu-open')
+      remoteBtn.setAttribute('aria-expanded', 'true')
+    }
+  }
 
   function updateRemoteBtn(): void {
     remoteBtn.classList.toggle('remote-active', remoteActive)
     if (remoteActive) {
-      remoteBtn.innerHTML = CLOUD_SVG + ' <span>Remote ON</span>'
-      remoteBtn.setAttribute('data-tooltip', 'Stop remote control and revoke the link')
-      remoteBtn.setAttribute('aria-label', 'Stop remote control')
+      remoteBtn.innerHTML = CLOUD_SVG + ' <span>Remote ON</span>' + CHEVRON_SVG
+      remoteBtn.setAttribute('data-tooltip', 'Remote control options')
+      remoteBtn.setAttribute('aria-label', 'Remote control options')
+      remoteBtn.setAttribute('aria-haspopup', 'menu')
+      remoteBtn.setAttribute('aria-expanded', 'false')
       return
     }
     remoteBtn.innerHTML = CLOUD_SVG + ' <span>Remote control</span>'
     remoteBtn.setAttribute('data-tooltip', 'Share this tab with a person or agent (copies prompt)')
     remoteBtn.setAttribute('aria-label', 'Start remote control')
+    remoteBtn.removeAttribute('aria-haspopup')
+    remoteBtn.removeAttribute('aria-expanded')
   }
   updateRemoteBtn()
 
   function setRemote(active: boolean): void {
     remoteActive = active
+    hideRemotePanels()
     updateRemoteBtn()
   }
 
@@ -919,20 +1121,100 @@ export function initPlaywriterToolbar(): void {
         showToast('Extension not connected')
         return
       }
-      window.__playwriterToolbarStopRemote()
+      if (remoteMenu.classList.contains('open')) {
+        hideRemotePanels()
+        return
+      }
+      showRemotePanel(remoteMenu)
       return
     }
     if (!window.__playwriterToolbarStartRemote) {
       showToast('Extension not connected')
       return
     }
-    if (!window.confirm(
-      "Share this tab through Playwriter Remote control?\n\nRemote control is not a security sandbox. The recipient gets broad browser automation access and must be fully trusted. Shared data can include screenshots, page content, URLs, input events, network data, cookies, and browser storage.\n\nTraffic passes through Playwriter's encrypted Cloudflare tunnel. Payloads are relayed in memory and are not stored by Playwriter. Anyone with the copied link has access until you turn Remote control off.",
-    )) {
+    if (remoteDialog.classList.contains('open')) {
+      hideRemotePanels()
+      return
+    }
+    showRemotePanel(remoteDialog)
+  })
+
+  copyUrlItem.addEventListener('click', (e: MouseEvent) => {
+    e.stopPropagation()
+    if (!isTrustedToolbarClick(e)) {
+      return
+    }
+    playSound('click')
+    hideRemotePanels()
+    void chrome.runtime.sendMessage({ action: 'remoteControlCopyUrl' })
+  })
+
+  copyPromptItem.addEventListener('click', (e: MouseEvent) => {
+    e.stopPropagation()
+    if (!isTrustedToolbarClick(e)) {
+      return
+    }
+    playSound('click')
+    hideRemotePanels()
+    void chrome.runtime.sendMessage({ action: 'remoteControlCopyPrompt' })
+  })
+
+  stopShareItem.addEventListener('click', (e: MouseEvent) => {
+    e.stopPropagation()
+    if (!isTrustedToolbarClick(e)) {
+      return
+    }
+    hideRemotePanels()
+    if (!window.__playwriterToolbarStopRemote) {
+      showToast('Extension not connected')
+      return
+    }
+    window.__playwriterToolbarStopRemote()
+  })
+
+  dialogCancel.addEventListener('click', (e: MouseEvent) => {
+    e.stopPropagation()
+    hideRemotePanels()
+  })
+
+  dialogShare.addEventListener('click', (e: MouseEvent) => {
+    e.stopPropagation()
+    if (!isTrustedToolbarClick(e)) {
+      return
+    }
+    hideRemotePanels()
+    if (!window.__playwriterToolbarStartRemote) {
+      showToast('Extension not connected')
       return
     }
     window.__playwriterToolbarStartRemote()
   })
+
+  toolbarEl.addEventListener('click', (e: MouseEvent) => {
+    const target = e.target
+    if (!(target instanceof Node)) {
+      return
+    }
+    if (remoteBtn === target || remoteBtn.contains(target)) {
+      return
+    }
+    hideRemotePanels()
+  })
+
+  function onDocMouseDown(e: MouseEvent): void {
+    if (isOverToolbar(e)) {
+      return
+    }
+    hideRemotePanels()
+  }
+  document.addEventListener('mousedown', onDocMouseDown, true)
+
+  function onRemoteKeyDown(e: KeyboardEvent): void {
+    if (e.key === 'Escape') {
+      hideRemotePanels()
+    }
+  }
+  document.addEventListener('keydown', onRemoteKeyDown, true)
 
   const sep3 = document.createElement('div')
   sep3.className = 'separator'
@@ -1058,6 +1340,9 @@ export function initPlaywriterToolbar(): void {
 
   window.__playwriterToolbarDestroy = function (): void {
     setPinMode(false)
+    hideRemotePanels()
+    document.removeEventListener('mousedown', onDocMouseDown, true)
+    document.removeEventListener('keydown', onRemoteKeyDown, true)
     removeOverlay()
     host.remove()
     toastHost.remove()
