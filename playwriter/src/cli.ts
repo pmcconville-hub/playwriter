@@ -21,6 +21,7 @@ import {
   ensureRelayServer,
   RELAY_PORT,
   waitForConnectedExtensions,
+  getLocalExtensionStatuses,
   getExtensionOutdatedWarning,
   getExtensionStatus,
   type ExtensionStatus,
@@ -583,7 +584,9 @@ cli
         })
       }
     } else {
-      extensions = await fetchExtensionsStatus({ host: options.host, token: options.token })
+      extensions = getLocalExtensionStatuses(
+        await fetchExtensionsStatus({ host: options.host, token: options.token }),
+      )
     }
 
     if (extensions.length === 0) {

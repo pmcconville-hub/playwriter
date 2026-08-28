@@ -546,6 +546,26 @@ describe('findExtensionByStableKey', () => {
   })
 })
 
+describe('getLocalExtensions', () => {
+  test('excludes remote-control connections from implicit selection', () => {
+    let state = stateWithExtension('local', { browser: 'Chrome' }, 'install:Chrome:local')
+    state = relayState.addExtension(state, {
+      id: 'remote',
+      info: { browser: 'Remote browser' },
+      stableKey: 'remote:hashed-id',
+      ws: fakeWs(),
+    })
+
+    expect(relayState.getLocalExtensions(state).map((extension) => extension.id)).toEqual(['local'])
+    expect(relayState.isRemoteExtension(state.extensions.get('remote')!)).toBe(true)
+  })
+
+  test('returns no default candidates when only remote connections exist', () => {
+    const state = stateWithExtension('remote', { browser: 'Remote browser' }, 'remote:hashed-id')
+    expect(relayState.getLocalExtensions(state)).toEqual([])
+  })
+})
+
 describe('findExtensionIdByCdpSession', () => {
   test('finds extension owning a CDP sessionId', () => {
     let state = stateWithExtension('ext-1')

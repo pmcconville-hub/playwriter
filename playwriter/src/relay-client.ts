@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import pc from 'picocolors'
 import { getListeningPidsForPort, killPortProcess } from './kill-port.js'
 import { VERSION, sleep, LOG_FILE_PATH } from './utils.js'
+import { isRemoteExtensionKey } from './relay-state.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -22,6 +23,12 @@ export type ExtensionStatus = {
   profile: { email: string; id: string } | null
   activeTargets: number
   playwriterVersion: string | null
+}
+
+export function getLocalExtensionStatuses(extensions: ExtensionStatus[]): ExtensionStatus[] {
+  return extensions.filter((extension) => {
+    return !extension.stableKey || !isRemoteExtensionKey(extension.stableKey)
+  })
 }
 
 export async function getRelayServerVersion(port: number = RELAY_PORT): Promise<string | null> {
@@ -145,7 +152,7 @@ export async function waitForConnectedExtensions(
   logger?.log(pc.dim('Waiting for extension to connect...'))
 
   while (Date.now() - startTime < timeoutMs) {
-    const extensions = await getExtensionsStatus(port)
+    const extensions = getLocalExtensionStatuses(await getExtensionsStatus(port))
     if (extensions.length > 0) {
       logger?.log(pc.green('Extension connected'))
       return extensions

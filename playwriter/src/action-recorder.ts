@@ -9,6 +9,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { BrowserContext, Frame, Page, Request } from '@xmorse/playwright-core'
 import { getCDPSessionForPage, type ICDPSession } from './cdp-session.js'
+import { isRemoteExtensionKey } from './relay-state.js'
 
 // Read at call time (not module load) so tests can point recordings at a temp
 // dir via PLAYWRITER_RECORDINGS_DIR without polluting ~/.playwriter
@@ -129,7 +130,7 @@ export function pickRecorderStartSession(options: {
   }
   const busy = new Set(options.busySessionIds)
   const free = options.sessions.find((session) => {
-    return session.extensionId && !busy.has(session.id)
+    return session.extensionId && !isRemoteExtensionKey(session.extensionId) && !busy.has(session.id)
   })
   if (free) {
     return { kind: 'use', sessionId: free.id }

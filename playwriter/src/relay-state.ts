@@ -104,6 +104,20 @@ export function findExtensionByStableKey(state: RelayState, stableKey: string): 
   return match
 }
 
+export function isRemoteExtensionKey(stableKey: string): boolean {
+  return stableKey.startsWith('remote:')
+}
+
+export function isRemoteExtension(extension: ExtensionEntry): boolean {
+  return isRemoteExtensionKey(extension.stableKey)
+}
+
+export function getLocalExtensions(state: RelayState): ExtensionEntry[] {
+  return Array.from(state.extensions.values()).filter((extension) => {
+    return !isRemoteExtension(extension)
+  })
+}
+
 export function buildStableExtensionKey(info: ExtensionInfo, connectionId: string): string {
   // chrome.identity ids and emails identify the signed-in Google account, not
   // the Chrome profile. Use the per-profile extension storage install id first

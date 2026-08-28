@@ -260,6 +260,25 @@ describe('pickRecorderStartSession', () => {
       }),
     ).toEqual({ kind: 'create' })
   })
+
+  test('never selects a remote-control session implicitly', () => {
+    expect(
+      pickRecorderStartSession({
+        sessions: [
+          { id: 'remote', extensionId: 'remote:hashed-id' },
+          { id: 'local', extensionId: 'install:Chrome:local' },
+        ],
+        busySessionIds: [],
+      }),
+    ).toEqual({ kind: 'use', sessionId: 'local' })
+
+    expect(
+      pickRecorderStartSession({
+        sessions: [{ id: 'remote', extensionId: 'remote:hashed-id' }],
+        busySessionIds: [],
+      }),
+    ).toEqual({ kind: 'create' })
+  })
 })
 
 describe('ActionRecordingManager active recording cap', () => {

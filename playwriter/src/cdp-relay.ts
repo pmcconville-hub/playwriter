@@ -123,10 +123,6 @@ export async function startPlayWriterCDPRelayServer({
     resolvedCdpLogger.log(entry)
   }
 
-  const getDefaultExtensionId = (): string | null => {
-    return store.getState().extensions.keys().next().value || null
-  }
-
   /**
    * Resolve an extension by ID, stableKey, or fallback.
    * Returns the unified ExtensionEntry which includes both state and I/O.
@@ -137,6 +133,7 @@ export async function startPlayWriterCDPRelayServer({
   ): relayState.ExtensionEntry | null => {
     const currentRelayState = store.getState()
     const { extensions } = currentRelayState
+    const localExtensions = relayState.getLocalExtensions(currentRelayState)
 
     if (extensionId) {
       const direct = extensions.get(extensionId)
@@ -163,21 +160,18 @@ export async function startPlayWriterCDPRelayServer({
     }
 
     // Single extension — use it directly
-    if (extensions.size === 1) {
-      const fallbackId = getDefaultExtensionId()
-      if (fallbackId) {
-        const ext = extensions.get(fallbackId)
-        if (ext?.ws) {
-          return ext
-        }
+    if (localExtensions.length === 1) {
+      const [extension] = localExtensions
+      if (extension.ws) {
+        return extension
       }
     }
 
     // Multiple extensions — auto-select if exactly one has active targets.
     // This handles the common case of multiple Chrome profiles with the extension
     // installed, where only one profile has playwriter-enabled tabs. (#52)
-    if (extensions.size > 1) {
-      const activeExtensions = Array.from(extensions.values()).filter((ext) => {
+    if (localExtensions.length > 1) {
+      const activeExtensions = localExtensions.filter((ext) => {
         return ext.connectedTargets.size > 0
       })
       if (activeExtensions.length === 1 && activeExtensions[0].ws) {
@@ -509,7 +503,7 @@ export async function startPlayWriterCDPRelayServer({
   }
 
   const getRecordingRelay = (extensionId?: string | null): RecordingRelay | null => {
-    const allowDefault = !extensionId && store.getState().extensions.size === 1
+    const allowDefault = !extensionId && relayState.getLocalExtensions(store.getState()).length === 1
     const conn = getExtensionConnection(extensionId, { allowFallback: allowDefault })
     if (!conn) {
       return null
@@ -534,7 +528,7 @@ export async function startPlayWriterCDPRelayServer({
   const streamRelays = new Map<string, StreamRelay>()
 
   const getStreamRelay = (extensionId?: string | null): StreamRelay | null => {
-    const allowDefault = !extensionId && store.getState().extensions.size === 1
+    const allowDefault = !extensionId && relayState.getLocalExtensions(store.getState()).length === 1
     const conn = getExtensionConnection(extensionId, { allowFallback: allowDefault })
     if (!conn) {
       return null
@@ -1051,7 +1045,7 @@ export async function startPlayWriterCDPRelayServer({
 
   app.get('/extension/status', (c) => {
     const defaultExtension = getExtensionConnection(null, { allowFallback: true })
-    const connected = store.getState().extensions.size > 0
+    const connected = relayState.getLocalExtensions(store.getState()).length > 0
     const activeTargets = defaultExtension?.connectedTargets.size || 0
     const info = defaultExtension?.info
 
@@ -2475,7 +2469,7 @@ export async function startPlayWriterCDPRelayServer({
 
     // Extension mode (existing behavior)
     const extensionId = body.extensionId || null
-    const allowDefault = !extensionId && store.getState().extensions.size === 1
+    const allowDefault = !extensionId && relayState.getLocalExtensions(store.getState()).length === 1
     const conn = getExtensionConnection(extensionId, { allowFallback: allowDefault })
     if (!conn) {
       const error = extensionId
@@ -2690,7 +2684,7 @@ export async function startPlayWriterCDPRelayServer({
           return pick.sessionId
         }
         const conn = getExtensionConnection(null, {
-          allowFallback: store.getState().extensions.size === 1,
+          allowFallback: relayState.getLocalExtensions(store.getState()).length === 1,
         })
         if (!conn) {
           throw new Error('Extension is not connected. Enable Playwriter on a tab first.')
