@@ -14,9 +14,20 @@ import {
   getRemoteCdpCommandRejection,
   getRemoteExtensionMethodRejection,
   parseRemoteControlUrl,
+  shouldDropRemoteTunnelFrame,
 } from './remote-control.js'
 
 describe('remote-control', () => {
+  test('drops only screencast frames when the tunnel buffer is full', () => {
+    expect(
+      [
+        shouldDropRemoteTunnelFrame({ bufferedAmount: 2 * 1024 * 1024, isScreencastFrame: true }),
+        shouldDropRemoteTunnelFrame({ bufferedAmount: 2 * 1024 * 1024, isScreencastFrame: false }),
+        shouldDropRemoteTunnelFrame({ bufferedAmount: 0, isScreencastFrame: true }),
+      ],
+    ).toEqual([true, false, false])
+  })
+
   test('tunnel ids are unguessable and accepted by the traforo worker', () => {
     const id = generateTunnelId()
     expect(generateTunnelId()).not.toBe(id)

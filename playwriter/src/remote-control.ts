@@ -27,6 +27,17 @@ import dedent from 'string-dedent'
 export const REMOTE_TUNNEL_BASE_DOMAIN = 'playwriter.dev'
 export const REMOTE_VIEWER_BASE_URL = 'https://playwriter.dev'
 export const REMOTE_VIEWER_PATH = '/remote-control'
+export const REMOTE_TUNNEL_MAX_BUFFERED_BYTES = 2 * 1024 * 1024
+
+export function shouldDropRemoteTunnelFrame({
+  bufferedAmount,
+  isScreencastFrame,
+}: {
+  bufferedAmount: number
+  isScreencastFrame: boolean
+}): boolean {
+  return isScreencastFrame && bufferedAmount >= REMOTE_TUNNEL_MAX_BUFFERED_BYTES
+}
 
 // ---------------------------------------------------------------------------
 // Traforo tunnel protocol (JSON over one WebSocket).

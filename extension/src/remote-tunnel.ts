@@ -7,6 +7,7 @@
 import {
   buildRemoteControlUrl,
   buildRemoteUpstreamWsUrl,
+  shouldDropRemoteTunnelFrame,
   type TraforoDownstreamMessage,
   type TraforoUpstreamMessage,
   type TraforoWsOpenMessage,
@@ -28,7 +29,12 @@ export type RemoteTunnelOptions = {
    * Called when a remote relay dials /extension through the tunnel.
    * Return handlers for incoming frames, or null to reject the connection.
    */
-  onConnectionOpen(connection: { id: string; send(data: string): void; close(): void }): TunnelConnectionHandlers | null
+  onConnectionOpen(connection: {
+    id: string
+    send(data: string): void
+    canSendScreencastFrame(): boolean
+    close(): void
+  }): TunnelConnectionHandlers | null
   onStatusChange(status: TunnelStatus, detail?: string): void
 }
 
@@ -241,6 +247,15 @@ export class RemoteTunnel {
       id: connId,
       send: (data) => {
         this.send({ type: 'ws_frame', connId, data, binary: false })
+      },
+      canSendScreencastFrame: () => {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+          return false
+        }
+        return !shouldDropRemoteTunnelFrame({
+          bufferedAmount: this.ws.bufferedAmount,
+          isScreencastFrame: true,
+        })
       },
       close: () => {
         this.connections.delete(connId)

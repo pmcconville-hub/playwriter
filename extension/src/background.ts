@@ -870,6 +870,14 @@ async function dispatchRelayMessage(message: any, sink: RelayMessageSink): Promi
     return
   }
 
+  if (message.method === 'forwardCDPCommand' && message.params?.method === 'Page.screencastFrameAck') {
+    // Frames are ACKed once in onDebuggerEvent; duplicate ACKs make Chromium's in-flight counter negative.
+    if (message.id !== undefined) {
+      sink.send({ id: message.id, result: {} })
+    }
+    return
+  }
+
   // Relay notifies us when action recording starts/stops — update toolbar in all connected tabs
   if (message.method === 'setRecorderState') {
     const recording = !!(message.params as { recording?: boolean })?.recording
@@ -1362,6 +1370,11 @@ function onDebuggerEvent(source: chrome.debugger.DebuggerSession, method: string
 
   const tab = source.tabId ? store.getState().tabs.get(source.tabId) : undefined
   if (!tab) return
+
+  if (method === 'Page.screencastFrame' && typeof params?.sessionId === 'number') {
+    // Central ACK ownership lets slow tunnel viewers drop frames without stalling Chrome.
+    void chrome.debugger.sendCommand(source, 'Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => {})
+  }
 
   if (method !== 'Page.screencastFrame') {
     logger.debug('Forwarding CDP event:', method, 'from tab:', source.tabId)
@@ -2090,6 +2103,11 @@ async function startRemoteControlForTab(
       const connKey = `${tunnelId}:${virtualConn.id}`
       const conn = {
         send: (message: any) => {
+          const isScreencastFrame =
+            message?.method === 'forwardCDPEvent' && message.params?.method === 'Page.screencastFrame'
+          if (isScreencastFrame && !virtualConn.canSendScreencastFrame()) {
+            return
+          }
           virtualConn.send(JSON.stringify(message))
         },
         scope,

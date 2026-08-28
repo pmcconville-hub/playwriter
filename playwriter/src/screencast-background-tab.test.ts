@@ -49,14 +49,9 @@ describe('screencast on a backgrounded tab', () => {
           })
 
           let frames = 0
-          const onEvent = (source: chrome.debugger.DebuggerSession, method: string, params?: object) => {
-            if (source.tabId !== tabAId || method !== 'Page.screencastFrame' || !params) return
-            const sessionId = Reflect.get(params, 'sessionId')
-            if (typeof sessionId !== 'number') return
+          const onEvent = (source: chrome.debugger.DebuggerSession, method: string) => {
+            if (source.tabId !== tabAId || method !== 'Page.screencastFrame') return
             frames++
-            c.debugger
-              .sendCommand({ tabId: tabAId }, 'Page.screencastFrameAck', { sessionId })
-              .catch(() => {})
           }
           c.debugger.onEvent.addListener(onEvent)
 
