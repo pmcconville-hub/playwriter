@@ -32,7 +32,6 @@ Scope and safety:
 - Tunnel frames are relayed in memory only. They are never stored, and response caching is off for these tunnels
 - The live view never resizes your page. It adapts to the tab's own size instead of overriding device metrics
 - The stream keeps running when you switch tabs, because the debugger attachment stops Chrome from backgrounding the shared tab
-- If the stream ever stalls, for example when the window is minimised, the viewer falls back to polling screenshots and shows **Low frame rate** instead of freezing
 - The tunnel handshake sends only the browser name and Playwriter version, never your email, Google account ID, or extension install ID
 
 Use case: let agents (Devin, grok bots, a teammate's CLI agent) work inside websites you are already logged into, without sharing passwords.

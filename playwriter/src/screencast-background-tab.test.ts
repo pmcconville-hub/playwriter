@@ -16,7 +16,7 @@ import { cleanupTestContext, getExtensionServiceWorker, setupTestContext, type T
 
 describe('screencast on a backgrounded tab', () => {
   test(
-    'keeps streaming after the user switches tabs, and screenshots still work',
+    'keeps streaming after the user switches tabs',
     async () => {
       let ctx: TestContext | null = null
       try {
@@ -101,19 +101,6 @@ describe('screencast on a backgrounded tab', () => {
           frames = 0
           await sleep(2500)
           const backgroundFrames = frames
-          // Does a plain screenshot still work while backgrounded?
-          let screenshotBytes = 0
-          let screenshotError = ''
-          try {
-            const shot = await c.debugger.sendCommand({ tabId: tabAId }, 'Page.captureScreenshot', {
-              format: 'jpeg',
-              quality: 40,
-            })
-            const data = shot ? Reflect.get(shot, 'data') : undefined
-            screenshotBytes = typeof data === 'string' ? data.length : 0
-          } catch (error) {
-            screenshotError = (error instanceof Error ? error.message : String(error)).slice(0, 200)
-          }
 
           c.debugger.onEvent.removeListener(onEvent)
           await c.tabs.remove(tabBId)
@@ -125,8 +112,6 @@ describe('screencast on a backgrounded tab', () => {
             activeVisibility,
             backgroundFrames,
             backgroundVisibility,
-            screenshotBytes,
-            screenshotError,
           }
         })
 
@@ -141,10 +126,6 @@ describe('screencast on a backgrounded tab', () => {
         expect(result.backgroundFrames).toBeGreaterThan(20)
         // Attachment keeps the tab rendering, so it never reports itself hidden.
         expect(result.backgroundVisibility).toBe('visible')
-
-        // The viewer falls back to polling screenshots if frames ever do stall.
-        expect(result.screenshotError).toBe('')
-        expect(result.screenshotBytes).toBeGreaterThan(1000)
       } finally {
         await cleanupTestContext(ctx, null)
       }

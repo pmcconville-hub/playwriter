@@ -228,10 +228,6 @@ function macEditorCommands(e: { key: string; altKey: boolean; ctrlKey: boolean; 
 
 type ScreencastStatus = 'connecting' | 'running' | 'ended' | 'error'
 
-/** No live frame for this long means the screencast stalled; start polling screenshots. */
-const SCREENCAST_STALL_MS = 1500
-const SCREENSHOT_POLL_MS = 700
-
 interface ScreencastFrameParams {
   data: string // base64 jpeg
   sessionId: number // CDP screencast ack id (not Target sessionId)
@@ -260,8 +256,6 @@ interface NavigationHistory {
 interface ScreencastApi {
   status: ScreencastStatus
   errorMsg: string
-  /** True while frames come from polled screenshots instead of the live screencast. */
-  degraded: boolean
   canvasRef: React.RefObject<HTMLCanvasElement | null>
   pageUrl: string
   navigate: (url: string) => void
@@ -299,18 +293,13 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
   const [errorMsg, setErrorMsg] = useState<string>('')
   const [pageUrl, setPageUrl] = useState<string>('')
   const [reconnectKey, setReconnectKey] = useState(0)
-  const [degraded, setDegraded] = useState(false)
-  const lastFrameAtRef = useRef(0)
 
   useEffect(() => {
     let cancelled = false
-    let stallTimer: ReturnType<typeof setInterval> | null = null
     setStatus('connecting')
     setErrorMsg('')
-    setDegraded(false)
 
-    // Paint one JPEG onto the canvas. Shared by live screencast frames and by the
-    // screenshot fallback so both paths behave identically.
+    // Paint one screencast JPEG onto the canvas.
     const paintJpegBase64 = (base64: string): void => {
       const bin = atob(base64)
       const bytes = new Uint8Array(bin.length)
@@ -391,8 +380,6 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
             }
           }
 
-          lastFrameAtRef.current = Date.now()
-          setDegraded(false)
           // Decode off main thread via createImageBitmap (avoids base64 data URL jank)
           paintJpegBase64(p.data)
         })
@@ -418,39 +405,6 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
 
         if (!cancelled) setStatus('running')
 
-        // Screencast normally keeps running even after the user switches tabs,
-        // because chrome.debugger attachment stops Chrome from backgrounding the
-        // shared tab (measured: 231 frames active vs 231 frames backgrounded, and
-        // document.visibilityState stays "visible"). It can still stall when the
-        // whole window is minimised or occluded, and other Chrome builds may
-        // differ, so never assume frames will arrive: poll screenshots whenever
-        // they stop, and switch back the moment a real frame shows up.
-        if (transport === 'extension') {
-          lastFrameAtRef.current = Date.now()
-          let polling = false
-          stallTimer = setInterval(async () => {
-            if (cancelled || polling) return
-            if (Date.now() - lastFrameAtRef.current < SCREENCAST_STALL_MS) return
-            polling = true
-            try {
-              const shot = await cdp.send<{ data: string }>('Page.captureScreenshot', { format: 'jpeg', quality }, sessionId)
-              if (cancelled || !shot?.data) return
-              setDegraded(true)
-              paintJpegBase64(shot.data)
-              // Screencast metadata is what normally fills the viewport, so read it
-              // directly here or clicks would have nothing to map against.
-              const metrics = await cdp.send<{ cssVisualViewport?: { clientWidth?: number; clientHeight?: number } }>('Page.getLayoutMetrics', {}, sessionId)
-              const vp = metrics?.cssVisualViewport
-              if (vp?.clientWidth && vp?.clientHeight) {
-                viewportRef.current = { width: Math.round(vp.clientWidth), height: Math.round(vp.clientHeight), dpr: 1 }
-              }
-            } catch {
-              /* tab may be gone; the socket close handler reports it */
-            } finally {
-              polling = false
-            }
-          }, SCREENSHOT_POLL_MS)
-        }
       } catch (err) {
         if (cancelled) return
         setStatus('error')
@@ -460,7 +414,6 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
 
     return () => {
       cancelled = true
-      if (stallTimer) clearInterval(stallTimer)
       try {
         ws.close()
       } catch {}
@@ -633,7 +586,6 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
   return {
     status,
     errorMsg,
-    degraded,
     canvasRef,
     pageUrl,
     navigate,
@@ -663,7 +615,7 @@ interface CdpViewerProps {
 
 export function CdpViewer({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1280 }: CdpViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const { status, errorMsg, degraded, canvasRef, pageUrl, navigate, goBack, goForward, reload, dispatchMouse, dispatchWheel, dispatchKey, reconnect, setViewport } =
+  const { status, errorMsg, canvasRef, pageUrl, navigate, goBack, goForward, reload, dispatchMouse, dispatchWheel, dispatchKey, reconnect, setViewport } =
     useCdpScreencast({ wsUrl, transport, quality, maxWidth })
 
   // Resize remote viewport to match container (debounced)
@@ -829,12 +781,6 @@ export function CdpViewer({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
           )}
           {status === 'ended' && <span>Disconnected</span>}
           {status === 'error' && <span className="text-red-400">{errorMsg}</span>}
-          {isRunning && degraded && (
-            <span className="text-amber-400/80" title="The live stream stalled, so frames are polled as screenshots. Clicking still works.">
-              Low frame rate
-            </span>
-          )}
-
           {isRunning && (
             <button
               type="button"
