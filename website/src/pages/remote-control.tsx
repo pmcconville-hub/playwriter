@@ -35,24 +35,53 @@ export default function RemoteControlPage() {
     }
   }, [])
 
+  useEffect(() => {
+    const html = document.documentElement
+    const body = document.body
+    const prev = {
+      htmlOverflow: html.style.overflow,
+      bodyOverflow: body.style.overflow,
+      htmlOverscroll: html.style.overscrollBehavior,
+      bodyOverscroll: body.style.overscrollBehavior,
+      htmlGutter: html.style.scrollbarGutter,
+    }
+    html.style.overflow = 'hidden'
+    body.style.overflow = 'hidden'
+    html.style.overscrollBehavior = 'none'
+    body.style.overscrollBehavior = 'none'
+    html.style.scrollbarGutter = 'auto'
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+    }
+    document.addEventListener('wheel', onWheel, { passive: false })
+    return () => {
+      html.style.overflow = prev.htmlOverflow
+      body.style.overflow = prev.bodyOverflow
+      html.style.overscrollBehavior = prev.htmlOverscroll
+      body.style.overscrollBehavior = prev.bodyOverscroll
+      html.style.scrollbarGutter = prev.htmlGutter
+      document.removeEventListener('wheel', onWheel)
+    }
+  }, [])
+
   const wsUrl = tunnelId === undefined ? undefined : tunnelId ? `${buildTunnelOrigin({ tunnelId }).replace(/^https/, 'wss')}/extension` : null
 
   return (
-    <div className="flex h-screen w-screen flex-col bg-neutral-950">
+    <div className="flex h-dvh w-screen flex-col overflow-hidden overscroll-none bg-neutral-950">
       {wsUrl === undefined ? (
-        <div className="flex flex-1 items-center justify-center">
+        <div className="flex min-h-0 flex-1 items-center justify-center">
           <svg className="size-6 animate-spin text-white/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
           </svg>
         </div>
       ) : wsUrl ? (
-        <div className="flex flex-1 items-center justify-center p-4">
-          <div className="h-full w-full max-w-[1400px]">
-            <CdpViewer wsUrl={wsUrl} transport="extension" />
+        <div className="flex min-h-0 flex-1 items-center justify-center p-4">
+          <div className="h-full min-h-0 w-full max-w-[1400px]">
+            <CdpViewer wsUrl={wsUrl} transport="extension" initialControl />
           </div>
         </div>
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-6 px-4">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 px-4">
           <h1 className="text-2xl font-semibold text-white">Remote Control</h1>
           <p className="max-w-md text-center text-sm text-white/50">
             This page needs a share link. Ask the person sharing their tab to click the light-blue <strong className="text-white/70">Remote control</strong> button in the

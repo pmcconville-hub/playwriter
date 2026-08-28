@@ -186,6 +186,21 @@ function eventModifiers(e: { altKey: boolean; ctrlKey: boolean; metaKey: boolean
   return (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0)
 }
 
+function mouseButtonName(button: number): 'left' | 'middle' | 'right' {
+  if (button === 1) return 'middle'
+  if (button === 2) return 'right'
+  return 'left'
+}
+
+/** CDP `buttons` is the pressed-button bitmask. Playwright always sends it; default 0 drops clicks. */
+function pressedButtonsMask(e: { button: number; buttons: number }, type: string): number {
+  if (e.buttons) return e.buttons
+  if (type !== 'mousePressed') return 0
+  if (e.button === 1) return 4
+  if (e.button === 2) return 2
+  return 1
+}
+
 // ── Mac editor command mapping ─────────────────────────────────────
 // AppKit translates Cmd+Backspace, Alt+Left, etc. before the renderer sees
 // them. Headless Chromium only gets raw key+modifiers, so we attach Blink
@@ -248,8 +263,35 @@ interface NavigationHistory {
   entries: Array<{ id: number }>
 }
 
-function screencastParams({ quality, maxWidth, maxHeight }: { quality: number; maxWidth: number; maxHeight: number }): Record<string, unknown> {
-  return { format: 'jpeg', quality, maxWidth, maxHeight, everyNthFrame: 2 }
+function screencastParams({
+  quality,
+  maxWidth,
+  maxHeight,
+  everyNthFrame = 2,
+}: {
+  quality: number
+  maxWidth: number
+  maxHeight: number
+  everyNthFrame?: number
+}): Record<string, unknown> {
+  return { format: 'jpeg', quality, maxWidth, maxHeight, everyNthFrame }
+}
+
+// Shared-tab stream: CDP has no fps field, only everyNthFrame. Cap CSS pixels, never
+// device pixels, or a Retina tab encodes 4x as many JPEG bytes.
+const REMOTE_SCREENCAST = { quality: 50, maxWidth: 960, maxHeight: 960, everyNthFrame: 3 }
+
+function decodeJpegBase64(base64: string): Uint8Array {
+  const fromBase64 = (Uint8Array as { fromBase64?: (value: string) => Uint8Array }).fromBase64
+  if (fromBase64) {
+    return fromBase64(base64)
+  }
+  const bin = atob(base64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) {
+    bytes[i] = bin.charCodeAt(i)
+  }
+  return bytes
 }
 
 /**
@@ -287,30 +329,52 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
     setStatus('connecting')
     setErrorMsg('')
 
-    // Paint one screencast JPEG onto the canvas.
+    // Paint only the latest JPEG. createImageBitmap is async; without this, frames queue and show late.
+    let latestJpeg: string | null = null
+    let painting = false
     const paintJpegBase64 = (base64: string): void => {
-      const bin = atob(base64)
-      const bytes = new Uint8Array(bin.length)
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-      createImageBitmap(new Blob([bytes], { type: 'image/jpeg' }))
-        .then((bm) => {
-          if (cancelled) {
+      latestJpeg = base64
+      if (painting) {
+        return
+      }
+      painting = true
+      const paintLatest = (): void => {
+        const data = latestJpeg
+        latestJpeg = null
+        if (!data) {
+          painting = false
+          return
+        }
+        createImageBitmap(new Blob([decodeJpegBase64(data)], { type: 'image/jpeg' }))
+          .then((bm) => {
+            if (cancelled) {
+              bm.close()
+              painting = false
+              return
+            }
+            const c = canvasRef.current
+            if (!c) {
+              bm.close()
+              painting = false
+              return
+            }
+            if (c.width !== bm.width || c.height !== bm.height) {
+              c.width = bm.width
+              c.height = bm.height
+            }
+            c.getContext('2d')?.drawImage(bm, 0, 0)
             bm.close()
-            return
-          }
-          const c = canvasRef.current
-          if (!c) {
-            bm.close()
-            return
-          }
-          if (c.width !== bm.width || c.height !== bm.height) {
-            c.width = bm.width
-            c.height = bm.height
-          }
-          c.getContext('2d')?.drawImage(bm, 0, 0)
-          bm.close()
-        })
-        .catch(() => {})
+            if (latestJpeg) {
+              paintLatest()
+              return
+            }
+            painting = false
+          })
+          .catch(() => {
+            painting = false
+          })
+      }
+      paintLatest()
     }
 
     let ws: WebSocket
@@ -381,11 +445,13 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
 
         await cdp.send(
           'Page.startScreencast',
-          screencastParams({
-            quality,
-            maxWidth: v ? Math.ceil(v.width * v.dpr) : maxWidth,
-            maxHeight: v ? Math.ceil(v.height * v.dpr) : maxWidth * 2,
-          }),
+          transport === 'extension'
+            ? screencastParams(REMOTE_SCREENCAST)
+            : screencastParams({
+                quality,
+                maxWidth: v ? Math.ceil(v.width * v.dpr) : maxWidth,
+                maxHeight: v ? Math.ceil(v.height * v.dpr) : maxWidth * 2,
+              }),
           sessionId,
         )
 
@@ -464,13 +530,30 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
     const rect = canvas.getBoundingClientRect()
     if (rect.width <= 0 || rect.height <= 0) return null
 
-    const scale = Math.min(rect.width / canvas.width, rect.height / canvas.height)
-    const drawnWidth = canvas.width * scale
-    const drawnHeight = canvas.height * scale
-    return {
-      x: ((clientX - rect.left - (rect.width - drawnWidth) / 2) / drawnWidth) * viewport.width,
-      y: ((clientY - rect.top - (rect.height - drawnHeight) / 2) / drawnHeight) * viewport.height,
+    const fit = Math.min(rect.width / canvas.width, rect.height / canvas.height)
+    const jpegCssW = canvas.width * fit
+    const jpegCssH = canvas.height * fit
+    const jpegLeft = rect.left + (rect.width - jpegCssW) / 2
+    const jpegTop = rect.top + (rect.height - jpegCssH) / 2
+
+    // Chrome may pad the JPEG to maxWidth/maxHeight. Map through the page
+    // rectangle inside that bitmap, not the padded frame.
+    const jpegAspect = canvas.width / canvas.height
+    const pageAspect = viewport.width / viewport.height
+    let contentCssW = jpegCssW
+    let contentCssH = jpegCssH
+    if (jpegAspect > pageAspect) {
+      contentCssW = jpegCssH * pageAspect
+    } else if (jpegAspect < pageAspect) {
+      contentCssH = jpegCssW / pageAspect
     }
+    const contentLeft = jpegLeft + (jpegCssW - contentCssW) / 2
+    const contentTop = jpegTop + (jpegCssH - contentCssH) / 2
+    if (contentCssW <= 0 || contentCssH <= 0) return null
+    const x = ((clientX - contentLeft) / contentCssW) * viewport.width
+    const y = ((clientY - contentTop) / contentCssH) * viewport.height
+    if (x < 0 || y < 0 || x > viewport.width || y > viewport.height) return null
+    return { x, y }
   }
 
   const dispatchMouse = (type: 'mouseMoved' | 'mousePressed' | 'mouseReleased', e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -481,7 +564,8 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
       type,
       x: point.x,
       y: point.y,
-      button: type === 'mouseMoved' ? 'none' : e.button === 2 ? 'right' : 'left',
+      button: type === 'mouseMoved' ? 'none' : mouseButtonName(e.button),
+      buttons: pressedButtonsMask(e, type),
       clickCount: type === 'mouseReleased' || type === 'mousePressed' ? 1 : 0,
       modifiers: eventModifiers(e),
     })
@@ -510,14 +594,18 @@ function useCdpScreencast({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
       const dprSafe = dpr > 0 ? dpr : 1
       const w = Math.max(1, Math.floor(width))
       const h = Math.max(1, Math.floor(height))
-      const params = screencastParams({ quality, maxWidth: Math.ceil(w * dprSafe), maxHeight: Math.ceil(h * dprSafe) })
 
       // A shared tab owns its size. Never write viewportRef here in extension mode:
       // it is filled from the screencast metadata and drives input coordinates.
+      // Do not recast at the viewer container size: that pads the JPEG to a square
+      // and makes click mapping miss the page.
       if (transport === 'extension') {
-        sendToPage('Page.startScreencast', params)
+        if (!viewportRef.current) return
+        sendToPage('Page.startScreencast', screencastParams(REMOTE_SCREENCAST))
         return
       }
+
+      const params = screencastParams({ quality, maxWidth: Math.ceil(w * dprSafe), maxHeight: Math.ceil(h * dprSafe) })
 
       const prev = viewportRef.current
       if (prev && prev.width === w && prev.height === h && prev.dpr === dprSafe) return
@@ -576,9 +664,10 @@ interface CdpViewerProps {
   transport?: CdpTransport
   quality?: number
   maxWidth?: number
+  initialControl?: boolean
 }
 
-export function CdpViewer({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1280 }: CdpViewerProps) {
+export function CdpViewer({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1280, initialControl = false }: CdpViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const { status, errorMsg, canvasRef, pageUrl, navigate, goBack, goForward, reload, dispatchMouse, dispatchWheel, dispatchKey, reconnect, setViewport } =
     useCdpScreencast({ wsUrl, transport, quality, maxWidth })
@@ -608,7 +697,7 @@ export function CdpViewer({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
     }
   }, [setViewport])
 
-  const [hasControl, setHasControl] = useState(false)
+  const [hasControl, setHasControl] = useState(initialControl)
   const [urlInput, setUrlInput] = useState('')
   const urlInputRef = useRef<HTMLInputElement>(null)
   const isUrlFocusedRef = useRef(false)
@@ -617,25 +706,24 @@ export function CdpViewer({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
     if (!isUrlFocusedRef.current) setUrlInput(pageUrl)
   }, [pageUrl])
 
-  // Non-passive wheel binding so we can preventDefault and forward to remote
+  // Non-passive wheel on the whole viewer so the outer page never scrolls.
   useEffect(() => {
-    if (!hasControl) return
-    const canvas = canvasRef.current
-    if (!canvas) return
+    const node = containerRef.current
+    if (!node) return
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
-      dispatchWheel(e)
+      if (hasControl) dispatchWheel(e)
     }
-    canvas.addEventListener('wheel', onWheel, { passive: false })
+    node.addEventListener('wheel', onWheel, { passive: false })
     return () => {
-      canvas.removeEventListener('wheel', onWheel)
+      node.removeEventListener('wheel', onWheel)
     }
-  }, [hasControl, dispatchWheel, canvasRef])
+  }, [hasControl, dispatchWheel])
 
   const isRunning = status === 'running'
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden rounded-lg border border-white/10 bg-neutral-950 shadow-2xl shadow-black/50">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border border-white/10 bg-neutral-950 shadow-2xl shadow-black/50">
       {/* ── Toolbar ────────────────────────────────────────────── */}
       <form
         className="flex shrink-0 items-center gap-1.5 border-b border-white/10 bg-neutral-900 px-3 py-2"
@@ -750,7 +838,7 @@ export function CdpViewer({ wsUrl, transport = 'raw', quality = 70, maxWidth = 1
       <div
         ref={containerRef}
         tabIndex={0}
-        className={cn('relative flex-1 overflow-hidden bg-neutral-950 outline-none', hasControl ? 'cursor-crosshair' : 'cursor-default')}
+        className={cn('relative min-h-0 flex-1 touch-none overflow-hidden bg-neutral-950 outline-none', hasControl ? 'cursor-crosshair' : 'cursor-default')}
         onKeyDown={(e) => {
           if (!hasControl) return
           e.preventDefault()
