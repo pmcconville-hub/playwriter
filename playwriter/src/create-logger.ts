@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import util from 'node:util'
 import stripAnsi from 'strip-ansi'
-import { LOG_FILE_PATH } from './utils.js'
+import { LOG_FILE_PATH, redactRemoteControlSecrets } from './utils.js'
 
 export type Logger = {
   log(...args: unknown[]): Promise<void>
@@ -39,9 +39,11 @@ export function createFileLogger({ logFilePath }: { logFilePath?: string } = {})
 
   const log = (...args: unknown[]): Promise<void> => {
     const message = args
-      .map((arg) =>
-        typeof arg === 'string' ? arg : util.inspect(arg, { depth: null, colors: false, maxStringLength: 1000 }),
-      )
+      .map((arg) => {
+        const value =
+          typeof arg === 'string' ? arg : util.inspect(arg, { depth: null, colors: false, maxStringLength: 1000 })
+        return redactRemoteControlSecrets(value)
+      })
       .join(' ')
     buffer.push(stripAnsi(message))
     if (!flushTimer) {

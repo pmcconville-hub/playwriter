@@ -60,6 +60,13 @@ export function shouldAutoEnablePlaywriter(): boolean {
   return process.env.PLAYWRITER_AUTO_ENABLE?.toLowerCase() !== 'false'
 }
 
+export function redactRemoteControlSecrets(value: string): string {
+  return value
+    .replace(/(playwriter\.dev\/remote-control#)[a-z0-9-]{1,63}/gi, '$1[redacted]')
+    .replace(/[a-z0-9-]{1,63}(?=-tunnel\.)/gi, '[redacted]')
+    .replace(/(_tunnelId=)[a-z0-9-]{1,63}/gi, '$1[redacted]')
+}
+
 // Use ~/.playwriter for logs so each OS user gets their own dir (avoids permission errors on shared machines, see #44)
 const LOG_BASE_DIR = path.join(os.homedir(), '.playwriter')
 export const LOG_FILE_PATH = process.env.PLAYWRITER_LOG_FILE_PATH || path.join(LOG_BASE_DIR, 'relay-server.log')

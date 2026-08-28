@@ -27,6 +27,7 @@ Buffer.prototype[util.inspect.custom] = function () {
 }
 
 import fs from 'node:fs'
+import crypto from 'node:crypto'
 import os from 'node:os'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
@@ -84,6 +85,7 @@ const DROPPED_CDP_EVENTS = new Set([
 // These are still forwarded to Playwright but excluded from disk logs to reduce I/O.
 const NOISY_LOG_EVENTS = new Set([
   ...DROPPED_CDP_EVENTS,
+  'Page.screencastFrame',
   'Network.requestWillBeSentExtraInfo',
   'Network.responseReceivedExtraInfo',
   'Network.requestServedFromCache',
@@ -1510,7 +1512,7 @@ export async function startPlayWriterCDPRelayServer({
   }: {
     connectionId: string
     initialInfo: relayState.ExtensionInfo
-    /** Remote dials pass `remote:{url}` so sessions survive tunnel reconnects. */
+    /** Remote dials pass a hashed `remote:` key so sessions survive reconnects without storing the secret. */
     stableKeyOverride?: string
   }): ExtensionSocketHandlers {
     return {
@@ -1993,7 +1995,7 @@ export async function startPlayWriterCDPRelayServer({
   // The user's extension exposes its /extension protocol behind a unique tunnel
   // URL (Remote control toolbar button). The relay dials that URL and registers
   // the socket as a normal extension connection. Sessions reference it via
-  // stableKey `remote:{url}` so they survive tunnel reconnects (extension
+  // Hashed `remote:` stable keys let sessions survive tunnel reconnects (extension
   // service worker restarts, network blips). See remote-control.ts.
   // ============================================================================
 
@@ -2020,7 +2022,7 @@ export async function startPlayWriterCDPRelayServer({
       initialInfo: { browser: 'Remote browser' },
       stableKeyOverride: dial.stableKey,
     })
-    logger?.log(pc.blue(`Dialing remote extension: ${dial.wsUrl}`))
+    logger?.log(pc.blue('Dialing remote extension'))
     const socket = new NodeWebSocket(dial.wsUrl)
     dial.ws = socket
     const adapter: relayState.ExtensionSocket = {
@@ -2041,8 +2043,8 @@ export async function startPlayWriterCDPRelayServer({
       const payload = isBinary ? (raw as Buffer) : raw.toString()
       void handlers.onMessage(payload, adapter)
     })
-    socket.on('error', (error) => {
-      logger?.error(`Remote extension dial error (${dial.urlKey}):`, error.message)
+    socket.on('error', () => {
+      logger?.error('Remote extension dial error')
     })
     socket.on('close', (code, reason) => {
       dial.ws = null
@@ -2052,7 +2054,7 @@ export async function startPlayWriterCDPRelayServer({
       if (dial.closed) {
         return
       }
-      logger?.log(pc.yellow(`Remote extension dial closed (${dial.urlKey}), retrying in ${REMOTE_DIAL_RETRY_MS}ms`))
+      logger?.log(pc.yellow(`Remote extension dial closed, retrying in ${REMOTE_DIAL_RETRY_MS}ms`))
       dial.retryTimer = setTimeout(() => {
         dial.retryTimer = null
         startRemoteDial(dial)
@@ -2063,7 +2065,7 @@ export async function startPlayWriterCDPRelayServer({
   async function connectRemoteExtension({ url }: { url: string }): Promise<relayState.ExtensionEntry> {
     const { wsUrl, httpUrl } = parseRemoteControlUrl(url)
     const urlKey = httpUrl
-    const stableKey = `remote:${urlKey}`
+    const stableKey = `remote:${crypto.createHash('sha256').update(urlKey).digest('hex')}`
 
     let dial = remoteDials.get(urlKey)
     if (!dial) {
@@ -2085,11 +2087,11 @@ export async function startPlayWriterCDPRelayServer({
     if (entry?.ws) {
       // Connected but no shared tab announced yet — surface a clear error.
       throw new Error(
-        `Connected to ${urlKey} but no shared tab was announced. The user may have revoked remote control. Ask them to click the Remote control button again and share a fresh URL.`,
+        'Connected to the remote browser but no shared tab was announced. The user may have revoked remote control. Ask them to click the Remote control button again and share a fresh URL.',
       )
     }
     throw new Error(
-      `Could not reach the remote browser at ${urlKey}. Check that the Remote control button is still active in the user's browser and that the URL is correct. Remote control links die when the user clicks the button again or closes the browser.`,
+      'Could not reach the remote browser. Check that the Remote control button is still active and that the URL is correct. Remote control links die when the user clicks the button again or closes the browser.',
     )
   }
 
@@ -2107,7 +2109,7 @@ export async function startPlayWriterCDPRelayServer({
     if (dial.sessionIds.size > 0) {
       return
     }
-    logger?.log(pc.yellow(`Closing remote extension dial (no sessions left): ${urlKey}`))
+    logger?.log(pc.yellow('Closing remote extension dial because no sessions remain'))
     dial.closed = true
     if (dial.retryTimer) {
       clearTimeout(dial.retryTimer)

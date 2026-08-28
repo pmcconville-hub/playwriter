@@ -69,7 +69,7 @@ export class RemoteTunnel {
       tunnelId: this.options.tunnelId,
       baseDomain: this.options.baseDomain,
     })
-    this.options.logger.debug('Remote tunnel connecting:', this.url)
+    this.options.logger.debug('Remote tunnel connecting')
 
     let accepted = false
     const socket = new WebSocket(wsUrl)
@@ -87,7 +87,7 @@ export class RemoteTunnel {
       if (msg.type === 'upstream_accepted') {
         accepted = true
         this.conflictRetries = 0
-        this.options.logger.debug('Remote tunnel online:', this.url)
+        this.options.logger.debug('Remote tunnel online')
         this.options.onStatusChange('online')
         this.startPing()
         return
@@ -108,7 +108,7 @@ export class RemoteTunnel {
         this.conflictRetries++
         if (this.conflictRetries > MAX_CONFLICT_RETRIES) {
           this.closed = true
-          this.options.logger.error('Remote tunnel id still in use after retries, giving up:', this.options.tunnelId)
+          this.options.logger.error('Remote tunnel id still in use after retries, giving up')
           this.options.onStatusChange('error', 'Tunnel id already in use')
           return
         }

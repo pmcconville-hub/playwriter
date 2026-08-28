@@ -1363,7 +1363,9 @@ function onDebuggerEvent(source: chrome.debugger.DebuggerSession, method: string
   const tab = source.tabId ? store.getState().tabs.get(source.tabId) : undefined
   if (!tab) return
 
-  logger.debug('Forwarding CDP event:', method, 'from tab:', source.tabId)
+  if (method !== 'Page.screencastFrame') {
+    logger.debug('Forwarding CDP event:', method, 'from tab:', source.tabId)
+  }
 
   if (method === 'Target.attachedToTarget' && params?.sessionId) {
     const targetUrl = params.targetInfo?.url as string | undefined
