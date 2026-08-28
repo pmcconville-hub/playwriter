@@ -310,15 +310,11 @@ const REMOTE_NEW_TAB_ERROR = dedent`
   This is a shared remote-control browser tab. You cannot create additional tabs and should not try to. The user shared exactly one tab with you (plus any popups that tab opens itself). Keep working inside the shared tab: navigate it with page.goto() instead of opening new pages. If you really need another tab, ask the user to open one and share it with you (they get a separate URL per shared tab).
 `
 
-/** CDP commands with profile-wide effects, never allowed from remote agents. */
+/** Remote control is not a sandbox; only block obvious profile-wide accidents. */
 const REMOTE_BLOCKED_CDP_COMMANDS = new Map<string, string>([
   ['Network.clearBrowserCookies', 'clears cookies for EVERY site in the user profile'],
   ['Network.clearBrowserCache', 'clears the browser cache for the whole user profile'],
-  ['Network.deleteCookies', 'changes authentication cookies outside the shared page'],
   ['Network.getAllCookies', 'reads cookies for EVERY site in the user profile'],
-  ['Network.getCookies', 'can read authentication cookies for URLs outside the shared page'],
-  ['Network.setCookie', 'can change authentication cookies outside the shared page'],
-  ['Network.setCookies', 'can change authentication cookies outside the shared page'],
   ['Storage.clearCookies', 'clears cookies for EVERY site in the user profile'],
   ['Storage.getCookies', 'reads cookies for EVERY site in the user profile'],
   ['Storage.setCookies', 'changes cookies outside the shared tab'],
@@ -334,7 +330,7 @@ export function getRemoteCdpCommandRejection(method: string): string | null {
   }
   const blockedReason = REMOTE_BLOCKED_CDP_COMMANDS.get(method)
   if (blockedReason) {
-    return `${method} is not allowed on a shared remote-control tab: it ${blockedReason}. Use APIs scoped to the shared page instead.`
+    return `${method} is not allowed on a shared remote-control tab: it ${blockedReason}.`
   }
   return null
 }
@@ -384,7 +380,8 @@ export function buildRemoteControlPrompt({ url }: { url: string }): string {
     Read https://playwriter.dev/SKILL.md first for the full API (snapshots, clicking, etc).
 
     Rules:
-    - You control ONLY this shared tab (plus popups it opens). Do not try to open new tabs; navigate the shared tab instead.
+    - This share starts from one tab, but Remote control is not a security sandbox. You receive broad CDP access and must be fully trusted.
+    - Do not create new tabs. Navigate the shared tab instead.
     - This link grants control of my browser tab as me. NEVER share this URL with anyone or include it in logs, commits, or messages.
     - I can revoke access at any time by clicking the Remote control button again.
     - Opening the same link in a browser shows a live view of my tab, so I can watch along.

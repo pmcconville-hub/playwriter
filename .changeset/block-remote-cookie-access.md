@@ -2,9 +2,8 @@
 'playwriter': patch
 ---
 
-Block profile-wide cookie reads and writes through one-tab Remote control links.
+Block explicit whole-profile cookie APIs through Remote control links.
 
-Remote clients can no longer call CDP cookie methods such as
-`Network.getAllCookies`, `Network.getCookies`, `Network.setCookie`,
-`Storage.getCookies`, or `Storage.setCookies`. These methods can access browser
-profile data outside the tab that the user chose to share.
+Remote clients cannot call `Network.getAllCookies`, `Storage.getCookies`, or
+`Storage.setCookies`. URL/domain-targeted commands such as `Network.getCookies`,
+`Network.setCookie`, and `Network.deleteCookies` remain available.
