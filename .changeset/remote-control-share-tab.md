@@ -14,7 +14,7 @@ playwriter -s 1 -e "console.log(await page.title())"
 
 **The same link is also a live view.** Open it in any browser and you get the tab streamed frame by frame, with a URL bar and a **Take control** button for clicking, scrolling, and typing. So you can share a tab with a person, not only an agent, and neither side needs an install.
 
-The tunnel id travels in the **URL fragment**, which browsers never send to a server. The secret therefore stays out of request paths, access logs, and Referer headers.
+The tunnel id starts in the **URL fragment**, so the initial viewer-page request and Referer omit it. The viewer then uses the id to connect to the tunnel hostname, which the tunnel service and Cloudflare necessarily process.
 
 How it works: the extension acts as the tunnel upstream and speaks the normal extension WS protocol through it. The agent's relay, and the viewer page, both dial `wss://{id}-tunnel.playwriter.dev/extension` and treat the socket as a regular extension connection. No WS protocol changes.
 
@@ -24,11 +24,12 @@ Scope and safety:
 
 - The agent controls **only the shared tab**, plus popups/new tabs that tab opens itself (OAuth redirects, payment popups keep working)
 - `Target.createTarget` / `context.newPage()` are rejected with a helpful error telling the agent to ask the user for another shared tab instead
-- Browser-wide destructive commands (`Network.clearBrowserCookies`, `Network.clearBrowserCache`, `Storage.clearCookies`) are blocked
+- Profile-wide cookie reads and writes (`Network.getAllCookies`, `Storage.getCookies`, `Storage.setCookies`) and browser-wide destructive commands are blocked
 - Clicking the button again revokes the link instantly; a new activation generates a fresh URL
 - The link survives extension service-worker restarts but dies when the browser closes
 - Only a real click starts a share: the button lives in Chrome's isolated extension world and the secret prompt is copied by an offscreen extension document, so page scripts cannot start it or read the link
 - Sharing asks for confirmation first, explaining that the agent can read and control the tab and that traffic leaves your machine
+- The disclosure covers screenshots, page content, URLs, input events, network data, and page-accessible cookies or browser storage
 - Tunnel frames are relayed in memory only. They are never stored, and response caching is off for these tunnels
 - The live view never resizes your page. It adapts to the tab's own size instead of overriding device metrics
 - The stream keeps running when you switch tabs, because the debugger attachment stops Chrome from backgrounding the shared tab

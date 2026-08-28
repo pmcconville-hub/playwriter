@@ -897,7 +897,7 @@ export function initPlaywriterToolbar(): void {
       return
     }
     remoteBtn.innerHTML = CLOUD_SVG + ' <span>Remote control</span>'
-    remoteBtn.setAttribute('data-tooltip', 'Share this tab with a remote agent (copies prompt)')
+    remoteBtn.setAttribute('data-tooltip', 'Share this tab with a person or agent (copies prompt)')
     remoteBtn.setAttribute('aria-label', 'Start remote control')
   }
   updateRemoteBtn()
@@ -920,7 +920,7 @@ export function initPlaywriterToolbar(): void {
     if (
       !remoteActive &&
       !window.confirm(
-        'Share this tab with a remote agent?\n\nThe agent can read and control this tab and its popups as you. Traffic passes through playwriter.dev, and anyone with the copied link has access until you turn Remote control off.',
+        "Share this tab through Playwriter Remote control?\n\nThe recipient can see and control this tab and its popups as you. Shared data can include screenshots, page content, URLs, input events, network data, and page-accessible cookies or browser storage.\n\nTraffic passes through Playwriter's encrypted Cloudflare tunnel. Payloads are relayed in memory and are not stored by Playwriter. Anyone with the copied link has access until you turn Remote control off.",
       )
     ) {
       return

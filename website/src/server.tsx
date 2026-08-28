@@ -8,7 +8,7 @@
 import './globals.css'
 
 import { Spiceflow, redirect, json } from 'spiceflow'
-import { router } from 'spiceflow/react'
+import { Head, Link, router } from 'spiceflow/react'
 import { z } from 'zod'
 import { app as holocronApp } from '@holocron.so/vite/app'
 import { getAuth, getBaseUrl, getSession, requireSession, ensureOrg, getOrgSubscription, getOrgWithSubscription, listUserApiKeys } from './db.ts'
@@ -189,6 +189,9 @@ export const app = new Spiceflow()
             <a href="https://github.com/remorses/playwriter/releases" className="hover:text-foreground transition-colors">
               Changelog
             </a>
+            <Link href="/privacy" className="hover:text-foreground transition-colors">
+              Privacy
+            </Link>
             <a href="https://playwriter.dev/#pricing" className="hover:text-foreground transition-colors">
               Pricing
             </a>
@@ -281,14 +284,32 @@ export const app = new Spiceflow()
   // ── Live browser view (pure client-side CDP screencast) ─────────
   .page('/live', async () => {
     const { default: LivePage } = await import('./pages/live.tsx')
-    return <LivePage />
+    return (
+      <>
+        <Head>
+          <Head.Title>Live Browser View | Playwriter</Head.Title>
+          <Head.Meta name="description" content="Watch and interact with a remote browser session in real time." />
+        </Head>
+        <LivePage />
+      </>
+    )
   })
 
   // ── Remote control viewer for a tab shared from the extension ───
   // The tunnel id travels in the URL hash, so it never reaches this handler.
   .page('/remote-control', async () => {
     const { default: RemoteControlPage } = await import('./pages/remote-control.tsx')
-    return <RemoteControlPage />
+    return (
+      <>
+        <Head>
+          <Head.Title>Remote Control | Playwriter</Head.Title>
+          <Head.Meta name="description" content="Watch and control a browser tab shared with you through Playwriter." />
+          <Head.Meta name="referrer" content="no-referrer" />
+          <Head.Meta name="robots" content="noindex, nofollow" />
+        </Head>
+        <RemoteControlPage />
+      </>
+    )
   })
 
   // Skill discovery for `npx skills add https://playwriter.dev` (skills.sh).

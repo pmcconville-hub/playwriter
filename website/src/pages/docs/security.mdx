@@ -1,7 +1,7 @@
 ---
 title: Security Model and Sandboxed Execution
 sidebarTitle: Security
-description: How Playwriter keeps your browser safe with localhost-only architecture, origin validation, controlled tab scope, and a sandboxed filesystem for code execution.
+description: How Playwriter protects local automation and explicitly authorized remote tab sharing with scoped access, encryption, and revocation.
 icon: lucide:shield
 ---
 
@@ -59,11 +59,12 @@ The execution sandbox runs in a controlled environment:
 When using one-tab **Remote control**:
 
 - **Explicit consent.** A native confirmation explains that the agent can read and control the shared tab before the tunnel starts.
-- **Scoped access.** The agent receives only the selected tab and popups it opens. Browser-wide destructive commands and new-tab creation are blocked.
+- **Scoped access.** The agent receives only the selected tab and popups it opens. Profile-wide cookie reads and writes, browser-wide destructive commands, and new-tab creation are blocked.
 - **Minimal handshake.** The extension sends the browser name and Playwriter version, not the user's email, Google account ID, or install ID.
 - **Revocable bearer link.** Anyone with the secret URL can connect until the user clicks **Remote control** again. Treat the URL like a password.
-- **Secret stays in the fragment.** Shared links are `https://playwriter.dev/remote-control#{id}`. A URL fragment is never sent to a server, so the id stays out of request paths, access logs, and Referer headers.
-- **Nothing is stored.** Tunnel frames are relayed in memory only, and response caching is off for these tunnels.
+- **Viewer request omits the secret.** Shared links are `https://playwriter.dev/remote-control#{id}`. The initial viewer-page request and Referer omit the fragment. The viewer then uses the id to connect to the tunnel hostname, which the tunnel service and Cloudflare necessarily process.
+- **No payload storage.** Tunnel frames are relayed in memory only, and response caching is off for these tunnels. Cloudflare can process connection metadata as the infrastructure provider.
+- **Privacy disclosure.** Remote traffic can contain screenshots, page content, URLs, input events, network data, and page-accessible cookies or browser storage. Read the [privacy policy](../privacy.mdx) before sharing sensitive tabs.
 
 When exposing the full relay through [remote access](./remote-access.mdx):
 

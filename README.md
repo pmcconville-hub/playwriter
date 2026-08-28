@@ -15,7 +15,7 @@ Other browser MCPs spawn a fresh Chrome — no logins, no extensions, instantly 
 
 ## Installation
 
-1. [**Install Extension**](https://chromewebstore.google.com/detail/playwriter-mcp/jfeammnjpkecdekppnclgkkffahnhfhe) from Chrome Web Store
+1. [**Install Extension**](https://chromewebstore.google.com/detail/playwriter/jfeammnjpkecdekppnclgkkffahnhfhe) from Chrome Web Store
 
 2. Click extension icon on a tab → turns green when connected
 
@@ -238,7 +238,7 @@ Let a remote agent (Devin, a cloud bot, a friend's CLI agent) drive **one tab of
 3. The agent runs `playwriter session new --remote-control 'https://playwriter.dev/remote-control#xxx'` on its machine
 4. Click the button again anytime to **revoke** — the URL dies instantly
 
-Opening that same link in **any browser** shows a live, clickable view of the tab, so you can share with a person instead of an agent. The id sits in the URL fragment, which browsers never send to a server.
+Opening that same link in **any browser** shows a live, clickable view of the tab, so you can share with a person instead of an agent. The viewer page receives no tunnel id in its initial HTTP request because the id starts in the URL fragment. Its JavaScript then uses the id to connect to the tunnel hostname.
 
 ```
 YOUR MACHINE (extension only)                        AGENT MACHINE (any box with npx)
@@ -248,7 +248,7 @@ YOUR MACHINE (extension only)                        AGENT MACHINE (any box with
 └───────────────────────────┘   /remote-control#id  └────────────────────────────────┘
 ```
 
-The agent controls **only the shared tab** (plus popups it opens). New tabs are blocked, browser-wide commands like clearing all cookies are blocked, and everything happens visibly in your browser. The URL contains 128 bits of randomness and is never reusable after revocation — but treat it like a password and **never share it with anyone you don't trust**: the agent acts as you on any site it navigates the tab to.
+The agent controls **only the shared tab** (plus popups it opens). New tabs, profile-wide cookie reads and writes, and browser-wide destructive commands are blocked. Everything happens visibly in your browser. The URL contains 128 bits of randomness and is never reusable after revocation — but treat it like a password and **never share it with anyone you don't trust**: the agent acts as you on any site it navigates the tab to.
 
 Use case: you are logged into a website and want an agent to do work in your authenticated session without giving it your password.
 
@@ -274,7 +274,7 @@ Also works on a LAN without traforo (`PLAYWRITER_HOST=192.168.1.10`). Full guide
 
 ## Security
 
-- **Local only**: WebSocket server on `localhost:19988`
+- **Local by default**: The normal WebSocket relay stays on `localhost:19988`. Traffic leaves your machine only when you enable Remote control or configure remote access.
 - **Origin validation**: Only our extension IDs allowed (browsers can't spoof Origin)
 - **Controlled tab scope**: Tabs are controlled after an extension click. By default, Playwriter also creates a controlled `about:blank` tab when a client connects with no controlled tabs. Set `PLAYWRITER_AUTO_ENABLE=false` to require a manual click.
 - **Visible automation**: Chrome shows automation banner on controlled tabs

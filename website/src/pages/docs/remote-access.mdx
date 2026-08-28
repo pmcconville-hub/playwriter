@@ -30,7 +30,7 @@ The same link is also a page. Open it and you get a **live view of the tab**, st
 
 That means you can share a tab with a person, not only an agent, and no install is needed on either side.
 
-The tunnel id lives in the **URL fragment** (`#xxx`). Fragments are never sent to a server, so the secret stays out of request paths, access logs, and Referer headers.
+The tunnel id starts in the **URL fragment** (`#xxx`), so the initial viewer-page request and Referer omit it. The viewer JavaScript then uses the id to connect to the tunnel hostname, which the tunnel service and Cloudflare necessarily process.
 
 <Aside>
 <Note>
@@ -43,6 +43,8 @@ The stream **keeps running when the sharer switches tabs**. Playwriter holds a d
 The URL grants control of your tab **as you** — the agent can navigate the tab to any site where you are logged in. Never share it with anyone you don't trust, and never post it in public channels. Revoke it with the button when the agent is done. The link also dies when you close your browser.
 </Warning>
 </Aside>
+
+Remote traffic can include **screenshots, page content, URLs, input events, network data, and page-accessible cookies or browser storage**. Payloads are routed in memory and are not stored by Playwriter. Read the [privacy policy](../privacy.mdx) for the complete disclosure.
 
 Typical use case: you are logged into a website and want an agent (Devin, a cloud bot, a teammate's CLI agent) to do work in your authenticated session without ever sharing a password.
 

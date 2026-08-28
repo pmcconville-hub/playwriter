@@ -2,96 +2,283 @@
 
 ## Single Purpose Description
 
-Connects browser tabs to local Playwright automation scripts via Chrome DevTools Protocol, allowing users to automate and control their browser for testing and development without launching a separate Chrome instance.
+Connects user-selected Chrome tabs to local or explicitly authorized remote
+Playwright clients through Chrome DevTools Protocol for browser automation,
+testing, debugging, recording, and remote support.
 
 ## Permission Justifications
 
-### activeTab
-
-Required to attach the Chrome debugger to the current tab when the user clicks the extension icon. Allows the extension to access only the tab that the user explicitly activates.
-
 ### debugger
 
-Essential for core functionality. This permission allows the extension to attach Chrome DevTools Protocol (CDP) to tabs selected by the user (via clicking the extension icon). CDP access enables the extension to relay automation commands from local Playwright scripts to the browser, allowing actions like page navigation, element interaction, and JavaScript execution for testing and development purposes.
+Essential for the extension's single purpose. Playwriter attaches Chrome DevTools
+Protocol (CDP) only to tabs selected by the user, or to a blank tab created when
+the user starts an automation client with no selected tab. CDP provides page
+navigation, element interaction, screenshots, accessibility data, network and
+console inspection, JavaScript debugging, and user-requested script evaluation.
 
-### tabs (Testing Only - Removed in Production Builds)
+Remote control uses the same documented Debugger API for one tab that the user
+explicitly shares. The user must click the in-page toolbar button and accept a
+disclosure before the encrypted tunnel starts.
 
-**Note: This permission is automatically removed during production builds and is only included in test builds.**
+### scripting
 
-The tabs permission is only needed during development/testing to:
+Used only on Playwriter-connected tabs to:
 
-- Access the URL property of tabs for test identification (finding tabs by URL pattern)
-- Query all tabs with full information for test assertions
+1. Inject the in-page toolbar into Chrome's isolated extension world.
+2. Re-inject the toolbar after navigation.
+3. Remove the toolbar when the user disconnects the tab.
+4. Support user-requested element pinning and toolbar feedback.
 
-In production, the extension functions perfectly without the tabs permission because:
+The toolbar targets the top-level frame and uses a closed shadow root. Privileged
+actions call `chrome.runtime` from the isolated world. Website scripts cannot call
+the toolbar callbacks or start Remote control.
 
-- Tab event listeners (onRemoved, onActivated, onUpdated) work without it
-- chrome.tabs.create() and chrome.tabs.remove() work without it
-- chrome.tabs.query() for active tab works without it
-- chrome.tabs.get() works without it (returns limited info which is sufficient)
+### tabGroups
 
-The build process (vite.config.mts) automatically removes this permission when TESTING environment variable is not set.
+Groups Playwriter-connected tabs in a visible Chrome tab group so users can see
+which tabs are attached. It also keeps popups opened by a controlled tab with the
+source workflow.
 
-### webNavigation
+### contextMenus
 
-Required to detect when one tab opens a new tab/window via `window.open`, `target="_blank"`, or similar navigation-triggered tab creation. The extension listens for `chrome.webNavigation.onCreatedNavigationTarget` to build a `new tab id → source tab id` mapping. When a Chrome popup window is created by a Playwriter-connected tab, the extension uses this mapping to know whether to relocate the popup into the source tab's main window so Playwright automation can control it. No URL or page content is collected — only tab-ID correlations.
+Adds the user-invoked **Pin element for Playwriter** context-menu action. The
+action records a reference to the element that the user selected so an automation
+client can address it.
 
-### scripting (updated use)
+### tabCapture
 
-The `scripting` permission was originally added for iframe cleanup before debugger attachment. It is now also used to:
-
-1. **Inject the in-page toolbar** (`initPlaywriterToolbar`) into Chrome's isolated extension world for every tab the user connects Playwriter to. The toolbar is a closed Shadow DOM element that floats over the page and provides quick AI-integration tools without exposing privileged callbacks to website scripts.
-2. **Re-inject the toolbar** after page navigations via `chrome.webNavigation.onDOMContentLoaded`.
-3. **Destroy the toolbar** when the user disconnects Playwriter from a tab, so no extension UI is left behind on pages the user is actively browsing.
-
-Injections target manually connected tabs and the blank tab Playwriter auto-creates when a client connects with no controlled tabs. They target only the top-level frame (`allFrames: false`). Playwriter does not inject into other existing tabs.
+Captures the selected tab only after the user starts screen recording from a
+Playwriter action. The resulting media stream is handled by the extension's
+offscreen document and sent to the local relay for recording.
 
 ### offscreen
 
-Required for screen recording and user-requested clipboard writes. The hidden extension document owns `MediaRecorder` streams and copies toolbar prompts without exposing clipboard content to the website.
+Creates a hidden extension document for `MediaRecorder` and user-requested
+clipboard writes. Service workers cannot own media streams or use the document
+clipboard APIs directly.
 
 ### clipboardWrite
 
-Required to copy prompts when the user clicks toolbar actions such as **Remote control**, **Record Skill**, or **Pin element**. Clipboard writes happen only after a trusted user click and are performed by the extension's offscreen document.
+Copies prompts after trusted user actions such as **Remote control**, **Record
+Skill**, or **Pin element**. The website cannot request a clipboard write. The
+offscreen document accepts only its allowlisted internal actions.
 
-### host_permissions (<all_urls>)
+### storage
 
-Required to attach the debugger to tabs on any domain the user chooses to automate. This permission does not allow the extension to modify page content or inject scripts - it only enables CDP debugger attachment for automation. Users need this flexibility to test and automate workflows across all websites.
+Stores a random local installation identifier used to distinguish multiple
+Playwriter extensions connected to the same local relay. Session storage holds
+the tunnel ID and scoped tab IDs while Remote control is active so a service-worker
+restart does not break a user-approved share. Revocation clears the session entry,
+and browser shutdown clears session storage.
+
+### identity and identity.email
+
+Reads the Chrome profile account ID and email, when available, to distinguish
+multiple Chrome profiles connected to the same local relay. These values are sent
+only to the relay on the user's own computer. They are not included in the Remote
+control handshake or sent through the Playwriter tunnel.
+
+### webNavigation
+
+Detects navigation and when a controlled tab opens a popup or new navigation
+target. This lets Playwriter re-inject its toolbar after navigation and scope an
+OAuth or payment popup to the tab that opened it. Remote clients cannot create an
+unrelated tab.
+
+### host_permissions (`<all_urls>`)
+
+Required because users can choose to automate a tab on any website. Playwriter
+does not attach to every existing tab. It attaches after the user clicks the
+extension icon, or to the blank tab created for a new automation session.
+
+### tabs in test builds
+
+The build adds `tabs` only when `TESTING` is enabled. Production packages do not
+request it. Tests use it to find tabs by URL and verify tab lifecycle behavior.
 
 ## Remote Code Justification
 
-**This extension does NOT download, load, or execute any remote code.**
+**Yes. Remote instructions execute only through the documented Debugger API.**
 
-All extension code (JavaScript, HTML, CSS) is fully bundled within the extension package and statically reviewed.
+Playwriter receives CDP commands from the user's local Playwright client or from
+a remote client that the user explicitly authorizes. Commands can include
+`Runtime.evaluate` with code supplied by that client. Chrome Web Store Manifest
+V3 policy expressly permits remote logic executed through the Debugger API when
+used for that API's documented purpose.
 
-**WebSocket connections:**
-The extension normally connects to `ws://localhost:19988`, a relay on the user's machine. When the user confirms **Remote control** for a tab, the extension also opens a secret, temporary tunnel for that tab at `wss://{id}-tunnel.playwriter.dev`. These connections carry protocol messages only; they never download extension code.
+All extension JavaScript, HTML, CSS, and WebAssembly are bundled in the submitted
+package. The extension does not download remote script files, use `eval()` on
+network responses, load remote configuration that changes extension behavior, or
+run a separate command interpreter outside `chrome.debugger`.
 
-**What the WebSocket is used for:**
+The normal connection is `ws://localhost:19988/extension`. After a user confirms
+Remote control, the extension also opens
+`wss://{id}-tunnel.playwriter.dev/traforo-upstream` for that selected tab.
 
-- Receiving CDP (Chrome DevTools Protocol) command messages in JSON format from local Playwright scripts
-- Forwarding these command messages to attached browser tabs via the `chrome.debugger` API
-- Sending CDP event messages back to the local Playwright scripts
+## Data Handling and Privacy
 
-**What it is NOT used for:**
+Playwriter handles browser data needed for its user-facing automation features.
+Depending on the requested command, this can include:
 
-- Downloading or executing JavaScript, WebAssembly, or any other executable code
-- Loading remote configurations that modify extension behavior
+- Website content, screenshots, and accessibility data
+- URLs, navigation, network requests, and responses
+- Clicks, typing, scrolling, and form interaction
+- Console messages, source code, and debugging data
+- Cookies, authentication information, and browser storage
+- Screen and skill recordings explicitly started by the user
 
-This is functionally similar to Native Messaging but uses WebSockets for cross-platform compatibility with existing Playwright tooling. The WebSocket serves as a local IPC (inter-process communication) channel, not a remote code delivery mechanism.
+Normal automation sends this data only to the localhost relay on the user's
+computer. Playwriter does not send local-mode browser payloads to its servers.
 
-## Data Collection & Privacy
+Users can separately expose their full local relay with `playwriter serve`, an
+authentication token, and a network or tunnel configuration that they control.
+In that mode, connected-tab data and local relay metadata can reach clients that
+hold the token.
 
-- No analytics, tracking, or telemetry is collected
-- Browser control normally stays local through Chrome DevTools Protocol
-- Remote-control traffic passes through `playwriter.dev` only after the user confirms a disclosure, and stops when the user revokes the link
-- The remote handshake sends only the browser name and Playwriter version, not the user's email, Google account ID, or extension install ID
-- Remote-control traffic is relayed in memory only; it is never stored, and response caching is not enabled for these tunnels
+Remote control is disabled by default. It starts only after the user clicks its
+toolbar button and accepts a disclosure. While active, selected-tab data is
+relayed over encrypted WebSockets through Playwriter's Cloudflare infrastructure
+to anyone holding the bearer link. The current tunnel implementation routes
+payloads in memory and does not persist them in Playwriter storage.
+
+The initial viewer-page request omits the fragment containing the tunnel ID. The
+viewer then uses that ID in the tunnel hostname, so Cloudflare and the tunnel
+service process the hostname and connection metadata.
+
+Playwriter does not use browser data for analytics, advertising, profiling,
+credit decisions, or sale. The remote handshake sends the browser name and
+Playwriter version, not the Chrome account email, account ID, or installation ID.
+
+Privacy policy: https://playwriter.dev/privacy
+
+## Chrome Web Store Listing Changes
+
+These fields live in the Developer Dashboard and must be updated manually before
+submitting the Remote control build.
+
+### Purpose field
+
+Use the **Single Purpose Description** from this document.
+
+### Remote code field
+
+Select **Yes**. Use the **Remote Code Justification** from this document. The
+Debugger API exemption makes the behavior permitted, but it must still be
+declared accurately.
+
+### Data-use checkboxes
+
+At minimum, disclose these categories:
+
+- **Personally identifiable information**
+- **Authentication information**
+- **Web history**
+- **User activity**
+- **Website content**
+
+Review the current Dashboard definitions before submission. Because a user can
+share any authenticated tab, also select any more specific category that the
+Dashboard says includes data visible in screenshots or page content.
+
+Certify that data is not sold, is not used outside the extension's single
+purpose, is not used for credit decisions, and complies with Limited Use.
+
+### Privacy policy field
+
+Set the URL to https://playwriter.dev/privacy.
+
+### Store overview edits
+
+Replace every unconditional **local only** claim. Use this text:
+
+> **Local by default.** Normal automation connects the extension to a WebSocket
+> relay on your own computer. Traffic leaves your computer only when you enable
+> Remote control for one selected tab or configure full relay remote access.
+
+Add this feature description:
+
+> **Remote control.** Share one selected tab with a person or agent through a
+> temporary secret link. The recipient can see and control the tab and popups it
+> opens. Traffic can include screenshots, page content, URLs, input events,
+> network data, and page-accessible cookies or browser storage.
+> Playwriter routes tunnel payloads in memory and does not store them. Anyone with
+> the link has access until you click Remote ON again to revoke it.
+
+Replace the current **Permissions** list. It incorrectly names `activeTab` and
+`tabs`, which are not production manifest permissions. Use this shorter public
+summary:
+
+> **debugger:** Control tabs selected by the user through Chrome DevTools
+> Protocol.
+>
+> **scripting:** Show and update the isolated Playwriter toolbar on connected
+> tabs.
+>
+> **tabGroups, contextMenus:** Organize controlled tabs and support the
+> user-invoked Pin element action.
+>
+> **tabCapture, offscreen, clipboardWrite:** Record a selected tab and copy
+> prompts after explicit toolbar actions.
+>
+> **storage:** Keep a local installation ID and active Remote control session
+> state.
+>
+> **identity, identity.email:** Distinguish Chrome profiles connected to the same
+> local relay. These values are not sent through Remote control.
+>
+> **webNavigation:** Track navigation and popups opened by connected tabs.
+>
+> **host permissions:** Allow debugger attachment on any site the user chooses to
+> automate.
+
+Replace the current **Security and privacy** section with:
+
+> **Local by default:** Normal browser automation stays between the extension and
+> the relay on your computer. Traffic leaves only when you enable Remote control
+> or configure full relay remote access.
+>
+> **Explicit remote consent:** Remote control is off by default. A confirmation
+> explains what will be shared before the encrypted tunnel starts.
+>
+> **Scoped access:** A Remote control link covers one selected tab and popups it
+> opens. New unrelated tabs, profile-wide cookie reads and writes, and known
+> browser-wide destructive commands are blocked.
+>
+> **Bearer-link security:** Anyone with the secret link can control the shared tab
+> until you revoke it. Treat the link like a password.
+>
+> **No payload storage:** Remote tunnel frames are routed in memory and are not
+> persisted by Playwriter. Cloudflare processes transport and connection metadata
+> as the infrastructure provider.
+>
+> **No tracking:** Playwriter does not use browser data for analytics,
+> advertising, profiling, or sale. Read https://playwriter.dev/privacy.
+
+Delete or rewrite these current claims because they become false:
+
+- `Everything runs locally on your machine.`
+- `Nothing leaves your machine.`
+- `No remote servers.`
+- `Playwriter runs silently with no confirmation dialogs.`
+- `The developer has disclosed that it will not collect or use your data.`
+
+### Reviewer instructions
+
+1. Install the extension and click its icon on a normal HTTPS tab.
+2. Click the light-blue **Remote control** toolbar button.
+3. Verify that a disclosure appears before any tunnel starts.
+4. Accept it and verify that the toolbar shows **Remote ON**.
+5. Open the copied link in another browser and verify the selected-tab viewer.
+6. Click **Remote ON** again and verify that the link disconnects immediately.
+7. Note that remote logic uses only the policy-exempt Debugger API and that no
+   remote JavaScript bundle is loaded by the extension.
 
 ## Screenshots Required
 
-Need to provide at least one screenshot showing:
+Provide screenshots showing:
 
-- Extension icon in toolbar (gray when disconnected, green when connected)
-- Extension attached to a tab with Chrome's "debugging this browser" banner visible
-- Welcome page or usage demonstration
+- The extension icon when disconnected and connected
+- Chrome's debugger banner on a connected tab
+- The Remote control disclosure before sharing starts
+- The toolbar's visible **Remote ON** state
+- The browser viewer connected to the selected tab

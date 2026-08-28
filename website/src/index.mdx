@@ -50,7 +50,7 @@ tool definitions. And it runs in your existing browser, so **nothing extra gets 
 
 ### Install the extension
 
-1. Install the [Chrome extension](https://chromewebstore.google.com/detail/playwriter-mcp/jfeammnjpkecdekppnclgkkffahnhfhe)
+1. Install the [Chrome extension](https://chromewebstore.google.com/detail/playwriter/jfeammnjpkecdekppnclgkkffahnhfhe)
 2. Click the extension icon on a tab. It turns green when connected
 
 ### Install CLI + skill
@@ -72,7 +72,8 @@ npx -y skills add https://playwriter.dev
 
 The extension connects your browser to a **local WebSocket relay** on
 `localhost:19988`. The CLI sends Playwright code through the relay. By default, no remote
-server is involved and nothing leaves your machine.
+server is involved and no browser payload leaves your machine. Remote control is
+optional and starts only after you confirm a disclosure for one selected tab.
 
 ```bash
 playwriter session new              # new sandbox, outputs id (e.g. 1)

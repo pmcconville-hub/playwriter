@@ -2,7 +2,7 @@
 
 Control your Chrome browser via Model Context Protocol (MCP) using Chrome DevTools Protocol (CDP) events.
 
-[**Install from Chrome Web Store**](https://chromewebstore.google.com/detail/playwriter-mcp/jfeammnjpkecdekppnclgkkffahnhfhe)
+[**Install from Chrome Web Store**](https://chromewebstore.google.com/detail/playwriter/jfeammnjpkecdekppnclgkkffahnhfhe)
 
 ## What is Playwriter MCP?
 
@@ -15,6 +15,7 @@ Playwriter MCP is a Chrome extension that enables Playwright to connect to your 
 - **MCP integration**: Exposes browser control through the Model Context Protocol
 - **CDP events**: Full access to Chrome DevTools Protocol capabilities
 - **Playwright compatible**: Connect Playwright directly to your running Chrome
+- **Remote control**: Share one selected tab through a temporary, revocable link after an explicit confirmation
 
 ## How it Works
 
@@ -35,16 +36,20 @@ Playwriter MCP is a Chrome extension that enables Playwright to connect to your 
 
 ## Permissions
 
-This extension requires the following permissions:
+This extension uses these permissions for its browser automation purpose:
 
-- **debugger**: To access Chrome DevTools Protocol
-- **activeTab**: To interact with the current tab
-- **tabs**: To manage browser tabs
-- **all_urls**: To work with any website
+- **debugger**: Control tabs selected by the user through Chrome DevTools Protocol
+- **scripting**: Show the isolated Playwriter toolbar on connected tabs
+- **tabGroups and contextMenus**: Organize connected tabs and support Pin element
+- **tabCapture, offscreen, and clipboardWrite**: Record selected tabs and copy prompts after user actions
+- **storage**: Keep a local installation ID and active Remote control session state
+- **identity and identity.email**: Distinguish Chrome profiles connected to the same local relay; these values are not sent through Remote control
+- **webNavigation**: Track navigation and popups opened by connected tabs
+- **host permissions**: Attach the debugger on any site the user chooses to automate
 
 ## Getting Started
 
-1. [Install the extension from the Chrome Web Store](https://chromewebstore.google.com/detail/playwriter-mcp/jfeammnjpkecdekppnclgkkffahnhfhe)
+1. [Install the extension from the Chrome Web Store](https://chromewebstore.google.com/detail/playwriter/jfeammnjpkecdekppnclgkkffahnhfhe)
 2. Navigate to any webpage
 3. Click the Playwriter MCP extension icon
 4. The debugger will attach and the icon will turn green when connected
@@ -52,7 +57,11 @@ This extension requires the following permissions:
 
 ## Privacy & Security
 
-Playwriter MCP runs locally in your browser and does not send any data to external servers. All browser control happens through the standard Chrome DevTools Protocol on your machine.
+Playwriter MCP is **local by default**. Normal browser control travels between the extension and the relay on your computer.
+
+The optional **Remote control** feature sends data from one selected tab through an encrypted `playwriter.dev` tunnel only after you click the toolbar button and accept a disclosure. This can include screenshots, page content, URLs, input events, network data, and page-accessible cookies or browser storage. Tunnel payloads are relayed in memory and are not stored by Playwriter. Anyone holding the secret link can control the shared tab until you revoke it.
+
+Read the [privacy policy](https://playwriter.dev/privacy) and [security documentation](https://playwriter.dev/docs/security) before sharing sensitive tabs.
 
 ## Support
 
