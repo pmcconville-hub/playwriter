@@ -16,9 +16,10 @@ the user starts an automation client with no selected tab. CDP provides page
 navigation, element interaction, screenshots, accessibility data, network and
 console inspection, JavaScript debugging, and user-requested script evaluation.
 
-Remote control uses the same documented Debugger API for one tab that the user
-explicitly shares. The user must click the in-page toolbar button and accept a
-disclosure before the encrypted tunnel starts.
+Remote control uses the same documented Debugger API, starting from a tab that
+the user explicitly shares. It is not a security sandbox. The user must click
+the in-page toolbar button and accept a disclosure before the encrypted tunnel
+starts.
 
 ### scripting
 
@@ -136,7 +137,8 @@ In that mode, connected-tab data and local relay metadata can reach clients that
 hold the token.
 
 Remote control is disabled by default. It starts only after the user clicks its
-toolbar button and accepts a disclosure. While active, selected-tab data is
+toolbar button and accepts a disclosure. The selected tab is the starting
+control surface, but the recipient receives broad CDP access. Browser data is
 relayed over encrypted WebSockets through Playwriter's Cloudflare infrastructure
 to anyone holding the bearer link. The current tunnel implementation routes
 payloads in memory and does not persist them in Playwriter storage.
@@ -197,10 +199,10 @@ Replace every unconditional **local only** claim. Use this text:
 
 Add this feature description:
 
-> **Remote control.** Share one selected tab with a person or agent through a
-> temporary secret link. The recipient can see and control the tab and popups it
-> opens. Traffic can include screenshots, page content, URLs, input events,
-> network data, and page-accessible cookies or browser storage.
+> **Remote control.** Start a high-trust browser automation session from one
+> selected tab through a temporary secret link. Remote control is not a security
+> sandbox. Traffic can include screenshots, page content, URLs, input events,
+> network data, cookies, authentication data, and browser storage.
 > Playwriter routes tunnel payloads in memory and does not store them. Anyone with
 > the link has access until you click Remote ON again to revoke it.
 
@@ -240,12 +242,13 @@ Replace the current **Security and privacy** section with:
 > **Explicit remote consent:** Remote control is off by default. A confirmation
 > explains what will be shared before the encrypted tunnel starts.
 >
-> **Scoped access:** A Remote control link covers one selected tab and popups it
-> opens. New unrelated tabs, profile-wide cookie reads and writes, and known
-> browser-wide destructive commands are blocked.
+> **High-trust remote access:** A Remote control link starts with one selected
+> tab, but it is not a security sandbox. The recipient receives broad browser
+> automation access and must be fully trusted. A short denylist prevents new-tab
+> creation, explicit whole-profile cookie APIs, and obvious destructive clears.
 >
-> **Bearer-link security:** Anyone with the secret link can control the shared tab
-> until you revoke it. Treat the link like a password.
+> **Bearer-link security:** Anyone with the secret link receives broad browser
+> automation access until you revoke it. Treat the link like a password.
 >
 > **No payload storage:** Remote tunnel frames are routed in memory and are not
 > persisted by Playwriter. Cloudflare processes transport and connection metadata

@@ -130,7 +130,7 @@ playwriter -s 1 -e "console.log(await page.title())"
 
 Rules for remote-control sessions:
 
-- You control **only the shared tab**, plus popups/new tabs that tab opens by itself (OAuth redirects, payment popups, etc). Navigate the shared tab with `page.goto()` instead of opening new pages.
+- The shared tab is your **starting control surface**, not a security sandbox. The user must fully trust you with broad CDP access. Navigate the shared tab with `page.goto()` instead of opening new pages.
 - `context.newPage()` and any tab creation are rejected with an error. If you need another tab, ask the user to share one more (each shared tab gets its own URL).
 - The user revokes access anytime by clicking the Remote control button again; the URL then stops working permanently. If the connection dies, ask the user for a fresh URL.
 - Never print, log, or share the tunnel URL: whoever has it can control the user's tab as them.

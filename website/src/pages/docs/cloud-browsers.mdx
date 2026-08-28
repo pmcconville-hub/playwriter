@@ -203,14 +203,15 @@ The agent connects from any machine:
 playwriter session new --remote-control 'https://playwriter.dev/remote-control#xxx'
 ```
 
-The user needs no playwriter install — only the extension. The agent controls just that one tab
-(plus popups it opens), new tabs are blocked, and the user revokes access anytime by clicking the
-button again. See [Remote Access](/docs/remote-access) for details.
+The user needs no playwriter install — only the extension. The selected tab is the starting control
+surface, not a security sandbox. The recipient gets broad CDP access and must be fully trusted. The
+user revokes access anytime by clicking the button again. See [Remote Access](/docs/remote-access)
+for details.
 
 | | Cloud browser | Remote control |
 | --- | --- | --- |
 | **Logins** | fresh profile, none | user's real sessions |
-| **Scope** | full browser | one shared tab |
+| **Scope** | full browser | high-trust CDP access starting from one tab |
 | **Stealth/proxies** | yes | no (real user browser) |
 | **User setup** | none | extension + one click |
 

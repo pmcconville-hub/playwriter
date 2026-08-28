@@ -248,7 +248,7 @@ YOUR MACHINE (extension only)                        AGENT MACHINE (any box with
 └───────────────────────────┘   /remote-control#id  └────────────────────────────────┘
 ```
 
-The agent controls **only the shared tab** (plus popups it opens). New tabs, profile-wide cookie reads and writes, and browser-wide destructive commands are blocked. Everything happens visibly in your browser. The URL contains 128 bits of randomness and is never reusable after revocation — but treat it like a password and **never share it with anyone you don't trust**: the agent acts as you on any site it navigates the tab to.
+The shared tab is the **starting control surface**, not a security sandbox. Remote CDP access is powerful, so share the link only with a person or agent you fully trust. A short denylist blocks new-tab creation, explicit whole-profile cookie APIs, and obvious destructive clears, but it does not make a malicious recipient safe. The URL contains 128 bits of randomness and is never reusable after revocation.
 
 Use case: you are logged into a website and want an agent to do work in your authenticated session without giving it your password.
 

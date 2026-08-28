@@ -59,7 +59,9 @@ This extension uses these permissions for its browser automation purpose:
 
 Playwriter MCP is **local by default**. Normal browser control travels between the extension and the relay on your computer.
 
-The optional **Remote control** feature sends data from one selected tab through an encrypted `playwriter.dev` tunnel only after you click the toolbar button and accept a disclosure. This can include screenshots, page content, URLs, input events, network data, and page-accessible cookies or browser storage. Tunnel payloads are relayed in memory and are not stored by Playwriter. Anyone holding the secret link can control the shared tab until you revoke it.
+The optional **Remote control** feature sends browser data through an encrypted `playwriter.dev` tunnel only after you click the toolbar button and accept a disclosure. This can include screenshots, page content, URLs, input events, network data, cookies, and browser storage. Tunnel payloads are relayed in memory and are not stored by Playwriter.
+
+Remote control is **not a security sandbox**. Anyone holding the secret link receives broad browser automation access until you revoke it. Share the link only with a person or agent you fully trust.
 
 Read the [privacy policy](https://playwriter.dev/privacy) and [security documentation](https://playwriter.dev/docs/security) before sharing sensitive tabs.
 

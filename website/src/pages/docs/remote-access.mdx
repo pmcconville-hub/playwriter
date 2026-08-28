@@ -22,7 +22,7 @@ playwriter -s 1 -e "console.log(await page.title())"
 
 4. Click the button again anytime to **revoke access** — the URL dies instantly and is never reused
 
-The agent controls **only the shared tab** (plus popups it opens, so OAuth and payment flows keep working). Creating new tabs and browser-wide commands like clearing all cookies are blocked with helpful errors. Everything happens visibly in your browser.
+The shared tab is the **starting control surface**, not a security sandbox. Remote CDP access is powerful, so the recipient must be fully trusted. A short denylist blocks new-tab creation, explicit whole-profile cookie APIs, and obvious destructive clears.
 
 ### Watch and click from any browser
 
@@ -40,11 +40,11 @@ The stream **keeps running when the sharer switches tabs**. Playwriter holds a d
 
 <Aside>
 <Warning>
-The URL grants control of your tab **as you** — the agent can navigate the tab to any site where you are logged in. Never share it with anyone you don't trust, and never post it in public channels. Revoke it with the button when the agent is done. The link also dies when you close your browser.
+The URL grants **broad browser automation access**. A malicious recipient may use CDP capabilities beyond the visible page. Never share it with anyone you do not fully trust, and never post it in public channels. Revoke it with the button when the agent is done. The link also dies when you close your browser.
 </Warning>
 </Aside>
 
-Remote traffic can include **screenshots, page content, URLs, input events, network data, and page-accessible cookies or browser storage**. Payloads are routed in memory and are not stored by Playwriter. Read the [privacy policy](../privacy.mdx) for the complete disclosure.
+Remote traffic can include **screenshots, page content, URLs, input events, network data, cookies, authentication data, and browser storage**. Payloads are routed in memory and are not stored by Playwriter. Read the [privacy policy](../privacy.mdx) for the complete disclosure.
 
 Typical use case: you are logged into a website and want an agent (Devin, a cloud bot, a teammate's CLI agent) to do work in your authenticated session without ever sharing a password.
 

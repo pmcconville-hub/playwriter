@@ -427,7 +427,7 @@ cli
         const result = (await response.json()) as { id: string; browser?: string | null; warning?: string | null }
         printSessionWarning(result)
         console.log(`Session ${result.id} created (remote browser tab). Use with: playwriter -s ${result.id} -e "..."`)
-        console.log(pc.dim('You control only the shared tab (plus popups it opens). New tabs are blocked.'))
+        console.log(pc.dim('The shared tab is the starting control surface. Remote control is not a security sandbox.'))
         console.log(pc.dim('The user can revoke access anytime by clicking the Remote control button again.'))
       } catch (error: any) {
         console.error(`Error: ${error.message}`)

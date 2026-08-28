@@ -22,14 +22,14 @@ Every remote-control host now sits under **playwriter.dev**, so sharing a tab ne
 
 Scope and safety:
 
-- The agent controls **only the shared tab**, plus popups/new tabs that tab opens itself (OAuth redirects, payment popups keep working)
+- The shared tab is the starting control surface, not a security sandbox; the recipient receives broad CDP access and must be fully trusted
 - `Target.createTarget` / `context.newPage()` are rejected with a helpful error telling the agent to ask the user for another shared tab instead
-- Profile-wide cookie reads and writes (`Network.getAllCookies`, `Storage.getCookies`, `Storage.setCookies`) and browser-wide destructive commands are blocked
+- A short denylist blocks explicit whole-profile cookie APIs and obvious destructive clears; URL/domain-targeted cookie commands remain available
 - Clicking the button again revokes the link instantly; a new activation generates a fresh URL
 - The link survives extension service-worker restarts but dies when the browser closes
 - Only a real click starts a share: the button lives in Chrome's isolated extension world and the secret prompt is copied by an offscreen extension document, so page scripts cannot start it or read the link
 - Sharing asks for confirmation first, explaining that the agent can read and control the tab and that traffic leaves your machine
-- The disclosure covers screenshots, page content, URLs, input events, network data, and page-accessible cookies or browser storage
+- The disclosure covers screenshots, page content, URLs, input events, network data, cookies, authentication data, and browser storage
 - Tunnel frames are relayed in memory only. They are never stored, and response caching is off for these tunnels
 - The live view never resizes your page. It adapts to the tab's own size instead of overriding device metrics
 - The stream keeps running when you switch tabs, because the debugger attachment stops Chrome from backgrounding the shared tab

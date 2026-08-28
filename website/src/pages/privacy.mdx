@@ -19,7 +19,7 @@ prompt: |
 Playwriter is **local by default**. The Chrome extension connects to a relay on
 your own computer unless you explicitly enable a remote feature.
 
-When you enable **Remote control**, selected-tab data passes through an encrypted
+When you enable **Remote control**, browser data passes through an encrypted
 Playwriter tunnel to the person or agent that has your secret link. Playwriter
 does not use this data for analytics, advertising, profiling, or sale.
 
@@ -62,9 +62,10 @@ They are not included in the Remote control handshake.
 Remote control is **off by default**. It starts only after you click the Remote
 control toolbar button and accept a disclosure.
 
-While a share is active, the extension can relay data from the **selected tab and
-popups it opens**. This can include screenshots, page content, URLs, network and
-console data, input events, and page-accessible cookies or browser storage.
+While a share is active, the selected tab is the **starting control surface**,
+not a security boundary. Broad CDP access can expose screenshots, page content,
+URLs, network and console data, input events, cookies, authentication data, and
+browser storage beyond the visible page.
 
 The data passes through an encrypted WebSocket tunnel under
 **`playwriter.dev`**. The current tunnel implementation routes payloads in memory
@@ -77,8 +78,8 @@ metadata.
 
 ## Who can receive shared data
 
-Remote control uses a **bearer link**. Anyone who has the link can read and
-control the shared tab until you revoke it.
+Remote control uses a **bearer link**. Anyone who has the link receives broad
+browser automation access until you revoke it.
 
 The recipient can be a person using the browser viewer or an agent using the
 **Playwriter CLI**. You choose the recipient by deciding who receives the link.
@@ -152,9 +153,10 @@ specific support request that you authorize.
 
 ## Security
 
-Playwriter uses **HTTPS and WSS encryption** for remote traffic. Remote access is
-limited to the shared tab and popups it opens. Profile-wide cookie reads and
-writes and known browser-wide destructive commands are blocked.
+Playwriter uses **HTTPS and WSS encryption** for remote traffic. Remote control
+starts from the shared tab, but it is not a security sandbox. The recipient gets
+broad CDP access and must be fully trusted. A short denylist blocks new-tab
+creation, explicit whole-profile cookie APIs, and obvious destructive clears.
 
 No security measure can make a **bearer link** safe after it is shared with an
 untrusted recipient. Treat the link like a password.

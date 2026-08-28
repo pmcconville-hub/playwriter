@@ -920,7 +920,7 @@ export function initPlaywriterToolbar(): void {
     if (
       !remoteActive &&
       !window.confirm(
-        "Share this tab through Playwriter Remote control?\n\nThe recipient can see and control this tab and its popups as you. Shared data can include screenshots, page content, URLs, input events, network data, and page-accessible cookies or browser storage.\n\nTraffic passes through Playwriter's encrypted Cloudflare tunnel. Payloads are relayed in memory and are not stored by Playwriter. Anyone with the copied link has access until you turn Remote control off.",
+        "Share this tab through Playwriter Remote control?\n\nRemote control is not a security sandbox. The recipient gets broad browser automation access and must be fully trusted. Shared data can include screenshots, page content, URLs, input events, network data, cookies, and browser storage.\n\nTraffic passes through Playwriter's encrypted Cloudflare tunnel. Payloads are relayed in memory and are not stored by Playwriter. Anyone with the copied link has access until you turn Remote control off.",
       )
     ) {
       return
