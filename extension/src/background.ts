@@ -1427,13 +1427,13 @@ function onDebuggerEvent(source: chrome.debugger.DebuggerSession, method: string
 
 function onDebuggerDetach(source: chrome.debugger.Debuggee, reason: `${chrome.debugger.DetachReason}`): void {
   const tabId = source.tabId
-  if (!tabId || !store.getState().tabs.has(tabId)) {
-    logger.debug('Ignoring debugger detach event for untracked tab:', tabId)
+  if (!tabId) {
+    logger.debug('Ignoring debugger detach event without a tab id')
     return
   }
-
-  if (connectionManager.preserveTabsOnDetach) {
-    logger.debug('Ignoring debugger detach during relay reconnect:', tabId, reason)
+  const remoteRuntime = findRemoteRuntimeForTab(tabId)
+  if (!store.getState().tabs.has(tabId) && !remoteRuntime) {
+    logger.debug('Ignoring debugger detach event for untracked tab:', tabId)
     return
   }
 
@@ -1457,8 +1457,16 @@ function onDebuggerDetach(source: chrome.debugger.Debuggee, reason: `${chrome.de
     for (const [detachedTabId, tab] of store.getState().tabs.entries()) {
       detachTabFromPlaywright(detachedTabId, tab)
     }
+    Array.from(remoteTunnels.keys()).map((rootTabId) => {
+      return stopRemoteControlForTab(rootTabId)
+    })
 
     store.setState({ tabs: new Map(), connectionState: 'idle', errorText: undefined })
+    return
+  }
+
+  if (connectionManager.preserveTabsOnDetach && !remoteRuntime) {
+    logger.debug('Ignoring debugger detach during relay reconnect:', tabId, reason)
     return
   }
 
@@ -1466,6 +1474,7 @@ function onDebuggerDetach(source: chrome.debugger.Debuggee, reason: `${chrome.de
   if (tab) {
     detachTabFromPlaywright(tabId, tab)
   }
+  removeTabFromRemoteScopes(tabId)
 
   store.setState((state) => {
     const newTabs = new Map(state.tabs)
@@ -1778,8 +1787,8 @@ function setRecorderStateInTab(tabId: number, recording: boolean): void {
     .catch(() => {})
 }
 
-function setRemoteStateInTab(tabId: number, active: boolean): void {
-  chrome.scripting
+function setRemoteStateInTab(tabId: number, active: boolean): Promise<void> {
+  return chrome.scripting
     .executeScript({
       target: { tabId, allFrames: false },
       world: 'ISOLATED',
@@ -1788,7 +1797,16 @@ function setRemoteStateInTab(tabId: number, active: boolean): void {
       },
       args: [active],
     })
+    .then(() => {})
     .catch(() => {})
+}
+
+function setRemoteStateForScope(scope: RemoteScope, active: boolean): void {
+  void Promise.all(
+    Array.from(scope.tabIds).map((tabId) => {
+      return setRemoteStateInTab(tabId, active)
+    }),
+  )
 }
 
 // Notify all connected tabs when recording starts/stops.
@@ -2035,10 +2053,11 @@ async function sendRemoteHelloAndTargets(conn: { send(message: any): void; scope
 async function startRemoteControlForTab(
   tabId: number,
   options: { tunnelId?: string; scopeTabIds?: number[] } = {},
-): Promise<{ url: string }> {
+): Promise<{ url: string; started: boolean }> {
   const existing = findRemoteRuntimeForTab(tabId)
   if (existing) {
-    return { url: existing.tunnel.url }
+    setRemoteStateForScope(existing.scope, true)
+    return { url: existing.tunnel.url, started: false }
   }
 
   const scope: RemoteScope = { rootTabId: tabId, tabIds: new Set([tabId, ...(options.scopeTabIds || [])]) }
@@ -2095,8 +2114,9 @@ async function startRemoteControlForTab(
   remoteTunnels.set(tabId, { tunnel, tunnelId, scope, status: 'connecting' })
   tunnel.start()
   persistRemoteTabs()
-  logger.log('Remote control started for tab', tabId, 'url:', tunnel.url)
-  return { url: tunnel.url }
+  setRemoteStateForScope(scope, true)
+  logger.log('Remote control started for tab', tabId)
+  return { url: tunnel.url, started: true }
 }
 
 function stopRemoteControlForTab(tabId: number): boolean {
@@ -2104,20 +2124,12 @@ function stopRemoteControlForTab(tabId: number): boolean {
   if (!runtime) {
     return false
   }
+  setRemoteStateForScope(runtime.scope, false)
   runtime.tunnel.close()
   remoteTunnels.delete(runtime.scope.rootTabId)
   persistRemoteTabs()
   logger.log('Remote control stopped for tab', runtime.scope.rootTabId)
   return true
-}
-
-async function toggleRemoteControlForTab(tabId: number): Promise<{ active: boolean; url?: string }> {
-  if (findRemoteRuntimeForTab(tabId)) {
-    stopRemoteControlForTab(tabId)
-    return { active: false }
-  }
-  const { url } = await startRemoteControlForTab(tabId)
-  return { active: true, url }
 }
 
 // Root tab gone → revoke the whole link. Popup gone → shrink the scope.
@@ -2130,6 +2142,7 @@ function removeTabFromRemoteScopes(tabId: number): void {
     stopRemoteControlForTab(tabId)
     return
   }
+  void setRemoteStateInTab(tabId, false)
   runtime.scope.tabIds.delete(tabId)
   persistRemoteTabs()
 }
@@ -2346,6 +2359,7 @@ async function updateIcons(): Promise<void> {
 
 async function onTabRemoved(tabId: number): Promise<void> {
   popupSourceTabMap.delete(tabId)
+  removeTabFromRemoteScopes(tabId)
   const { tabs } = store.getState()
   if (!tabs.has(tabId)) return
   logger.debug(`Connected tab ${tabId} was closed, disconnecting`)
@@ -3052,38 +3066,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true
   }
 
-  // Remote control toggle from the toolbar cloud button. On enable: start the
-  // tunnel, copy the agent prompt (contains the secret URL) to the clipboard,
-  // and warn the user never to share it. On disable: kill the tunnel/link.
-  if (message.action === 'remoteControlToggle') {
+  if (message.action === 'remoteControlStart') {
     const senderTabId = sender.tab?.id
     if (!senderTabId || sender.frameId !== 0 || store.getState().tabs.get(senderTabId)?.state !== 'connected') {
       return false
     }
     void (async () => {
       try {
-        const result = await toggleRemoteControlForTab(senderTabId)
-        if (result.active && result.url) {
-          const prompt = buildRemoteControlPrompt({ url: result.url })
+        const { url, started } = await startRemoteControlForTab(senderTabId)
+        const prompt = buildRemoteControlPrompt({ url })
+        try {
           await copyTextInOffscreenDocument(prompt)
-          setRemoteStateInTab(senderTabId, true)
-          toastToolbar(
-            senderTabId,
-            'Remote control ON — prompt copied. NEVER share the link with anyone you don\u2019t trust',
-          )
-          playToolbarSound(senderTabId, 'success')
-        } else {
-          setRemoteStateInTab(senderTabId, false)
-          toastToolbar(senderTabId, 'Remote control stopped — link revoked')
-          playToolbarSound(senderTabId, 'click')
+        } catch (error) {
+          if (started) {
+            stopRemoteControlForTab(senderTabId)
+          }
+          throw error
         }
+        toastToolbar(
+          senderTabId,
+          'Remote control ON — prompt copied. NEVER share the link with anyone you don\u2019t trust',
+        )
+        playToolbarSound(senderTabId, 'success')
       } catch (error: any) {
-        logger.error('Remote control toggle failed:', error)
-        stopRemoteControlForTab(senderTabId)
-        setRemoteStateInTab(senderTabId, false)
+        logger.error('Remote control start failed:', error)
         toastToolbar(senderTabId, `Remote control failed: ${error.message}`)
       }
     })()
+    return false
+  }
+
+  if (message.action === 'remoteControlStop') {
+    const senderTabId = sender.tab?.id
+    if (!senderTabId || sender.frameId !== 0 || store.getState().tabs.get(senderTabId)?.state !== 'connected') {
+      return false
+    }
+    stopRemoteControlForTab(senderTabId)
+    void setRemoteStateInTab(senderTabId, false)
+    toastToolbar(senderTabId, 'Remote control stopped — link revoked')
+    playToolbarSound(senderTabId, 'click')
     return false
   }
 

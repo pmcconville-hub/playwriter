@@ -15,7 +15,8 @@ declare global {
     __playwriterToolbarStopRecording?: (() => void) | null
     __playwriterToolbarStartRecording?: (() => void) | null
     __playwriterToolbarSetRemote?: (active: boolean) => void
-    __playwriterToolbarToggleRemote?: (() => void) | null
+    __playwriterToolbarStartRemote?: (() => void) | null
+    __playwriterToolbarStopRemote?: (() => void) | null
     __playwriterToolbarShowToast?: (msg: string) => void
     __playwriterToolbarPlaySound?: (name: string) => void
     __playwriterPinCount?: number
@@ -913,19 +914,24 @@ export function initPlaywriterToolbar(): void {
       return
     }
     playSound('click')
-    if (!window.__playwriterToolbarToggleRemote) {
+    if (remoteActive) {
+      if (!window.__playwriterToolbarStopRemote) {
+        showToast('Extension not connected')
+        return
+      }
+      window.__playwriterToolbarStopRemote()
+      return
+    }
+    if (!window.__playwriterToolbarStartRemote) {
       showToast('Extension not connected')
       return
     }
-    if (
-      !remoteActive &&
-      !window.confirm(
-        "Share this tab through Playwriter Remote control?\n\nRemote control is not a security sandbox. The recipient gets broad browser automation access and must be fully trusted. Shared data can include screenshots, page content, URLs, input events, network data, cookies, and browser storage.\n\nTraffic passes through Playwriter's encrypted Cloudflare tunnel. Payloads are relayed in memory and are not stored by Playwriter. Anyone with the copied link has access until you turn Remote control off.",
-      )
-    ) {
+    if (!window.confirm(
+      "Share this tab through Playwriter Remote control?\n\nRemote control is not a security sandbox. The recipient gets broad browser automation access and must be fully trusted. Shared data can include screenshots, page content, URLs, input events, network data, cookies, and browser storage.\n\nTraffic passes through Playwriter's encrypted Cloudflare tunnel. Payloads are relayed in memory and are not stored by Playwriter. Anyone with the copied link has access until you turn Remote control off.",
+    )) {
       return
     }
-    window.__playwriterToolbarToggleRemote()
+    window.__playwriterToolbarStartRemote()
   })
 
   const sep3 = document.createElement('div')
@@ -1040,8 +1046,12 @@ export function initPlaywriterToolbar(): void {
     void chrome.runtime.sendMessage({ action: 'actionRecorderStop' })
   }
 
-  window.__playwriterToolbarToggleRemote = () => {
-    void chrome.runtime.sendMessage({ action: 'remoteControlToggle' })
+  window.__playwriterToolbarStartRemote = () => {
+    void chrome.runtime.sendMessage({ action: 'remoteControlStart' })
+  }
+
+  window.__playwriterToolbarStopRemote = () => {
+    void chrome.runtime.sendMessage({ action: 'remoteControlStop' })
   }
 
   // ── Cleanup hook called by background.ts on tab disconnect ─────────────────
@@ -1057,7 +1067,8 @@ export function initPlaywriterToolbar(): void {
     delete window.__playwriterToolbarStopRecording
     delete window.__playwriterToolbarStartRecording
     delete window.__playwriterToolbarSetRemote
-    delete window.__playwriterToolbarToggleRemote
+    delete window.__playwriterToolbarStartRemote
+    delete window.__playwriterToolbarStopRemote
     delete window.__playwriterToolbarShowToast
     delete window.__playwriterToolbarPlaySound
   }

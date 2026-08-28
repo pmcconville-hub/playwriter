@@ -124,8 +124,28 @@ describe('Extension Connection Tests', () => {
     const pageCallbacks = await page.evaluate(() => {
       return {
         recorder: typeof window.__playwriterToolbarStartRecording,
-        remote: typeof window.__playwriterToolbarToggleRemote,
+        startRemote: typeof window.__playwriterToolbarStartRemote,
+        stopRemote: typeof window.__playwriterToolbarStopRemote,
+        toggleRemote: typeof Reflect.get(window, '__playwriterToolbarToggleRemote'),
       }
+    })
+    const isolatedCallbacks = await serviceWorker.evaluate(async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+      if (!tab?.id) {
+        throw new Error('No active tab')
+      }
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, frameIds: [0] },
+        world: 'ISOLATED',
+        func: () => {
+          return {
+            startRemote: typeof window.__playwriterToolbarStartRemote,
+            stopRemote: typeof window.__playwriterToolbarStopRemote,
+            toggleRemote: typeof Reflect.get(window, '__playwriterToolbarToggleRemote'),
+          }
+        },
+      })
+      return result.result
     })
     await page.evaluate(() => {
       window.postMessage({ __playwriter: 'remote_toggle' }, '*')
@@ -200,12 +220,77 @@ describe('Extension Connection Tests', () => {
     })
     await page.close()
 
-    expect(pageCallbacks).toEqual({ recorder: 'undefined', remote: 'undefined' })
+    expect(pageCallbacks).toEqual({
+      recorder: 'undefined',
+      startRemote: 'undefined',
+      stopRemote: 'undefined',
+      toggleRemote: 'undefined',
+    })
+    expect(isolatedCallbacks).toEqual({
+      startRemote: 'function',
+      stopRemote: 'function',
+      toggleRemote: 'undefined',
+    })
     expect(remoteState).toEqual([])
     expect(clipboard.result).toEqual({ success: true })
     expect(pinResult).toEqual({ pinNumber: 1 })
     expect(pinnedText).toContain('Example Domain')
   }, 120000)
+
+  it('uses idempotent remote start and explicit stop actions', async () => {
+    const browserContext = getBrowserContext()
+    const serviceWorker = await getExtensionServiceWorker(browserContext)
+    const page = await browserContext.newPage()
+    await page.goto('https://example.com/')
+    await page.bringToFront()
+    await serviceWorker.evaluate(async () => {
+      await globalThis.toggleExtensionForActiveTab()
+    })
+    await page.locator('[data-playwriter-toolbar="1"]').first().waitFor()
+
+    const runRemoteAction = async (action: 'start' | 'stop') => {
+      await serviceWorker.evaluate(async (requestedAction) => {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+        if (!tab?.id) {
+          throw new Error('No active tab')
+        }
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id, frameIds: [0] },
+          world: 'ISOLATED',
+          func: (value: 'start' | 'stop') => {
+            if (value === 'start') {
+              window.__playwriterToolbarStartRemote?.()
+              return
+            }
+            window.__playwriterToolbarStopRemote?.()
+          },
+          args: [requestedAction],
+        })
+      }, action)
+    }
+
+    try {
+      await runRemoteAction('start')
+      await expect.poll(async () => serviceWorker.evaluate(() => globalThis.getRemoteControlState())).toHaveLength(1)
+      const [firstShare] = await serviceWorker.evaluate(() => globalThis.getRemoteControlState())
+
+      await runRemoteAction('start')
+      await expect
+        .poll(async () => serviceWorker.evaluate(() => globalThis.getRemoteControlState()[0]?.url))
+        .toBe(firstShare.url)
+
+      await runRemoteAction('stop')
+      await expect.poll(async () => serviceWorker.evaluate(() => globalThis.getRemoteControlState())).toHaveLength(0)
+    } finally {
+      await serviceWorker.evaluate(() => {
+        const [share] = globalThis.getRemoteControlState()
+        if (share) {
+          globalThis.stopRemoteControlForTab(share.rootTabId)
+        }
+      })
+      await page.close()
+    }
+  }, 60_000)
 
   // Clicks the real button instead of calling the handler, so the trusted-click guard
   // stays covered. Keep example.com: it ships `div{opacity:0.8}`, which once matched the
