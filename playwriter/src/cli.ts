@@ -428,7 +428,7 @@ cli
         }
         const result = (await response.json()) as { id: string; browser?: string | null; warning?: string | null }
         printSessionWarning(result)
-        console.log(`Session ${result.id} created (remote browser tab). Use with: playwriter -s ${result.id} -e "..."`)
+        printSessionCreated(`Session ${result.id} created (remote browser tab). Use with: playwriter -s ${result.id} -e "..."`)
         console.log(pc.dim('The shared tab is the starting control surface. Remote control is not a security sandbox.'))
         console.log(pc.dim('The user can revoke access anytime with Stop sharing on the Remote ON dropdown.'))
       } catch (error: any) {
@@ -463,7 +463,7 @@ cli
         }
         const result = (await response.json()) as { id: string; warning?: string | null }
         printSessionWarning(result)
-        console.log(`Session ${result.id} created (headless). Use with: playwriter -s ${result.id} -e "..."`)
+        printSessionCreated(`Session ${result.id} created (headless). Use with: playwriter -s ${result.id} -e "..."`)
         console.log(pc.dim('NOTE: Recording unavailable in headless mode.'))
       } catch (error: any) {
         if (error.message?.includes('Could not find a supported browser binary')) {
@@ -498,7 +498,7 @@ cli
       const serverUrl = await getServerUrl(options.host)
       const result = await createDirectSession({ serverUrl, cdpEndpoint, token: options.token })
       printSessionWarning(result)
-      console.log(`Session ${result.id} created (direct CDP). Use with: playwriter -s ${result.id} -e "..."`)
+      printSessionCreated(`Session ${result.id} created (direct CDP). Use with: playwriter -s ${result.id} -e "..."`)
       console.log(pc.dim('NOTE: Recording unavailable in direct CDP mode.'))
       return
     }
@@ -530,7 +530,7 @@ cli
         const result = await createDirectSession({ serverUrl, cdpEndpoint: instance.wsUrl, browser: instance.browser, profiles: instance.profiles, token: options.token })
         printSessionWarning(result)
         const profileLabel = formatInstanceProfiles(instance)
-        console.log(
+        printSessionCreated(
           `Session ${result.id} created (direct CDP, ${instance.browser}${profileLabel}). Use with: playwriter -s ${result.id} -e "..."`,
         )
         console.log(pc.dim('NOTE: Recording unavailable in direct CDP mode.'))
@@ -555,7 +555,7 @@ cli
         const serverUrl = await getServerUrl(options.host)
         const result = await createDirectSession({ serverUrl, cdpEndpoint: selected.wsUrl!, browser: selected.browser, profiles: selected.profiles, token: options.token })
         printSessionWarning(result)
-        console.log(`Session ${result.id} created (direct CDP). Use with: playwriter -s ${result.id} -e "..."`)
+        printSessionCreated(`Session ${result.id} created (direct CDP). Use with: playwriter -s ${result.id} -e "..."`)
         console.log(pc.dim('NOTE: Recording unavailable in direct CDP mode.'))
         return
       }
@@ -623,7 +623,7 @@ cli
               blockProxyResources: computeBlockProxyResources(options),
               token: options.token,
             })
-          console.log(`Session ${result.id} created (cloud). Use with: playwriter -s ${result.id} -e "..."`)
+          printSessionCreated(`Session ${result.id} created (cloud). Use with: playwriter -s ${result.id} -e "..."`)
           if (result.liveUrl) {
             console.log(pc.dim(`Live view: ${result.liveUrl}`))
           }
@@ -676,7 +676,7 @@ cli
         }
         const result = (await response.json()) as { id: string; extensionId: string | null; warning?: string | null }
         printSessionWarning(result)
-        console.log(`Session ${result.id} created. Use with: playwriter -s ${result.id} -e "..."`)
+        printSessionCreated(`Session ${result.id} created. Use with: playwriter -s ${result.id} -e "..."`)
         printCloudTip()
       } catch (error: any) {
         console.error(`Error: ${error.message}`)
@@ -741,14 +741,14 @@ cli
               blockProxyResources: computeBlockProxyResources(options),
               token: options.token,
             })
-          console.log(`Session ${result.id} created (cloud). Use with: playwriter -s ${result.id} -e "..."`)
+          printSessionCreated(`Session ${result.id} created (cloud). Use with: playwriter -s ${result.id} -e "..."`)
           if (result.liveUrl) {
             console.log(pc.dim(`Live view: ${result.liveUrl}`))
           }
         } else if (selected.type === 'direct') {
           const result = await createDirectSession({ serverUrl, cdpEndpoint: selected.wsUrl!, browser: selected.browser, profiles: selected.profiles, token: options.token })
           printSessionWarning(result)
-          console.log(`Session ${result.id} created (direct CDP). Use with: playwriter -s ${result.id} -e "..."`)
+          printSessionCreated(`Session ${result.id} created (direct CDP). Use with: playwriter -s ${result.id} -e "..."`)
           console.log(pc.dim('NOTE: Recording unavailable in direct CDP mode.'))
         } else {
           const cwd = process.cwd()
@@ -764,7 +764,7 @@ cli
           }
           const result = (await response.json()) as { id: string; warning?: string | null }
           printSessionWarning(result)
-          console.log(`Session ${result.id} created. Use with: playwriter -s ${result.id} -e "..."`)
+          printSessionCreated(`Session ${result.id} created. Use with: playwriter -s ${result.id} -e "..."`)
           printCloudTip()
         }
       } catch (error: any) {
@@ -927,6 +927,11 @@ function printSessionWarning(result: { warning?: string | null }): void {
   if (result.warning) {
     console.error(pc.yellow(`Warning: ${result.warning}`))
   }
+}
+
+function printSessionCreated(line: string): void {
+  console.log(line)
+  console.error('run playwriter skill to see how to use playwriter if not run already')
 }
 
 function printCloudTip(): void {

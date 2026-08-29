@@ -119,7 +119,11 @@ playwriter -s 1 -e "await page.goto('https://example.com')"
 
 ### Remote control (drive a tab in another user's browser)
 
-When a user shares a tab with you, they send a secret **id** (created by clicking the **Remote control** button in the Playwriter toolbar of their browser). The user needs no playwriter install — only the extension. Connect to it with:
+When a user shares a tab with you, they send a secret **id** (created by clicking the **Remote control** button in the Playwriter toolbar of their browser). The user needs no playwriter install, only the extension.
+
+**How it works:** the extension opens a secret tunnel for that one tab. Your CLI dials it with the id and talks CDP as if the tab were local. You only have that shared tab (and popups it opened). **Do not create new tabs.** `context.newPage()` and any tab creation are rejected. If you need another tab, ask the user to share one more.
+
+Connect with:
 
 ```bash
 playwriter session new --remote-control <id>
@@ -130,7 +134,6 @@ playwriter -s 1 -e "console.log(await page.title())"
 Rules for remote-control sessions:
 
 - The shared tab is your **starting control surface**, not a security sandbox. The user must fully trust you with broad CDP access. Navigate the shared tab with `page.goto()` instead of opening new pages.
-- `context.newPage()` and any tab creation are rejected with an error. If you need another tab, ask the user to share one more (each shared tab gets its own URL).
 - The user revokes access anytime with **Stop sharing** on the Remote ON dropdown; the URL then stops working permanently. If the connection dies, ask the user for a fresh URL.
 - Never print, log, or share the tunnel URL: whoever has it can control the user's tab as them.
 - Screen recording is not available on remote-control sessions.

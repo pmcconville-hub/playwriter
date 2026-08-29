@@ -175,7 +175,7 @@ describe('remote-control', () => {
 
       npx -y playwriter@latest session new --remote-control abc123
 
-      Then use the printed session id. Read https://playwriter.dev/SKILL.md. Do not create new tabs. NEVER share this id."
+      Then use the printed session id. Read https://playwriter.dev/SKILL.md. NEVER share this id."
     `)
   })
 

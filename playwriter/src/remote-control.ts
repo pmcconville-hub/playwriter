@@ -375,7 +375,7 @@ export function buildRemoteControlPrompt({ id }: { id: string }): string {
 
     npx -y playwriter@latest session new --remote-control ${id}
 
-    Then use the printed session id. Read https://playwriter.dev/SKILL.md. Do not create new tabs. NEVER share this id.
+    Then use the printed session id. Read https://playwriter.dev/SKILL.md. NEVER share this id.
   `
 }
 
