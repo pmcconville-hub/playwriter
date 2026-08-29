@@ -2087,11 +2087,11 @@ export async function startPlayWriterCDPRelayServer({
     if (entry?.ws) {
       // Connected but no shared tab announced yet — surface a clear error.
       throw new Error(
-        'Connected to the remote browser but no shared tab was announced. The user may have revoked remote control. Ask them to click the Remote control button again and share a fresh URL.',
+        'Connected to the remote browser but no shared tab was announced. The user may have revoked remote control. Ask them to click the Remote control button again and share a fresh id.',
       )
     }
     throw new Error(
-      'Could not reach the remote browser. Check that the Remote control button is still active and that the URL is correct. Remote control links die when the user clicks the button again or closes the browser.',
+      'Could not reach the remote browser. Check that the Remote control button is still active and that the id is correct. Sharing dies when the user clicks Stop sharing or closes the browser.',
     )
   }
 
@@ -2327,7 +2327,7 @@ export async function startPlayWriterCDPRelayServer({
       cwd?: string
       /** Direct CDP WebSocket URL — bypasses extension, connects straight to Chrome */
       cdpEndpoint?: string
-      /** Remote-control tunnel URL shared by another user's extension (Remote control button) */
+      /** Remote-control tunnel id (or leftover URL) shared by another user's extension */
       remoteControlUrl?: string
       /** Launch a headless Chrome via chromium.launch() — no extension or relay CDP routing */
       headless?: boolean
@@ -2435,7 +2435,7 @@ export async function startPlayWriterCDPRelayServer({
       })
     }
 
-    // Remote control mode: dial the tunnel URL shared by another user's extension
+    // Remote control mode: dial the tunnel for an id shared by another user's extension
     // and bind the session to that remote extension connection.
     if (body.remoteControlUrl) {
       let remoteEntry: relayState.ExtensionEntry

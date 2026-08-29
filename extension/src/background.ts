@@ -2068,11 +2068,11 @@ async function sendRemoteHelloAndTargets(conn: { send(message: any): void; scope
 async function startRemoteControlForTab(
   tabId: number,
   options: { tunnelId?: string; scopeTabIds?: number[] } = {},
-): Promise<{ url: string; started: boolean }> {
+): Promise<{ url: string; started: boolean; id: string }> {
   const existing = findRemoteRuntimeForTab(tabId)
   if (existing) {
     setRemoteStateForScope(existing.scope, true)
-    return { url: existing.tunnel.url, started: false }
+    return { url: existing.tunnel.url, started: false, id: existing.tunnelId }
   }
 
   const scope: RemoteScope = { rootTabId: tabId, tabIds: new Set([tabId, ...(options.scopeTabIds || [])]) }
@@ -2136,7 +2136,7 @@ async function startRemoteControlForTab(
   persistRemoteTabs()
   setRemoteStateForScope(scope, true)
   logger.log('Remote control started for tab', tabId)
-  return { url: tunnel.url, started: true }
+  return { url: tunnel.url, started: true, id: tunnelId }
 }
 
 function stopRemoteControlForTab(tabId: number): boolean {
@@ -3093,8 +3093,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     void (async () => {
       try {
-        const { url, started } = await startRemoteControlForTab(senderTabId)
-        const prompt = buildRemoteControlPrompt({ url })
+        const { started, id } = await startRemoteControlForTab(senderTabId)
+        const prompt = buildRemoteControlPrompt({ id })
         try {
           await copyTextInOffscreenDocument(prompt)
         } catch (error) {
@@ -3105,7 +3105,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         toastToolbar(
           senderTabId,
-          'Remote control ON — prompt copied. NEVER share the link with anyone you don\u2019t trust',
+          'Remote control ON — prompt copied. NEVER share this id with anyone you don\u2019t trust',
         )
         playToolbarSound(senderTabId, 'success')
       } catch (error: any) {
@@ -3123,7 +3123,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     stopRemoteControlForTab(senderTabId)
     void setRemoteStateInTab(senderTabId, false)
-    toastToolbar(senderTabId, 'Remote control stopped — link revoked')
+    toastToolbar(senderTabId, 'Remote control stopped — access revoked')
     playToolbarSound(senderTabId, 'click')
     return false
   }
@@ -3139,7 +3139,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false
     }
     const copyPrompt = message.action === 'remoteControlCopyPrompt'
-    const text = copyPrompt ? buildRemoteControlPrompt({ url: runtime.tunnel.url }) : runtime.tunnel.url
+    const text = copyPrompt ? buildRemoteControlPrompt({ id: runtime.tunnelId }) : runtime.tunnel.url
     void copyTextInOffscreenDocument(text)
       .then(() => {
         toastToolbar(senderTabId, copyPrompt ? 'Agent prompt copied' : 'Remote URL copied')

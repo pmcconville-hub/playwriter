@@ -796,7 +796,8 @@ export function initPlaywriterToolbar(): void {
 
   const CHEVRON_SVG = `<svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>`
 
-  const LINK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`
+  // TODO: re-enable Copy remote URL when viewer playback is fast enough.
+  // const LINK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`
 
   const CLIPBOARD_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>`
 
@@ -1000,8 +1001,8 @@ export function initPlaywriterToolbar(): void {
   const sep2 = document.createElement('div')
   sep2.className = 'separator'
 
-  // Remote control: share this tab via a secret tunnel URL. While sharing, the
-  // button is a dropdown (copy viewer URL or stop sharing). See remote-tunnel.ts.
+  // Remote control: share this tab via a secret tunnel id. While sharing, the
+  // button is a dropdown (copy agent prompt or stop sharing). See remote-tunnel.ts.
   let remoteActive = false
   const REMOTE_SECURITY_URL = 'https://playwriter.dev/docs/remote-control'
   const remoteBtn = document.createElement('button')
@@ -1010,9 +1011,12 @@ export function initPlaywriterToolbar(): void {
   const remoteMenu = document.createElement('div')
   remoteMenu.className = 'remote-panel'
   remoteMenu.setAttribute('role', 'menu')
-  const copyUrlItem = document.createElement('button')
-  copyUrlItem.setAttribute('role', 'menuitem')
-  copyUrlItem.innerHTML = LINK_SVG + ' <span>Copy remote URL</span>'
+  // TODO: re-enable Copy remote URL when viewer playback is fast enough.
+  // Keep remoteControlCopyUrl in background.ts; hide the button so the live-view
+  // link is not discoverable.
+  // const copyUrlItem = document.createElement('button')
+  // copyUrlItem.setAttribute('role', 'menuitem')
+  // copyUrlItem.innerHTML = LINK_SVG + ' <span>Copy remote URL</span>'
   const copyPromptItem = document.createElement('button')
   copyPromptItem.setAttribute('role', 'menuitem')
   copyPromptItem.innerHTML = CLIPBOARD_SVG + ' <span>Copy agent prompt</span>'
@@ -1020,7 +1024,7 @@ export function initPlaywriterToolbar(): void {
   stopShareItem.setAttribute('role', 'menuitem')
   stopShareItem.className = 'danger'
   stopShareItem.innerHTML = CLOUD_OFF_SVG + ' <span>Stop sharing</span>'
-  remoteMenu.appendChild(copyUrlItem)
+  // remoteMenu.appendChild(copyUrlItem)
   remoteMenu.appendChild(copyPromptItem)
   remoteMenu.appendChild(stopShareItem)
 
@@ -1029,7 +1033,7 @@ export function initPlaywriterToolbar(): void {
   remoteDialog.setAttribute('role', 'dialog')
   remoteDialog.setAttribute('aria-label', 'Share this tab')
   const dialogText = document.createElement('p')
-  dialogText.textContent = 'Share this tab? Anyone with the link can view and control it as you.'
+  dialogText.textContent = 'Share this tab? Anyone with the id can control it as you.'
   const dialogMore = document.createElement('a')
   dialogMore.href = REMOTE_SECURITY_URL
   dialogMore.target = '_blank'
@@ -1139,15 +1143,16 @@ export function initPlaywriterToolbar(): void {
     showRemotePanel(remoteDialog)
   })
 
-  copyUrlItem.addEventListener('click', (e: MouseEvent) => {
-    e.stopPropagation()
-    if (!isTrustedToolbarClick(e)) {
-      return
-    }
-    playSound('click')
-    hideRemotePanels()
-    void chrome.runtime.sendMessage({ action: 'remoteControlCopyUrl' })
-  })
+  // TODO: re-enable Copy remote URL when viewer playback is fast enough.
+  // copyUrlItem.addEventListener('click', (e: MouseEvent) => {
+  //   e.stopPropagation()
+  //   if (!isTrustedToolbarClick(e)) {
+  //     return
+  //   }
+  //   playSound('click')
+  //   hideRemotePanels()
+  //   void chrome.runtime.sendMessage({ action: 'remoteControlCopyUrl' })
+  // })
 
   copyPromptItem.addEventListener('click', (e: MouseEvent) => {
     e.stopPropagation()

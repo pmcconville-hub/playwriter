@@ -45,6 +45,13 @@ describe('remote-control', () => {
   })
 
   test('resolves a viewer link to the tunnel websocket', () => {
+    expect(parseRemoteControlUrl('abc123')).toMatchInlineSnapshot(`
+      {
+        "host": "abc123-tunnel.playwriter.dev",
+        "httpUrl": "https://abc123-tunnel.playwriter.dev",
+        "wsUrl": "wss://abc123-tunnel.playwriter.dev/extension",
+      }
+    `)
     expect(parseRemoteControlUrl(buildRemoteControlUrl({ tunnelId: 'abc123' }))).toMatchInlineSnapshot(`
       {
         "host": "abc123-tunnel.playwriter.dev",
@@ -77,13 +84,11 @@ describe('remote-control', () => {
   })
 
   test('explains the unquoted-shell case when the hash is missing', () => {
-    // `#` starts a comment in a shell, so an unquoted link arrives without its id.
     expect(() =>
       parseRemoteControlUrl('https://playwriter.dev/remote-control'),
     ).toThrowErrorMatchingInlineSnapshot(`
-      [Error: Remote control URL is missing its #id: https://playwriter.dev/remote-control
-      Quote the URL so the shell keeps the part after "#", for example:
-        playwriter session new --remote-control 'https://playwriter.dev/remote-control#your-id']
+      [Error: Remote control id is missing. Pass the id from the copied prompt, for example:
+        playwriter session new --remote-control your-id]
     `)
     expect(extractViewerTunnelId('https://playwriter.dev/remote-control#BAD_ID')).toBe(null)
     expect(extractViewerTunnelId('https://playwriter.dev/other#abc123')).toBe(null)
@@ -93,15 +98,13 @@ describe('remote-control', () => {
     expect(() => parseRemoteControlUrl('ftp://nope')).toThrowErrorMatchingInlineSnapshot(
       `[Error: Invalid remote control URL protocol: ftp: (expected https:// or wss://)]`,
     )
-    expect(() => parseRemoteControlUrl('not a url')).toThrowErrorMatchingInlineSnapshot(
-      `[Error: Invalid remote control URL: not a url]`,
-    )
+    expect(() => parseRemoteControlUrl('not a url')).toThrowErrorMatchingInlineSnapshot(`[Error: Invalid remote control id: not a url]`)
   })
   test('cdp command guards', () => {
     expect(getRemoteCdpCommandRejection('Page.navigate')).toBeNull()
     expect(getRemoteCdpCommandRejection('Runtime.evaluate')).toBeNull()
     expect(getRemoteCdpCommandRejection('Target.createTarget')).toMatchInlineSnapshot(
-      `"This is a shared remote-control browser tab. You cannot create additional tabs and should not try to. The user shared exactly one tab with you (plus any popups that tab opens itself). Keep working inside the shared tab: navigate it with page.goto() instead of opening new pages. If you really need another tab, ask the user to open one and share it with you (they get a separate URL per shared tab)."`,
+      `"This is a shared remote-control browser tab. You cannot create additional tabs and should not try to. The user shared exactly one tab with you (plus any popups that tab opens itself). Keep working inside the shared tab: navigate it with page.goto() instead of opening new pages. If you really need another tab, ask the user to open one and share it with you (they get a separate id per shared tab)."`,
     )
     expect(getRemoteCdpCommandRejection('Network.clearBrowserCookies')).toMatchInlineSnapshot(
       `"Network.clearBrowserCookies is not allowed on a shared remote-control tab: it clears cookies for EVERY site in the user profile."`,
@@ -165,15 +168,14 @@ describe('remote-control', () => {
     )
   })
 
-  test('prompt contains the url and the warning', () => {
-    const prompt = buildRemoteControlPrompt({ url: buildRemoteControlUrl({ tunnelId: 'abc123' }) })
-    // Single-quoted: an unquoted `#` starts a shell comment and would drop the id.
+  test('prompt contains the id and the warning', () => {
+    const prompt = buildRemoteControlPrompt({ id: 'abc123' })
     expect(prompt).toMatchInlineSnapshot(`
-      "Connect to my shared Chrome tab. Keep the quotes; the URL ends with #id:
+      "Connect to my shared Chrome tab:
 
-      npx -y playwriter@latest session new --remote-control 'https://playwriter.dev/remote-control#abc123'
+      npx -y playwriter@latest session new --remote-control abc123
 
-      Then use the printed session id. Read https://playwriter.dev/SKILL.md. Do not create new tabs. NEVER share this URL."
+      Then use the printed session id. Read https://playwriter.dev/SKILL.md. Do not create new tabs. NEVER share this id."
     `)
   })
 

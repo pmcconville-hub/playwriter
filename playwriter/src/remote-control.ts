@@ -8,16 +8,12 @@
  * WS protocol. Every remote-control host is under playwriter.dev, so sharing a tab
  * never sends traffic to a domain the user has not already trusted.
  *
- * The link the user shares is NOT the tunnel host. It points at the viewer page on
- * playwriter.dev and carries the tunnel id in the URL hash:
+ * Agents connect with the tunnel id, not a viewer URL:
  *
- *     https://playwriter.dev/remote-control#{tunnelId}
+ *     playwriter session new --remote-control {tunnelId}
  *
- * The initial viewer request and Referer omit the hash. Viewer JavaScript then uses
- * the tunnel id in the tunnel hostname, which the tunnel service necessarily
- * processes. Humans who open the link get an interactive view of the tab; agents
- * paste the same link into
- * `playwriter session new --remote-control`, and the CLI resolves it to the tunnel.
+ * The viewer page still exists (hash carries the id) but is not advertised: playback
+ * is too slow. parseRemoteControlUrl accepts a bare id or a leftover viewer/tunnel URL.
  *
  * This module is shared between the extension (browser), the relay (node), and the
  * website viewer: keep it dependency-free and runtime-agnostic.
@@ -156,25 +152,26 @@ export function extractViewerTunnelId(url: string): string | null {
 }
 
 /**
- * Normalize a shared remote control URL to the /extension WebSocket URL a client
- * must dial. Accepts https://, http://, wss://, ws:// forms.
+ * Normalize a tunnel id or leftover remote-control URL to the /extension
+ * WebSocket URL a client must dial.
  *
- * Two link shapes are accepted:
- *   https://playwriter.dev/remote-control#{tunnelId}   viewer link (current)
- *   https://{tunnelId}-tunnel.playwriter.dev            tunnel host (older
- *                                                        extensions, self-hosted
- *                                                        tunnel domains)
+ * Accepted inputs:
+ *   {tunnelId}                                          current (what the prompt copies)
+ *   leftover viewer or tunnel-host URLs from older prompts
  *
- * The tunnel host form keeps using the host verbatim, so links from older
- * extensions and self-hosted tunnel domains still work; only the viewer form
- * derives a host from the id.
+ * The tunnel host form keeps using the host verbatim, so older and self-hosted
+ * tunnel domains still work; a bare id or viewer form derives a host from the id.
  */
 export function parseRemoteControlUrl(url: string): { wsUrl: string; httpUrl: string; host: string } {
+  const trimmed = url.trim()
+  const resolved = /^[a-z0-9-]{1,63}$/.test(trimmed)
+    ? buildRemoteControlUrl({ tunnelId: trimmed })
+    : trimmed
   let parsed: URL
   try {
-    parsed = new URL(url)
+    parsed = new URL(resolved)
   } catch {
-    throw new Error(`Invalid remote control URL: ${url}`)
+    throw new Error(`Invalid remote control id: ${url}`)
   }
   const isSecure = parsed.protocol === 'https:' || parsed.protocol === 'wss:'
   const isKnown = isSecure || parsed.protocol === 'http:' || parsed.protocol === 'ws:'
@@ -182,15 +179,13 @@ export function parseRemoteControlUrl(url: string): { wsUrl: string; httpUrl: st
     throw new Error(`Invalid remote control URL protocol: ${parsed.protocol} (expected https:// or wss://)`)
   }
 
-  // A viewer link without a hash almost always means an unquoted shell argument:
-  // `#` starts a comment, so the id is silently cut off before playwriter sees it.
   if (parsed.pathname.replace(/\/$/, '') === REMOTE_VIEWER_PATH && !parsed.hash) {
     throw new Error(
-      `Remote control URL is missing its #id: ${url}\nQuote the URL so the shell keeps the part after "#", for example:\n  playwriter session new --remote-control '${REMOTE_VIEWER_BASE_URL}${REMOTE_VIEWER_PATH}#your-id'`,
+      `Remote control id is missing. Pass the id from the copied prompt, for example:\n  playwriter session new --remote-control your-id`,
     )
   }
 
-  const viewerTunnelId = extractViewerTunnelId(url)
+  const viewerTunnelId = extractViewerTunnelId(resolved)
   if (viewerTunnelId) {
     const origin = buildTunnelOrigin({ tunnelId: viewerTunnelId })
     return {
@@ -318,7 +313,7 @@ export function readAttachedTargetSession(
 // ---------------------------------------------------------------------------
 
 const REMOTE_NEW_TAB_ERROR = dedent`
-  This is a shared remote-control browser tab. You cannot create additional tabs and should not try to. The user shared exactly one tab with you (plus any popups that tab opens itself). Keep working inside the shared tab: navigate it with page.goto() instead of opening new pages. If you really need another tab, ask the user to open one and share it with you (they get a separate URL per shared tab).
+  This is a shared remote-control browser tab. You cannot create additional tabs and should not try to. The user shared exactly one tab with you (plus any popups that tab opens itself). Keep working inside the shared tab: navigate it with page.goto() instead of opening new pages. If you really need another tab, ask the user to open one and share it with you (they get a separate id per shared tab).
 `
 
 /** Remote control is not a sandbox; only block obvious profile-wide accidents. */
@@ -374,15 +369,13 @@ export function buildRemoteTabNotSharedError({ method, sessionId }: { method: st
 // Prompt copied to the clipboard when the user enables remote control
 // ---------------------------------------------------------------------------
 
-export function buildRemoteControlPrompt({ url }: { url: string }): string {
-  // The URL is single-quoted on purpose: it ends with #<id>, and an unquoted `#`
-  // starts a shell comment, which would silently strip the id.
+export function buildRemoteControlPrompt({ id }: { id: string }): string {
   return dedent`
-    Connect to my shared Chrome tab. Keep the quotes; the URL ends with #id:
+    Connect to my shared Chrome tab:
 
-    npx -y playwriter@latest session new --remote-control '${url}'
+    npx -y playwriter@latest session new --remote-control ${id}
 
-    Then use the printed session id. Read https://playwriter.dev/SKILL.md. Do not create new tabs. NEVER share this URL.
+    Then use the printed session id. Read https://playwriter.dev/SKILL.md. Do not create new tabs. NEVER share this id.
   `
 }
 
