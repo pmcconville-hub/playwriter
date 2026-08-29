@@ -295,12 +295,12 @@ export function initPlaywriterToolbar(): void {
       font-size: 11px;
       line-height: 1.4;
       padding: 6px 8px 2px;
-      max-width: 220px;
+      max-width: 240px;
     }
     .remote-panel a {
       color: #7dd3fc;
-      font-size: 11px;
-      padding: 0 8px 4px;
+      font-size: inherit;
+      padding: 0;
       text-decoration: none;
     }
     .remote-panel a:hover {
@@ -694,10 +694,10 @@ export function initPlaywriterToolbar(): void {
         })
         .join(',\n')
       copyText(clipboardText)
-      showToast(
-        `Copied ${accumulatedPins.length} element references (shift+click to add more)`,
-        { rect: target.getBoundingClientRect(), clientX: e.clientX },
-      )
+      showToast(`Copied ${accumulatedPins.length} locators`, {
+        rect: target.getBoundingClientRect(),
+        clientX: e.clientX,
+      })
     } else {
       // Normal click: include any accumulated pins, then exit pin mode.
       // Clear persistent outlines before the temporary flash so the
@@ -716,18 +716,12 @@ export function initPlaywriterToolbar(): void {
           })
           .join(',\n')
         copyText(clipboardText)
-        showToast(
-          `Copied ${allPins.length} element references, use them in your agent prompt`,
-          { rect, clientX: e.clientX },
-        )
+        showToast(`Copied ${allPins.length} locators`, { rect, clientX: e.clientX })
       } else {
         const code = buildInspectionCode(n, url)
         const clipboardText = "playwriter -e '" + code + "'"
         copyText(clipboardText)
-        showToast(
-          'Copied playwriter element reference, use it in your agent prompt',
-          { rect, clientX: e.clientX },
-        )
+        showToast('Copied locator', { rect, clientX: e.clientX })
       }
       setPinMode(false)
     }
@@ -927,7 +921,7 @@ export function initPlaywriterToolbar(): void {
   // Pin element button
   pinBtn = document.createElement('button')
   pinBtn.className = 'btn labeled'
-  pinBtn.setAttribute('data-tooltip', 'Select and copy element as prompt')
+  pinBtn.setAttribute('data-tooltip', 'Copy locator')
   pinBtn.setAttribute('aria-label', 'Copy Locator')
   pinBtn.innerHTML = PIN_SVG + ' <span>Copy Locator</span>'
   pinBtn.addEventListener('click', (e: MouseEvent) => {
@@ -948,7 +942,7 @@ export function initPlaywriterToolbar(): void {
     recordBtn.disabled = false
     if (isRecording) {
       recordBtn.innerHTML = STOP_SVG + ' <span>Stop recording\u2026</span>'
-      recordBtn.setAttribute('data-tooltip', 'Stop and copy analysis prompt')
+      recordBtn.setAttribute('data-tooltip', 'Stop recording')
       recordBtn.classList.add('active')
       return
     }
@@ -960,7 +954,7 @@ export function initPlaywriterToolbar(): void {
       return
     }
     recordBtn.innerHTML = RECORD_SVG + ' <span>Record Skill</span>'
-    recordBtn.setAttribute('data-tooltip', 'Capture actions as a reusable skill')
+    recordBtn.setAttribute('data-tooltip', 'Record a skill')
   }
   updateRecordBtn()
 
@@ -1033,12 +1027,15 @@ export function initPlaywriterToolbar(): void {
   remoteDialog.setAttribute('role', 'dialog')
   remoteDialog.setAttribute('aria-label', 'Share this tab')
   const dialogText = document.createElement('p')
-  dialogText.textContent = 'Share this tab? Anyone with the id can control it as you.'
   const dialogMore = document.createElement('a')
   dialogMore.href = REMOTE_SECURITY_URL
   dialogMore.target = '_blank'
   dialogMore.rel = 'noopener noreferrer'
   dialogMore.textContent = 'Read more'
+  dialogText.append(
+    'Share this tab? Any agent you share the copied id with can control your browser. ',
+    dialogMore,
+  )
   const dialogActions = document.createElement('div')
   dialogActions.className = 'remote-panel-actions'
   const dialogCancel = document.createElement('button')
@@ -1049,7 +1046,6 @@ export function initPlaywriterToolbar(): void {
   dialogActions.appendChild(dialogCancel)
   dialogActions.appendChild(dialogShare)
   remoteDialog.appendChild(dialogText)
-  remoteDialog.appendChild(dialogMore)
   remoteDialog.appendChild(dialogActions)
 
   stack.appendChild(remoteMenu)
@@ -1066,9 +1062,9 @@ export function initPlaywriterToolbar(): void {
     setTooltipsEnabled(true)
     if (remoteActive) {
       remoteBtn.setAttribute('aria-expanded', 'false')
-      remoteBtn.setAttribute('data-tooltip', 'Remote control options')
+      remoteBtn.setAttribute('data-tooltip', 'Remote options')
     } else {
-      remoteBtn.setAttribute('data-tooltip', 'Share this tab with a person or agent (copies prompt)')
+      remoteBtn.setAttribute('data-tooltip', 'Share this tab')
     }
   }
 
@@ -1094,14 +1090,14 @@ export function initPlaywriterToolbar(): void {
     remoteBtn.classList.toggle('remote-active', remoteActive)
     if (remoteActive) {
       remoteBtn.innerHTML = CLOUD_SVG + ' <span>Remote ON</span>' + CHEVRON_SVG
-      remoteBtn.setAttribute('data-tooltip', 'Remote control options')
+      remoteBtn.setAttribute('data-tooltip', 'Remote options')
       remoteBtn.setAttribute('aria-label', 'Remote control options')
       remoteBtn.setAttribute('aria-haspopup', 'menu')
       remoteBtn.setAttribute('aria-expanded', 'false')
       return
     }
     remoteBtn.innerHTML = CLOUD_SVG + ' <span>Remote control</span>'
-    remoteBtn.setAttribute('data-tooltip', 'Share this tab with a person or agent (copies prompt)')
+    remoteBtn.setAttribute('data-tooltip', 'Share this tab')
     remoteBtn.setAttribute('aria-label', 'Start remote control')
     remoteBtn.removeAttribute('aria-haspopup')
     remoteBtn.removeAttribute('aria-expanded')

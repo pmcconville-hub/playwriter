@@ -85,6 +85,10 @@ after EVERY change made inside extension/ folder you MUST bump the manifest.json
 
 Do not manually edit CHANGELOG.md files for extension changes. Always add a `playwriter` changeset for user-facing extension changes. Never skip a changeset because the files live in `extension/`.
 
+## toolbar copy
+
+keep toolbar tooltips and action toasts very short. a few words the user can read at a glance. `Copied prompt`, not a sentence that explains the feature.
+
 ## github releases
 
 after publishing the CLI (`playwriter` npm package), always create GitHub releases for both the CLI and the extension (if extension code changed).

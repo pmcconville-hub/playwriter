@@ -3103,10 +3103,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           throw error
         }
-        toastToolbar(
-          senderTabId,
-          'Remote control ON — prompt copied. NEVER share this id with anyone you don\u2019t trust',
-        )
+        toastToolbar(senderTabId, 'Copied prompt')
         playToolbarSound(senderTabId, 'success')
       } catch (error: any) {
         logger.error('Remote control start failed:', error)
@@ -3123,7 +3120,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     stopRemoteControlForTab(senderTabId)
     void setRemoteStateInTab(senderTabId, false)
-    toastToolbar(senderTabId, 'Remote control stopped — access revoked')
+    toastToolbar(senderTabId, 'Sharing stopped')
     playToolbarSound(senderTabId, 'click')
     return false
   }
@@ -3142,7 +3139,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const text = copyPrompt ? buildRemoteControlPrompt({ id: runtime.tunnelId }) : runtime.tunnel.url
     void copyTextInOffscreenDocument(text)
       .then(() => {
-        toastToolbar(senderTabId, copyPrompt ? 'Agent prompt copied' : 'Remote URL copied')
+        toastToolbar(senderTabId, copyPrompt ? 'Copied prompt' : 'Copied URL')
         playToolbarSound(senderTabId, 'success')
       })
       .catch((error: Error) => {
@@ -3233,7 +3230,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         setRecorderStateInTab(senderTabId, false)
         try {
           await copyTextInOffscreenDocument(prompt)
-          toastToolbar(senderTabId, 'Prompt copied to clipboard')
+          toastToolbar(senderTabId, 'Copied prompt')
           playToolbarSound(senderTabId, 'success')
         } catch (error) {
           logger.error('Could not copy recorder prompt:', error)
