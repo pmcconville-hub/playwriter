@@ -18,6 +18,9 @@
   },
   "knownPaths": ["/README", "/api/*", "/login", "/dashboard", "/device", "/privacy"],
   "decorativeLines": "none",
+  "layout": {
+    "mode": "compact"
+  },
   "navigation": {
     "tabs": [
       {
