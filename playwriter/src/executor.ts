@@ -212,13 +212,29 @@ export function shouldAutoReturn(code: string): boolean {
 export const MULTIPLE_PAGES_REQUIRE_PAGE_ERROR =
   'Multiple tracked pages. Pass { page: state.page } so this helper does not use another tab. Create your own tab with context.newPage() and store it on state.page.'
 
+function pageFromFrame(
+  frame?: { page?: () => Page | null; owner?: () => { page(): Page } },
+): Page | undefined {
+  if (!frame) return undefined
+  if (typeof frame.page === 'function') {
+    return frame.page() ?? undefined
+  }
+  if (typeof frame.owner === 'function') {
+    return frame.owner().page()
+  }
+  return undefined
+}
+
 /** Agents omit `page` and snapshot a shared default tab. Require it when several tabs exist. */
 export function resolveSandboxPage(options: {
   page?: Page
+  locator?: { page(): Page }
+  frame?: { page?: () => Page | null; owner?: () => { page(): Page } }
   defaultPage: Page
   trackedPageCount: number
 }): Page {
-  if (options.page) return options.page
+  const resolved = options.locator?.page() ?? pageFromFrame(options.frame) ?? options.page
+  if (resolved) return resolved
   if (options.trackedPageCount > 1) {
     throw new Error(MULTIPLE_PAGES_REQUIRE_PAGE_ERROR)
   }
@@ -1325,6 +1341,8 @@ export class PlaywrightExecutor {
         } = options
         const resolvedPage = resolveSandboxPage({
           page: targetPage,
+          locator,
+          frame,
           defaultPage: page,
           trackedPageCount: context.pages().length,
         })
@@ -1383,7 +1401,7 @@ export class PlaywrightExecutor {
 
         if (!search) {
           return withPageUrl(
-            `${snapshotStr}\n\nuse refToLocator({ ref: 'e3' }) to get locators for ref strings.`,
+            `${snapshotStr}\n\nuse refToLocator({ ref: 'e3', page: state.page }) to get locators for ref strings.`,
           )
         }
 
@@ -1468,14 +1486,14 @@ export class PlaywrightExecutor {
         sinceLastCall?: boolean
       }) => {
         const { page: requestedPage, count, search, sinceLastCall = false } = options || {}
-        const filterPage = requestedPage
-          ? requestedPage
-          : context.pages().length > 1
+        const filterPage =
+          requestedPage ??
+          (context.pages().length > 1
             ? resolveSandboxPage({
                 defaultPage: page,
                 trackedPageCount: context.pages().length,
               })
-            : undefined
+            : undefined)
         let allLogs: string[] = []
 
         // Collect logs, optionally slicing from cursor when sinceLastCall is set
@@ -1853,7 +1871,23 @@ export class PlaywrightExecutor {
           stop: streamApi.stop,
           status: streamApi.status,
         },
-        cloud: this.enableCloudScope ? createCloudScope({ defaultPage: page, auth: this.cloudAuth }) : undefined,
+        cloud: this.enableCloudScope
+          ? (() => {
+              const cloudScope = createCloudScope({ defaultPage: page, auth: this.cloudAuth })
+              return {
+                browsers: cloudScope.browsers,
+                sendCookies: (opts: Parameters<typeof cloudScope.sendCookies>[0]) =>
+                  cloudScope.sendCookies({
+                    ...opts,
+                    from: resolveSandboxPage({
+                      page: opts.from,
+                      defaultPage: page,
+                      trackedPageCount: context.pages().length,
+                    }),
+                  }),
+              }
+            })()
+          : undefined,
         // Backward-compatible aliases
         startRecording: recordingApi.start,
         stopRecording: recordingApi.stop,

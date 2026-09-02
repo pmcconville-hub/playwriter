@@ -75,16 +75,17 @@ The same functionality is available inside `execute` code:
 
 ```js
 await stream.start({
+  page: state.page,
   rtmpUrls: ['rtmp://va.pscp.tv:80/x/STREAM_KEY'],
   resolution: '1920x1080',
   fps: 30,
   videoBitrateKbps: 9000,
 })
 
-await stream.status()
+await stream.status({ page: state.page })
 // => { streaming, startedAt, destinations, stats: { ffmpegFps, ffmpegBitrateKbps, droppedFrames, ... } }
 
-await stream.stop()
+await stream.stop({ page: state.page })
 // => { duration, bytesReceived }
 ```
 

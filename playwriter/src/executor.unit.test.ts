@@ -21,6 +21,37 @@ describe('resolveSandboxPage', () => {
     ).toBe(ownPage)
   })
 
+  it('uses locator.page() when page is omitted', () => {
+    expect(
+      resolveSandboxPage({
+        locator: { page: () => ownPage },
+        defaultPage,
+        trackedPageCount: 3,
+      }),
+    ).toBe(ownPage)
+  })
+
+  it('uses locator.page() even when a different page is passed', () => {
+    expect(
+      resolveSandboxPage({
+        page: defaultPage,
+        locator: { page: () => ownPage },
+        defaultPage,
+        trackedPageCount: 3,
+      }),
+    ).toBe(ownPage)
+  })
+
+  it('uses frame.page() when page is omitted', () => {
+    expect(
+      resolveSandboxPage({
+        frame: { page: () => ownPage },
+        defaultPage,
+        trackedPageCount: 3,
+      }),
+    ).toBe(ownPage)
+  })
+
   it('falls back to defaultPage when only one tab is tracked', () => {
     expect(
       resolveSandboxPage({

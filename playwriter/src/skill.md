@@ -414,16 +414,16 @@ List active cloud browsers, then send the cookies that apply to the current page
 ```js
 const browsers = await cloud.browsers.list()
 console.log(browsers)
-await cloud.sendCookies({ to: browsers[0] })
+await cloud.sendCookies({ from: state.page, to: browsers[0] })
 ```
 
 You can use a cloud key or either session ID directly:
 
 ```js
-await cloud.sendCookies({ to: 'cloud-1' })
+await cloud.sendCookies({ from: state.page, to: 'cloud-1' })
 ```
 
-By default, `sendCookies` reads cookies for `page.url()`. Pass `from` to use another page, or `urls` when the login uses more than one HTTP origin:
+`sendCookies` reads cookies for `from.url()`. With more than one tracked tab, `from` is required. Pass `urls` when the login uses more than one HTTP origin:
 
 ```js
 await cloud.sendCookies({
@@ -492,13 +492,13 @@ Writing to any other path (e.g. `~/Downloads`, `~/Desktop`) throws `EPERM: opera
 - **Check state after actions**: always verify page state after clicking/submitting (see next section)
 - **Clean up only your listeners**: remove listeners you added by event name or handler reference. Never call `removeAllListeners()` because it also removes Playwriter's page error and console listeners.
 - **Tracked page errors are automatic**: uncaught errors from pages assigned directly to `state` keys appear in the current or next execute output as `[PAGE ERROR]`. Errors from pages tracked by other sessions are excluded.
-- **Always print page logs after every action**: call `getLatestLogs({ page: state.page, sinceLastCall: true })` after every goto, click, or submit to catch console errors and warnings. Do not manually collect `page.on('console')` events; manual listeners miss logs emitted before the listener is attached. The first `sinceLastCall` call returns all buffered logs including startup and hydration errors. Never omit `page` on `snapshot` or `getLatestLogs`.
+- **Always print page logs after every action**: call `getLatestLogs({ page: state.page, sinceLastCall: true })` after every goto, click, or submit to catch console errors and warnings. Do not manually collect `page.on('console')` events; manual listeners miss logs emitted before the listener is attached. The first `sinceLastCall` call returns all buffered logs including startup and hydration errors. Never omit `page` on `getLatestLogs`. `snapshot` needs `page`, or a `locator`/`frame` from your tab.
 - **CDP sessions**: use `getCDPSession({ page: state.page })` not `state.page.context().newCDPSession()` - NEVER use `newCDPSession()` method, it doesn't work through playwriter relay
 - **Wait for load**: use `state.page.waitForLoadState('domcontentloaded')` not `state.page.waitForEvent('load')` - waitForEvent times out if already loaded
 - **Minimize timeouts**: prefer proper waits (`waitForSelector`, `waitForPageLoad`) over `state.page.waitForTimeout()`. Short timeouts (1-2s) are acceptable for non-deterministic events like animations, tab opens, or async UI updates where no specific selector is available
-- **Snapshot before screenshot**: always use `snapshot()` first to understand page state (text-based, fast, cheap). Only use `screenshot` when you specifically need visual/spatial information. Never take a screenshot just to check if a page loaded or to read text content — snapshot gives you that instantly without burning image tokens
+- **Snapshot before screenshot**: always use `snapshot({ page: state.page })` first to understand page state (text-based, fast, cheap). Only use `screenshot` when you specifically need visual/spatial information. Never take a screenshot just to check if a page loaded or to read text content — snapshot gives you that instantly without burning image tokens
 - **Always use absolute file paths for Playwright artifact APIs**: for `page.screenshot({ path })`, `locator.screenshot({ path })`, `elementHandle.screenshot({ path })`, `page.pdf({ path })`, `download.saveAs(path)`, and `video.saveAs(path)`, always pass an absolute path. Relative paths are resolved by Playwright client internals, not the sandboxed `fs`, so they may use the relay server cwd instead of your session cwd.
-- **Use snapshot() for element discovery, inspect() for layout**: `snapshot()` shows roles, text, and locators — use it to find elements and check visibility. `inspect()` shows bounding boxes, scroll state, and computed styles — use it when you need layout or scroll info. Do NOT write `page.evaluate()` calls to query class names, bounding boxes, or visibility flags. Reserve `page.evaluate()` for state mutations (e.g., `localStorage.clear()`, `el.scrollTop += 300`) or extracting non-DOM data (e.g., `window.__CONFIG__`)
+- **Use snapshot() for element discovery, inspect() for layout**: `snapshot({ page: state.page })` shows roles, text, and locators — use it to find elements and check visibility. `inspect()` shows bounding boxes, scroll state, and computed styles — use it when you need layout or scroll info. Do NOT write `page.evaluate()` calls to query class names, bounding boxes, or visibility flags. Reserve `page.evaluate()` for state mutations (e.g., `localStorage.clear()`, `el.scrollTop += 300`) or extracting non-DOM data (e.g., `window.__CONFIG__`)
 
 ## interaction feedback loop
 
@@ -677,13 +677,13 @@ await state.page.getByRole('radio', { name: 'Node.js' }).click()
 **13. Over-investigating instead of just interacting**
 When something doesn't respond to a click, do NOT start inspecting CDP event listeners, React fibers, canvas pixel data, or writing `page.evaluate()` to read class names and bounding boxes. This wastes massive context. Instead:
 
-1. Take a `snapshot()` — it shows every interactive element and what to click
+1. Take a `snapshot({ page: state.page })` — it shows every interactive element and what to click
 2. Try a different interaction pattern if `click()` didn't work:
    - **Drawing/annotation tools, canvas paint** → `mouse.down`, move with steps, `mouse.up` (see drag section)
    - **Keyboard-activated modes** → press the shortcut key (snapshot shows tooltip text like "Draw mode D")
    - **Sliders, timeline scrubbers** → drag pattern
    - **Collapsed/toggled toolbars** → click the toggle first, wait, then interact
-3. Take another `snapshot()` to see what changed
+3. Take another `snapshot({ page: state.page })` to see what changed
 4. Only investigate DOM internals if correct interaction patterns produce zero response after 2–3 attempts
 
 ## accessibility snapshots
@@ -692,10 +692,11 @@ When something doesn't respond to a click, do NOT start inspecting CDP event lis
 await snapshot({ page: state.page, search?, showDiffSinceLastCall? })
 ```
 
-Always pass `{ page: state.page }`. Never `snapshot()` or `snapshot({ locator })` without `page`. The sandbox default `page` is a shared tab. With more than one tracked tab, helpers throw unless you pass `page`. A locator from `state.page` is not enough on its own in agent code. Pass both:
+Always pass `{ page: state.page }`, or pass a `locator`/`frame` from that tab. Never call `snapshot()` with no arguments. The sandbox default `page` is a shared tab. With more than one tracked tab, helpers throw unless you pass `page`, `locator`, or `frame`. A locator is enough: the helper uses `locator.page()`.
 
 ```js
 await snapshot({ page: state.page, locator: state.page.locator('form') })
+await snapshot({ locator: state.page.locator('form') })
 ```
 
 - `search` - string/regex to filter results (returns first 10 matching lines)
@@ -770,7 +771,7 @@ Use `snapshot` for text-heavy pages (forms, articles) — fast, cheap, searchabl
 
 ## selector best practices
 
-**For unknown websites**: use `snapshot()` - it shows what's actually interactive with stable locators.
+**For unknown websites**: use `snapshot({ page: state.page })` - it shows what's actually interactive with stable locators.
 
 **For development** (when you have source code access), prefer stable selectors in this order:
 
@@ -800,7 +801,7 @@ await state.page.locator('li').nth(3).click() // 4th item (0-indexed)
 
 **Pages are shared, state is not.** `context.pages()` returns all browser tabs with playwriter enabled — shared across all sessions. Multiple agents see the same tabs. If another agent navigates or closes a page you're using, you'll be affected. To avoid interference, **get your own page**.
 
-Helpers that take `page` (`snapshot`, `getLatestLogs`, `waitForPageLoad`, `recording`, `ghostCursor`, `refToLocator`) must get `{ page: state.page }`. The sandbox `page` variable is a shared default tab. With more than one tracked tab, those helpers throw unless you pass `page`.
+Helpers that take `page` (`snapshot`, `getLatestLogs`, `waitForPageLoad`, `recording`, `ghostCursor`, `refToLocator`) must get `{ page: state.page }`. `snapshot` also accepts a `locator` or `frame` from your tab and uses that object's page. The sandbox `page` variable is a shared default tab. With more than one tracked tab, those helpers throw unless you pass `page` (or, for snapshot, a locator/frame).
 
 **Get or create your page (first call):**
 
@@ -946,7 +947,7 @@ state.page.on('dialog', async (dialog) => {
 await state.page.click('button.trigger-alert')
 ```
 
-**Handling page obstacles (cookie modals, login walls, age gates)** - most major websites show blocking overlays. Always check for these with `snapshot()` right after navigation and dismiss them before doing anything else:
+**Handling page obstacles (cookie modals, login walls, age gates)** - most major websites show blocking overlays. Always check for these with `snapshot({ page: state.page })` right after navigation and dismiss them before doing anything else:
 
 ```js
 // After navigating, check for common obstacles
