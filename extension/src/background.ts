@@ -3125,7 +3125,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false
   }
 
-  if (message.action === 'remoteControlCopyUrl' || message.action === 'remoteControlCopyPrompt') {
+  if (
+    message.action === 'remoteControlCopyUrl' ||
+    message.action === 'remoteControlCopyPrompt' ||
+    message.action === 'remoteControlCopyId'
+  ) {
     const senderTabId = sender.tab?.id
     if (!senderTabId || sender.frameId !== 0 || store.getState().tabs.get(senderTabId)?.state !== 'connected') {
       return false
@@ -3135,11 +3139,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       toastToolbar(senderTabId, 'Remote control is not active')
       return false
     }
-    const copyPrompt = message.action === 'remoteControlCopyPrompt'
-    const text = copyPrompt ? buildRemoteControlPrompt({ id: runtime.tunnelId }) : runtime.tunnel.url
+    const { text, toast } = ((): { text: string; toast: string } => {
+      if (message.action === 'remoteControlCopyPrompt') {
+        return { text: buildRemoteControlPrompt({ id: runtime.tunnelId }), toast: 'Copied prompt' }
+      }
+      if (message.action === 'remoteControlCopyId') {
+        return { text: runtime.tunnelId, toast: 'Copied id' }
+      }
+      return { text: runtime.tunnel.url, toast: 'Copied URL' }
+    })()
     void copyTextInOffscreenDocument(text)
       .then(() => {
-        toastToolbar(senderTabId, copyPrompt ? 'Copied prompt' : 'Copied URL')
+        toastToolbar(senderTabId, toast)
         playToolbarSound(senderTabId, 'success')
       })
       .catch((error: Error) => {

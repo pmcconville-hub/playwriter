@@ -795,6 +795,8 @@ export function initPlaywriterToolbar(): void {
 
   const CLIPBOARD_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>`
 
+  const HASH_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/></svg>`
+
   const CLOUD_OFF_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193"/><path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.01 7.01 0 0 0 10 5.07"/></svg>`
 
   const SPINNER_SVG = `<svg class="spinner" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="2.5" stroke-opacity="0.25"/><path d="M20 12a8 8 0 0 0-8-8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>`
@@ -996,7 +998,7 @@ export function initPlaywriterToolbar(): void {
   sep2.className = 'separator'
 
   // Remote control: share this tab via a secret tunnel id. While sharing, the
-  // button is a dropdown (copy agent prompt or stop sharing). See remote-tunnel.ts.
+  // button is a dropdown (copy prompt, copy id, or stop sharing). See remote-tunnel.ts.
   let remoteActive = false
   const REMOTE_SECURITY_URL = 'https://playwriter.dev/docs/remote-control'
   const remoteBtn = document.createElement('button')
@@ -1014,12 +1016,16 @@ export function initPlaywriterToolbar(): void {
   const copyPromptItem = document.createElement('button')
   copyPromptItem.setAttribute('role', 'menuitem')
   copyPromptItem.innerHTML = CLIPBOARD_SVG + ' <span>Copy agent prompt</span>'
+  const copyIdItem = document.createElement('button')
+  copyIdItem.setAttribute('role', 'menuitem')
+  copyIdItem.innerHTML = HASH_SVG + ' <span>Copy id</span>'
   const stopShareItem = document.createElement('button')
   stopShareItem.setAttribute('role', 'menuitem')
   stopShareItem.className = 'danger'
   stopShareItem.innerHTML = CLOUD_OFF_SVG + ' <span>Stop sharing</span>'
   // remoteMenu.appendChild(copyUrlItem)
   remoteMenu.appendChild(copyPromptItem)
+  remoteMenu.appendChild(copyIdItem)
   remoteMenu.appendChild(stopShareItem)
 
   const remoteDialog = document.createElement('div')
@@ -1158,6 +1164,16 @@ export function initPlaywriterToolbar(): void {
     playSound('click')
     hideRemotePanels()
     void chrome.runtime.sendMessage({ action: 'remoteControlCopyPrompt' })
+  })
+
+  copyIdItem.addEventListener('click', (e: MouseEvent) => {
+    e.stopPropagation()
+    if (!isTrustedToolbarClick(e)) {
+      return
+    }
+    playSound('click')
+    hideRemotePanels()
+    void chrome.runtime.sendMessage({ action: 'remoteControlCopyId' })
   })
 
   stopShareItem.addEventListener('click', (e: MouseEvent) => {
