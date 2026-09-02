@@ -15,7 +15,9 @@ import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
 import * as acorn from 'acorn'
 import { createSmartDiff } from './diff-utils.js'
-import { getCdpUrl, parseRelayHost, shouldAutoEnablePlaywriter } from './utils.js'
+import { getCdpUrl, parseRelayHost, shouldAutoEnablePlaywriter, sleep } from './utils.js'
+import { isRemoteExtensionKey } from './relay-state.js'
+import { REMOTE_EXTENSION_NOT_CONNECTED_ERROR } from './remote-control.js'
 import { getExtensionOutdatedWarning } from './relay-client.js'
 import { waitForPageLoad, WaitForPageLoadOptions, WaitForPageLoadResult } from './wait-for-page-load.js'
 import { ICDPSession, getCDPSessionForPage } from './cdp-session.js'
@@ -863,6 +865,27 @@ export class PlaywrightExecutor {
     }
   }
 
+  /** Remote dials drop and retry; wait instead of showing the local-extension error. */
+  private async requireConnectedExtension(): Promise<{
+    connected: boolean
+    activeTargets: number
+    playwriterVersion: string | null
+  }> {
+    let status = await this.checkExtensionStatus()
+    const remote = isRemoteExtensionKey(this.cdpConfig.extensionId || '')
+    if (!status.connected && remote) {
+      const deadline = Date.now() + 8000
+      while (!status.connected && Date.now() < deadline) {
+        await sleep(200)
+        status = await this.checkExtensionStatus()
+      }
+    }
+    if (!status.connected) {
+      throw new Error(remote ? REMOTE_EXTENSION_NOT_CONNECTED_ERROR : EXTENSION_NOT_CONNECTED_ERROR)
+    }
+    return status
+  }
+
   private isDirectCdpMode(): boolean {
     return !!this.cdpConfig.directCdpUrl
   }
@@ -924,10 +947,7 @@ export class PlaywrightExecutor {
     }
 
     // Extension mode: check status first for better error messages
-    const extensionStatus = await this.checkExtensionStatus()
-    if (!extensionStatus.connected) {
-      throw new Error(EXTENSION_NOT_CONNECTED_ERROR)
-    }
+    const extensionStatus = await this.requireConnectedExtension()
     this.warnIfExtensionOutdated(extensionStatus.playwriterVersion)
 
     const cdpUrl = getCdpUrl(this.cdpConfig)
@@ -1945,10 +1965,7 @@ export class PlaywrightExecutor {
       return page
     }
 
-    const extensionStatus = await this.checkExtensionStatus()
-    if (!extensionStatus.connected) {
-      throw new Error(EXTENSION_NOT_CONNECTED_ERROR)
-    }
+    await this.requireConnectedExtension()
 
     if (!shouldAutoEnablePlaywriter()) {
       const waitTimeoutMs = Math.min(timeout, 1000)

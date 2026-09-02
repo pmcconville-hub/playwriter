@@ -12,9 +12,12 @@ import {
   readAttachedTargetSession,
   generateTunnelId,
   getRemoteCdpCommandRejection,
+  getRemoteDialRetryMs,
   getRemoteExtensionMethodRejection,
   parseRemoteControlUrl,
+  REMOTE_EXTENSION_NOT_CONNECTED_ERROR,
   shouldDropRemoteTunnelFrame,
+  TRAFORO_TUNNEL_OFFLINE_CLOSE_CODE,
 } from './remote-control.js'
 
 describe('remote-control', () => {
@@ -166,6 +169,25 @@ describe('remote-control', () => {
     ).toMatchInlineSnapshot(
       `"Cannot run Page.navigate (sessionId: pw-tab-x-2): that tab is not shared over this remote-control link. You only have access to the tab the user shared (and popups it opened). Ask the user to share the other tab if you need it."`,
     )
+  })
+
+  test('retries the public dial sooner after traforo 4008 than after a drop', () => {
+    expect(
+      [
+        getRemoteDialRetryMs(TRAFORO_TUNNEL_OFFLINE_CLOSE_CODE),
+        getRemoteDialRetryMs(1006),
+        getRemoteDialRetryMs(1012),
+      ],
+    ).toMatchInlineSnapshot(`
+      [
+        500,
+        4000,
+        4000,
+      ]
+    `)
+    expect(getRemoteDialRetryMs(1006)).toBeGreaterThan(3000)
+    expect(REMOTE_EXTENSION_NOT_CONNECTED_ERROR).toMatchInlineSnapshot(`"Could not reach the shared remote-control tab. The tunnel dropped. Ask the user to confirm Remote control is still on, then retry. If they clicked Stop sharing, they need to share a fresh id."`)
+    expect(REMOTE_EXTENSION_NOT_CONNECTED_ERROR).not.toContain('chromewebstore')
   })
 
   test('prompt contains the id and the warning', () => {

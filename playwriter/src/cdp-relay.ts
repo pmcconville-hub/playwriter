@@ -38,7 +38,7 @@ import { StreamRelay } from './stream-relay.js'
 import { appendSessionToWsUrl } from './chrome-discovery.js'
 import * as relayState from './relay-state.js'
 import { WebSocket as NodeWebSocket } from 'ws'
-import { parseRemoteControlUrl, type RemoteHelloMessage } from './remote-control.js'
+import { getRemoteDialRetryMs, parseRemoteControlUrl, type RemoteHelloMessage } from './remote-control.js'
 
 /**
  * Checks if a target should be filtered out (not exposed to Playwright).
@@ -2010,7 +2010,6 @@ export async function startPlayWriterCDPRelayServer({
   }
   const remoteDials = new Map<string, RemoteDial>()
   const sessionRemoteUrlKeys = new Map<string, string>()
-  const REMOTE_DIAL_RETRY_MS = 3000
 
   function startRemoteDial(dial: RemoteDial): void {
     if (dial.closed) {
@@ -2054,11 +2053,12 @@ export async function startPlayWriterCDPRelayServer({
       if (dial.closed) {
         return
       }
-      logger?.log(pc.yellow(`Remote extension dial closed, retrying in ${REMOTE_DIAL_RETRY_MS}ms`))
+      const retryMs = getRemoteDialRetryMs(code)
+      logger?.log(pc.yellow(`Remote extension dial closed (code=${code}), retrying in ${retryMs}ms`))
       dial.retryTimer = setTimeout(() => {
         dial.retryTimer = null
         startRemoteDial(dial)
-      }, REMOTE_DIAL_RETRY_MS)
+      }, retryMs)
     })
   }
 

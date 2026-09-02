@@ -358,6 +358,24 @@ export function getRemoteExtensionMethodRejection(method: string): string | null
   return null
 }
 
+/** Traforo: no upstream connected. Node `ws` still fires `open` (HTTP 101) first. */
+export const TRAFORO_TUNNEL_OFFLINE_CLOSE_CODE = 4008
+
+/** Matches extension/src/remote-tunnel.ts RECONNECT_DELAY_MS. */
+const REMOTE_UPSTREAM_RECONNECT_MS = 3_000
+
+/** 4008: retry soon. Other drops: wait past the extension's 3s upstream reconnect. */
+export function getRemoteDialRetryMs(closeCode: number): number {
+  if (closeCode === TRAFORO_TUNNEL_OFFLINE_CLOSE_CODE) {
+    return 500
+  }
+  return REMOTE_UPSTREAM_RECONNECT_MS + 1_000
+}
+
+export const REMOTE_EXTENSION_NOT_CONNECTED_ERROR = dedent`
+  Could not reach the shared remote-control tab. The tunnel dropped. Ask the user to confirm Remote control is still on, then retry. If they clicked Stop sharing, they need to share a fresh id.
+`
+
 /** Error used when a command targets a tab outside the shared remote scope. */
 export function buildRemoteTabNotSharedError({ method, sessionId }: { method: string; sessionId?: string }): string {
   return dedent`
