@@ -6,7 +6,7 @@ import type { AriaSnapshotNode } from './aria-snapshot.js'
 import path from 'node:path'
 import fs from 'node:fs'
 import os from 'node:os'
-import { imageSize } from 'image-size'
+import sharp from 'sharp'
 import { getCdpUrl } from './utils.js'
 import { getCDPSessionForPage } from './cdp-session.js'
 import type { CDPCommand } from './cdp-types.js'
@@ -76,7 +76,7 @@ describe('Snapshot & Screenshot Tests', () => {
     const viewportScreenshot = await cdpPage!.screenshot()
     expect(viewportScreenshot).toBeDefined()
 
-    const viewportDimensions = imageSize(viewportScreenshot)
+    const viewportDimensions = await sharp(viewportScreenshot).metadata()
     console.log('Viewport screenshot dimensions:', viewportDimensions)
     expect(viewportDimensions.width).toBeGreaterThan(0)
     expect(viewportDimensions.height).toBeGreaterThan(0)
@@ -88,7 +88,7 @@ describe('Snapshot & Screenshot Tests', () => {
     const fullPageScreenshot = await cdpPage!.screenshot({ fullPage: true })
     expect(fullPageScreenshot).toBeDefined()
 
-    const fullPageDimensions = imageSize(fullPageScreenshot)
+    const fullPageDimensions = await sharp(fullPageScreenshot).metadata()
     console.log('Full page screenshot dimensions:', fullPageDimensions)
     expect(fullPageDimensions.width).toBeGreaterThan(0)
     expect(fullPageDimensions.height).toBeGreaterThan(0)
@@ -175,7 +175,7 @@ describe('Snapshot & Screenshot Tests', () => {
 
     // Plain screenshot with scale:'css', NO clip
     const screenshot = await cdpPage!.screenshot({ scale: 'css' })
-    const dimensions = imageSize(screenshot)
+    const dimensions = await sharp(screenshot).metadata()
     console.log('Screenshot dimensions (no clip):', dimensions)
 
     expect(dimensions.width).toBe(actualViewport.width)
@@ -997,7 +997,7 @@ describe('Snapshot & Screenshot Tests', () => {
     expect(imageContent.data.length).toBeGreaterThan(100)
 
     const buffer = Buffer.from(imageContent.data, 'base64')
-    const dimensions = imageSize(buffer)
+    const dimensions = await sharp(buffer).metadata()
 
     const viewport = await page.evaluate(() => ({
       innerWidth: window.innerWidth,
@@ -1008,7 +1008,7 @@ describe('Snapshot & Screenshot Tests', () => {
     console.log('Screenshot dimensions:', dimensions.width, 'x', dimensions.height)
     console.log('Window viewport:', viewport)
 
-    expect(dimensions.type).toBe('png')
+    expect(dimensions.format).toBe('png')
     expect(dimensions.width).toBeGreaterThan(0)
     expect(dimensions.height).toBeGreaterThan(0)
 

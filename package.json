@@ -15,12 +15,12 @@
     "playwright:build": "node playwright/packages/playwright-core/build.mjs"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.29.7",
+    "@changesets/cli": "^2.31.1",
     "prettier": "^3.6.2",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
-    "vite": "^8.0.13",
-    "vitest": "^4.0.8"
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
   },
   "repository": "https://github.com/remorses/",
   "author": "remorses <beats.by.morse@gmail.com>",
@@ -29,7 +29,9 @@
     "mcp-extension": "workspace:^"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["workerd"],
+    "onlyBuiltDependencies": [
+      "workerd"
+    ],
     "overrides": {
       "spiceflow": "1.26.0-rsc.5"
     }

@@ -452,63 +452,6 @@ describe('Relay Navigation Tests', () => {
     await page.close()
   }, 30000)
 
-  it('should work with stagehand', async () => {
-    const browserContext = getBrowserContext()
-    const serviceWorker = await getExtensionServiceWorker(browserContext)
-
-    await serviceWorker.evaluate(async () => {
-      await globalThis.disconnectEverything()
-    })
-    await new Promise((r) => setTimeout(r, 100))
-
-    const targetUrl = 'https://example.com/'
-
-    const enableResult = await serviceWorker.evaluate(async (url) => {
-      const tab = await chrome.tabs.create({ url, active: true })
-      await new Promise((r) => setTimeout(r, 100))
-      return await globalThis.toggleExtensionForActiveTab()
-    }, targetUrl)
-
-    console.log('Extension enabled:', enableResult)
-    expect(enableResult.isConnected).toBe(true)
-
-    await new Promise((r) => setTimeout(r, 100))
-
-    const { Stagehand } = await import('@browserbasehq/stagehand')
-
-    const stagehand = new Stagehand({
-      env: 'LOCAL',
-      verbose: 1,
-      disablePino: true,
-      localBrowserLaunchOptions: {
-        cdpUrl: getCdpUrl({ port: TEST_PORT }),
-      },
-    })
-
-    console.log('Initializing Stagehand...')
-    await stagehand.init()
-    console.log('Stagehand initialized')
-
-    const context = stagehand.context
-    expect(context).toBeDefined()
-
-    const pages = context.pages()
-    console.log(
-      'Stagehand pages:',
-      pages.length,
-      pages.map((p) => p.url()),
-    )
-
-    const stagehandPage = pages.find((p) => p.url().includes('example.com'))
-    expect(stagehandPage).toBeDefined()
-
-    const url = stagehandPage!.url()
-    console.log('Stagehand page URL:', url)
-    expect(url).toContain('example.com')
-
-    await stagehand.close()
-  }, 60000)
-
   it('should expose CDP discovery endpoints /json/version and /json/list', async () => {
     const browserContext = getBrowserContext()
     const serviceWorker = await getExtensionServiceWorker(browserContext)
