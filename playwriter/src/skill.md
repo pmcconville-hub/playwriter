@@ -251,7 +251,7 @@ playwriter -s 1 -e 'await state.page.screenshot({ path: "/absolute/path/to/scree
 playwriter -s 1 -e 'await snapshot({ page: state.page })'
 
 # Get accessibility snapshot for a specific iframe
-playwriter -s 1 -e 'const frame = await state.page.locator("iframe").contentFrame(); await snapshot({ frame })'
+playwriter -s 1 -e 'const frame = await state.page.locator("iframe").contentFrame(); await snapshot({ page: state.page, frame })'
 ```
 
 **Why single quotes?** Always wrap `-e` code in single quotes (`'...'`) to prevent bash from interpreting `$`, backticks, and other special characters inside your JS code. Use double quotes or backtick template literals for strings inside the JS code.
@@ -492,7 +492,7 @@ Writing to any other path (e.g. `~/Downloads`, `~/Desktop`) throws `EPERM: opera
 - **Check state after actions**: always verify page state after clicking/submitting (see next section)
 - **Clean up only your listeners**: remove listeners you added by event name or handler reference. Never call `removeAllListeners()` because it also removes Playwriter's page error and console listeners.
 - **Tracked page errors are automatic**: uncaught errors from pages assigned directly to `state` keys appear in the current or next execute output as `[PAGE ERROR]`. Errors from pages tracked by other sessions are excluded.
-- **Always print page logs after every action**: call `getLatestLogs({ page: state.page, sinceLastCall: true })` after every goto, click, or submit to catch console errors and warnings. Do not manually collect `page.on('console')` events; manual listeners miss logs emitted before the listener is attached. The first `sinceLastCall` call returns all buffered logs including startup and hydration errors.
+- **Always print page logs after every action**: call `getLatestLogs({ page: state.page, sinceLastCall: true })` after every goto, click, or submit to catch console errors and warnings. Do not manually collect `page.on('console')` events; manual listeners miss logs emitted before the listener is attached. The first `sinceLastCall` call returns all buffered logs including startup and hydration errors. Never omit `page` on `snapshot` or `getLatestLogs`.
 - **CDP sessions**: use `getCDPSession({ page: state.page })` not `state.page.context().newCDPSession()` - NEVER use `newCDPSession()` method, it doesn't work through playwriter relay
 - **Wait for load**: use `state.page.waitForLoadState('domcontentloaded')` not `state.page.waitForEvent('load')` - waitForEvent times out if already loaded
 - **Minimize timeouts**: prefer proper waits (`waitForSelector`, `waitForPageLoad`) over `state.page.waitForTimeout()`. Short timeouts (1-2s) are acceptable for non-deterministic events like animations, tab opens, or async UI updates where no specific selector is available
@@ -505,13 +505,13 @@ Writing to any other path (e.g. `~/Downloads`, `~/Desktop`) throws `EPERM: opera
 Every browser interaction must follow **observe → act → observe**. Never chain multiple actions blindly.
 
 1. **Open page** — get or create your page, navigate to URL
-2. **Observe** — print `state.page.url()` + `snapshot()` + `getLatestLogs({ sinceLastCall: true })`. Always print URL — pages can redirect unexpectedly.
+2. **Observe** — print `state.page.url()` + `snapshot({ page: state.page })` + `getLatestLogs({ page: state.page, sinceLastCall: true })`. Always print URL — pages can redirect unexpectedly.
 3. **Check** — if page isn't ready (loading, wrong URL, content missing), wait and observe again
 4. **Act** — perform one action (click, type, submit)
 5. **Observe again** — print URL + snapshot + page logs to verify the action's effect
 6. **Repeat** from step 3 until task is complete
 
-**Always print page logs after every action** using `getLatestLogs({ sinceLastCall: true })`. This returns only new console messages and errors since the last call, so you catch hydration errors, failed network requests, and runtime exceptions without duplicates. The first call returns all buffered logs from the page, including logs emitted before your script started.
+**Always print page logs after every action** using `getLatestLogs({ page: state.page, sinceLastCall: true })`. This returns only new console messages and errors since the last call, so you catch hydration errors, failed network requests, and runtime exceptions without duplicates. The first call returns all buffered logs from the page, including logs emitted before your script started.
 
 ```js
 // Each step should be a separate execute call:
@@ -546,7 +546,7 @@ console.log('UI:', snap)
 console.log('Logs:', logs)
 ```
 
-Use `getLatestLogs({ sinceLastCall: true })` after every action, `getLatestLogs({ search })` for targeted debugging, `state.page.url()` for navigation, screenshots only for visual layout issues.
+Use `getLatestLogs({ page: state.page, sinceLastCall: true })` after every action, `getLatestLogs({ page: state.page, search })` for targeted debugging, `state.page.url()` for navigation, screenshots only for visual layout issues.
 
 ## common mistakes to avoid
 
@@ -692,14 +692,24 @@ When something doesn't respond to a click, do NOT start inspecting CDP event lis
 await snapshot({ page: state.page, search?, showDiffSinceLastCall? })
 ```
 
+Always pass `{ page: state.page }`. Never `snapshot()` or `snapshot({ locator })` without `page`. The sandbox default `page` is a shared tab. With more than one tracked tab, helpers throw unless you pass `page`. A locator from `state.page` is not enough on its own in agent code. Pass both:
+
+```js
+await snapshot({ page: state.page, locator: state.page.locator('form') })
+```
+
 - `search` - string/regex to filter results (returns first 10 matching lines)
 - `showDiffSinceLastCall` - returns diff since last snapshot (default: `true`, but `false` when `search` is provided). Pass `false` to get full snapshot.
 
-Snapshots return full content on first call, then diffs on subsequent calls. Diff is only returned when shorter than full content. If nothing changed, returns "No changes since last snapshot" message. Use `showDiffSinceLastCall: false` to always get full content. When `search` is provided, diffing is disabled by default so the search filters the full content — pass `showDiffSinceLastCall: true` explicitly to combine both. This diffing behavior also applies to `getCleanHTML` and `getPageMarkdown`.
+Snapshots return full content on first call, then diffs on subsequent calls. Diff is only returned when shorter than full content. If nothing changed, returns "No changes since last snapshot" after the URL line. Use `showDiffSinceLastCall: false` to always get full content. When `search` is provided, diffing is disabled by default so the search filters the full content — pass `showDiffSinceLastCall: true` explicitly to combine both. This diffing behavior also applies to `getCleanHTML` and `getPageMarkdown`.
+
+Every snapshot starts with `URL: <current page url>` so you can see which tab was snapshotted. Diffs and "No changes" / "No matches found" include that line too.
 
 Example output:
 
 ```md
+URL: https://example.com/
+
 - banner:
   - link "Home" [id="nav-home"]
   - navigation:
@@ -726,7 +736,7 @@ If a screenshot shows ref labels like `e3`, resolve them using the last snapshot
 
 ```js
 const snap = await snapshot({ page: state.page })
-const locator = refToLocator({ ref: 'e3' })
+const locator = refToLocator({ ref: 'e3', page: state.page })
 await state.page.locator(locator!).click()
 ```
 
@@ -736,18 +746,18 @@ Search for specific elements:
 const snap = await snapshot({ page: state.page, search: /button|submit/i })
 ```
 
-**Scoping snapshots to a specific element** — pass a `locator` instead of `page` to snapshot only a subtree. This dramatically reduces output size when you only care about one section of the page (e.g., the main content area, ignoring the sidebar/header/footer):
+**Scoping snapshots to a specific element** — pass `page` and a `locator` to snapshot only a subtree. This dramatically reduces output size when you only care about one section of the page (e.g., the main content area, ignoring the sidebar/header/footer):
 
 ```js
 // Full page snapshot: ~150 lines (sidebar, nav, header, footer, everything)
 await snapshot({ page: state.page })
 
 // Scoped to main: ~20 lines (just the content you care about)
-await snapshot({ locator: state.page.locator('main') })
+await snapshot({ page: state.page, locator: state.page.locator('main') })
 
 // Scope to a specific form, dialog, or section
-await snapshot({ locator: state.page.locator('[role="dialog"]') })
-await snapshot({ locator: state.page.locator('form#checkout') })
+await snapshot({ page: state.page, locator: state.page.locator('[role="dialog"]') })
+await snapshot({ page: state.page, locator: state.page.locator('form#checkout') })
 ```
 
 Use this whenever the full page snapshot is dominated by navigation or layout elements you don't need. It saves significant tokens and makes the output much easier to parse.
@@ -789,6 +799,8 @@ await state.page.locator('li').nth(3).click() // 4th item (0-indexed)
 ## working with pages
 
 **Pages are shared, state is not.** `context.pages()` returns all browser tabs with playwriter enabled — shared across all sessions. Multiple agents see the same tabs. If another agent navigates or closes a page you're using, you'll be affected. To avoid interference, **get your own page**.
+
+Helpers that take `page` (`snapshot`, `getLatestLogs`, `waitForPageLoad`, `recording`, `ghostCursor`, `refToLocator`) must get `{ page: state.page }`. The sandbox `page` variable is a shared default tab. With more than one tracked tab, those helpers throw unless you pass `page`.
 
 **Get or create your page (first call):**
 
@@ -921,7 +933,7 @@ await frame.locator('button').click()
 
 // contentFrame: returns a Frame object, needed for snapshot({ frame })
 const frame2 = await state.page.locator('iframe').contentFrame()
-await snapshot({ frame: frame2 })
+await snapshot({ page: state.page, frame: frame2 })
 ```
 
 **Dialogs** - handle alerts/confirms/prompts:
@@ -1016,11 +1028,10 @@ Uncaught errors from pages assigned directly to `state` keys also appear automat
 Use `sinceLastCall: true` after every action to get only new logs since the previous call. The first call returns all buffered logs including pre-existing ones. Logs persist across navigations so you never miss errors from page transitions.
 
 ```js
-await getLatestLogs({ page?, count?, search?, sinceLastCall? })
+await getLatestLogs({ page: state.page, count?, search?, sinceLastCall? })
 // After every action: get only new logs
 const newLogs = await getLatestLogs({ page: state.page, sinceLastCall: true })
-// Search all logs (ignores cursor):
-const errors = await getLatestLogs({ search: /error/i, count: 50 })
+const errors = await getLatestLogs({ page: state.page, search: /error/i, count: 50 })
 const pageLogs = await getLatestLogs({ page: state.page, count: 100 })
 const hydrationErrors = await getLatestLogs({ page: state.page, search: /hydration|pageerror|React/i })
 ```
@@ -1188,7 +1199,7 @@ await state.page.waitForLoadState('domcontentloaded')
 // Stop — save full result including executionTimestamps for createDemoVideo
 state.recordingResult = await recording.stop({ page: state.page })
 
-// Other: recording.isRecording({ page }), recording.cancel({ page })
+// Other: recording.isRecording({ page: state.page }), recording.cancel({ page: state.page })
 ```
 
 **ghostCursor.show / ghostCursor.hide** - the ghost cursor overlay is always on: the extension injects it on every Playwriter-attached tab and it stays visible at the last spot Playwright clicked or moved. These methods only matter if you want to change the cursor style or temporarily hide it:

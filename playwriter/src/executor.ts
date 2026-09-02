@@ -209,6 +209,22 @@ export function shouldAutoReturn(code: string): boolean {
   return getAutoReturnExpression(code) !== null
 }
 
+export const MULTIPLE_PAGES_REQUIRE_PAGE_ERROR =
+  'Multiple tracked pages. Pass { page: state.page } so this helper does not use another tab. Create your own tab with context.newPage() and store it on state.page.'
+
+/** Agents omit `page` and snapshot a shared default tab. Require it when several tabs exist. */
+export function resolveSandboxPage(options: {
+  page?: Page
+  defaultPage: Page
+  trackedPageCount: number
+}): Page {
+  if (options.page) return options.page
+  if (options.trackedPageCount > 1) {
+    throw new Error(MULTIPLE_PAGES_REQUIRE_PAGE_ERROR)
+  }
+  return options.defaultPage
+}
+
 /**
  * Wraps user code in an async IIFE for vm execution.
  * Uses AST node offsets to extract the expression without trailing semicolons,
@@ -1307,10 +1323,12 @@ export class PlaywrightExecutor {
           showDiffSinceLastCall = !search,
           interactiveOnly = false,
         } = options
-        const resolvedPage = targetPage || page
-        if (!resolvedPage) {
-          throw new Error('snapshot requires a page')
-        }
+        const resolvedPage = resolveSandboxPage({
+          page: targetPage,
+          defaultPage: page,
+          trackedPageCount: context.pages().length,
+        })
+        const withPageUrl = (body: string) => `URL: ${resolvedPage.url()}\n${body}`
 
         // Use new in-page implementation via getAriaSnapshot
         const {
@@ -1356,13 +1374,17 @@ export class PlaywrightExecutor {
             label: 'snapshot',
           })
           if (diffResult.type === 'no-change') {
-            return 'No changes since last snapshot. Use showDiffSinceLastCall: false to see full content.'
+            return withPageUrl(
+              'No changes since last snapshot. Use showDiffSinceLastCall: false to see full content.',
+            )
           }
-          return diffResult.content
+          return withPageUrl(diffResult.content)
         }
 
         if (!search) {
-          return `${snapshotStr}\n\nuse refToLocator({ ref: 'e3' }) to get locators for ref strings.`
+          return withPageUrl(
+            `${snapshotStr}\n\nuse refToLocator({ ref: 'e3' }) to get locators for ref strings.`,
+          )
         }
 
         const lines = snapshotStr.split('\n')
@@ -1377,7 +1399,7 @@ export class PlaywrightExecutor {
         }
 
         if (matchIndices.length === 0) {
-          return 'No matches found'
+          return withPageUrl('No matches found')
         }
 
         const CONTEXT_LINES = 5
@@ -1399,11 +1421,15 @@ export class PlaywrightExecutor {
           }
           result.push(lines[lineIdx])
         }
-        return result.join('\n')
+        return withPageUrl(result.join('\n'))
       }
 
       const refToLocator = (options: { ref: string; page?: Page }): string | null => {
-        const targetPage = options.page || page
+        const targetPage = resolveSandboxPage({
+          page: options.page,
+          defaultPage: page,
+          trackedPageCount: context.pages().length,
+        })
         const map = this.lastRefToLocator.get(targetPage)
         if (!map) {
           return null
@@ -1441,7 +1467,15 @@ export class PlaywrightExecutor {
         // never missed. Useful for checking page errors after each action.
         sinceLastCall?: boolean
       }) => {
-        const { page: filterPage, count, search, sinceLastCall = false } = options || {}
+        const { page: requestedPage, count, search, sinceLastCall = false } = options || {}
+        const filterPage = requestedPage
+          ? requestedPage
+          : context.pages().length > 1
+            ? resolveSandboxPage({
+                defaultPage: page,
+                trackedPageCount: context.pages().length,
+              })
+            : undefined
         let allLogs: string[] = []
 
         // Collect logs, optionally slicing from cursor when sinceLastCall is set
@@ -1611,7 +1645,11 @@ export class PlaywrightExecutor {
       const ghostCursorController = this.ghostCursorController
 
       const showGhostCursor = async (options?: ({ page?: Page } & GhostCursorClientOptions)) => {
-        const targetPage = options?.page || page
+        const targetPage = resolveSandboxPage({
+          page: options?.page,
+          defaultPage: page,
+          trackedPageCount: context.pages().length,
+        })
         const cursorOptions: GhostCursorClientOptions | undefined = (() => {
           if (!options) {
             return undefined
@@ -1625,11 +1663,22 @@ export class PlaywrightExecutor {
       }
 
       const hideGhostCursor = async (options?: { page?: Page }) => {
-        const targetPage = options?.page || page
+        const targetPage = resolveSandboxPage({
+          page: options?.page,
+          defaultPage: page,
+          trackedPageCount: context.pages().length,
+        })
         await ghostCursorController.hide({ page: targetPage })
       }
 
-      const recordingApi = createRecordingApi({
+      const requirePage = (requested?: Page) =>
+        resolveSandboxPage({
+          page: requested,
+          defaultPage: page,
+          trackedPageCount: context.pages().length,
+        })
+
+      const recordingApiRaw = createRecordingApi({
         context,
         defaultPage: page,
         relayPort,
@@ -1646,13 +1695,45 @@ export class PlaywrightExecutor {
           return self.executionTimestamps
         },
       })
+      const recordingApi = {
+        start: (opts?: Parameters<typeof recordingApiRaw.start>[0]) => {
+          requirePage(opts?.page)
+          return recordingApiRaw.start(opts)
+        },
+        stop: (opts?: Parameters<typeof recordingApiRaw.stop>[0]) => {
+          requirePage(opts?.page)
+          return recordingApiRaw.stop(opts)
+        },
+        isRecording: (opts?: Parameters<typeof recordingApiRaw.isRecording>[0]) => {
+          requirePage(opts?.page)
+          return recordingApiRaw.isRecording(opts)
+        },
+        cancel: (opts?: Parameters<typeof recordingApiRaw.cancel>[0]) => {
+          requirePage(opts?.page)
+          return recordingApiRaw.cancel(opts)
+        },
+      }
 
       // Live RTMP streaming: pipes tabCapture chunks to ffmpeg in the relay
       // process. Streams keep running after execute() returns and CLI exits.
-      const streamApi = createStreamApi({
+      const streamApiRaw = createStreamApi({
         defaultPage: page,
         relayPort,
       })
+      const streamApi = {
+        start: (opts: Parameters<typeof streamApiRaw.start>[0]) => {
+          requirePage(opts?.page)
+          return streamApiRaw.start(opts)
+        },
+        stop: (opts?: Parameters<typeof streamApiRaw.stop>[0]) => {
+          requirePage(opts?.page)
+          return streamApiRaw.stop(opts)
+        },
+        status: (opts?: Parameters<typeof streamApiRaw.status>[0]) => {
+          requirePage(opts?.page)
+          return streamApiRaw.status(opts)
+        },
+      }
 
       // Ghost Browser API - creates chrome object that mirrors Ghost Browser's APIs
       // See extension/src/ghost-browser-api.d.ts for full API documentation

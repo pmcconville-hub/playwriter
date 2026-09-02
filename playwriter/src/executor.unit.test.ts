@@ -1,5 +1,44 @@
 import { describe, it, expect } from 'vitest'
-import { shouldAutoReturn, wrapCode, isPlaywrightChannelOwner } from './executor.js'
+import {
+  shouldAutoReturn,
+  wrapCode,
+  isPlaywrightChannelOwner,
+  resolveSandboxPage,
+  MULTIPLE_PAGES_REQUIRE_PAGE_ERROR,
+} from './executor.js'
+
+describe('resolveSandboxPage', () => {
+  const defaultPage = { id: 'default' } as never
+  const ownPage = { id: 'own' } as never
+
+  it('uses the explicit page', () => {
+    expect(
+      resolveSandboxPage({
+        page: ownPage,
+        defaultPage,
+        trackedPageCount: 3,
+      }),
+    ).toBe(ownPage)
+  })
+
+  it('falls back to defaultPage when only one tab is tracked', () => {
+    expect(
+      resolveSandboxPage({
+        defaultPage,
+        trackedPageCount: 1,
+      }),
+    ).toBe(defaultPage)
+  })
+
+  it('throws when several tabs are tracked and page is omitted', () => {
+    expect(() =>
+      resolveSandboxPage({
+        defaultPage,
+        trackedPageCount: 2,
+      }),
+    ).toThrow(MULTIPLE_PAGES_REQUIRE_PAGE_ERROR)
+  })
+})
 
 describe('shouldAutoReturn', () => {
   it('returns true for simple expressions', () => {
