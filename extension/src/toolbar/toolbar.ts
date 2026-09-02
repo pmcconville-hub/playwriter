@@ -107,8 +107,8 @@ export function initPlaywriterToolbar(): void {
     .toolbar {
       display: flex;
       align-items: center;
-      gap: 1px;
-      padding: 2px 6px;
+      gap: 2px;
+      padding: 3px 7px;
       background: #1c1c1c;
       border: 1px solid rgba(255,255,255,0.1);
       border-radius: 9999px;
@@ -130,19 +130,19 @@ export function initPlaywriterToolbar(): void {
     }
     .separator {
       width: 1px;
-      height: 14px;
+      height: 15px;
       background: rgba(255,255,255,0.15);
-      margin: 0 1px;
+      margin: 0 2px;
       flex-shrink: 0;
     }
     .btn {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 24px;
-      height: 24px;
+      width: 26px;
+      height: 26px;
       border: none;
-      border-radius: 6px;
+      border-radius: 7px;
       background: transparent;
       color: rgba(161,161,170,1);
       cursor: pointer;
@@ -154,8 +154,8 @@ export function initPlaywriterToolbar(): void {
     .btn.labeled {
       width: auto;
       gap: 6px;
-      padding: 0 6px;
-      font-size: 11px;
+      padding: 0 7px;
+      font-size: 12px;
       font-weight: 500;
       font-family: inherit;
       white-space: nowrap;
@@ -175,10 +175,10 @@ export function initPlaywriterToolbar(): void {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 18px;
-      height: 24px;
+      width: 19px;
+      height: 26px;
       border: none;
-      border-radius: 6px;
+      border-radius: 7px;
       background: transparent;
       color: rgba(161,161,170,0.5);
       cursor: grab;
@@ -198,15 +198,15 @@ export function initPlaywriterToolbar(): void {
     .record-btn {
       display: flex;
       align-items: center;
-      gap: 3px;
+      gap: 4px;
       border: none;
-      border-radius: 6px;
+      border-radius: 7px;
       background: transparent;
       color: rgba(161,161,170,1);
       cursor: pointer;
       transition: background 0.15s, color 0.15s;
-      padding: 3px 7px;
-      font-size: 11px;
+      padding: 3px 8px;
+      font-size: 12px;
       font-weight: 500;
       outline: none;
       white-space: nowrap;
