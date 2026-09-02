@@ -27,7 +27,7 @@ import {
   type ExtensionStatus,
 } from './relay-client.js'
 import { discoverChromeInstances, resolveDirectInput, type DiscoveredInstance } from './chrome-discovery.js'
-import { getCloudClient, loadCloudAuth, saveCloudAuth, CloudClient, buildLiveUrl } from './cloud-client.js'
+import { getCloudClient, loadCloudAuth, saveCloudAuth, CloudClient, buildLiveUrl, type CloudAuth } from './cloud-client.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const executeDispatcher = new Agent({ headersTimeout: 0, bodyTimeout: 0 })
@@ -179,6 +179,10 @@ async function getServerUrl(host?: string): Promise<string> {
 
 // Centralized header builder so every CLI subcommand sends the token consistently.
 // Falls back to PLAYWRITER_TOKEN env var when --token is not provided.
+function getRelayCloudAuth(): CloudAuth | undefined {
+  return loadCloudAuth() ?? undefined
+}
+
 function buildAuthHeaders({ token, json }: { token?: string; json?: boolean }): Record<string, string> {
   const headers: Record<string, string> = {}
   if (json) {
@@ -446,7 +450,7 @@ cli
         const response = await fetch(`${serverUrl}/cli/session/new`, {
           method: 'POST',
           headers: buildAuthHeaders({ token: options.token, json: true }),
-          body: JSON.stringify({ headless: true, cwd: process.cwd() }),
+          body: JSON.stringify({ headless: true, cwd: process.cwd(), cloudAuth: getRelayCloudAuth() }),
         })
         if (!response.ok) {
           const text = await response.text()
@@ -667,7 +671,7 @@ cli
         const response = await fetch(`${serverUrl}/cli/session/new`, {
           method: 'POST',
           headers: buildAuthHeaders({ token: options.token, json: true }),
-          body: JSON.stringify({ extensionId, cwd }),
+          body: JSON.stringify({ extensionId, cwd, cloudAuth: getRelayCloudAuth() }),
         })
         if (!response.ok) {
           const text = await response.text()
@@ -755,7 +759,7 @@ cli
           const response = await fetch(`${serverUrl}/cli/session/new`, {
             method: 'POST',
             headers: buildAuthHeaders({ token: options.token, json: true }),
-            body: JSON.stringify({ extensionId: selected.extensionId, cwd }),
+            body: JSON.stringify({ extensionId: selected.extensionId, cwd, cloudAuth: getRelayCloudAuth() }),
           })
           if (!response.ok) {
             const text = await response.text()
@@ -804,7 +808,7 @@ async function createDirectSession({
   const response = await fetch(`${serverUrl}/cli/session/new`, {
     method: 'POST',
     headers: buildAuthHeaders({ token, json: true }),
-    body: JSON.stringify({ cdpEndpoint, cwd, browser, profiles }),
+    body: JSON.stringify({ cdpEndpoint, cwd, browser, profiles, cloudAuth: getRelayCloudAuth() }),
   })
   if (!response.ok) {
     const text = await response.text()
@@ -1466,7 +1470,7 @@ cli
         const newResponse = await fetch(`${serverUrl}/cli/session/new`, {
           method: 'POST',
           headers,
-          body: JSON.stringify({ cwd: process.cwd() }),
+          body: JSON.stringify({ cwd: process.cwd(), cloudAuth: getRelayCloudAuth() }),
         })
         const newResult = (await newResponse.json()) as { id?: string; error?: string }
         if (!newResponse.ok || !newResult.id) {

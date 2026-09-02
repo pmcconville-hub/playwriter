@@ -502,6 +502,45 @@ describe('Relay Core Tests', () => {
     }
   }, 30000)
 
+  it('should expose cloud cookie transfer in local CLI sessions', async () => {
+    const createResponse = await fetch(`${SERVER_URL}/cli/session/new`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({}),
+    })
+    const { id: sessionId } = (await createResponse.json()) as { id: string }
+
+    try {
+      const response = await fetch(`${SERVER_URL}/cli/execute`, {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({
+          sessionId,
+          code: `return {
+            browsersList: typeof cloud.browsers.list,
+            sendCookies: typeof cloud.sendCookies,
+          }`,
+        }),
+      })
+      const result = (await response.json()) as { text: string; isError: boolean }
+      expect(result).toMatchInlineSnapshot(`
+        {
+          "images": [],
+          "isCloud": false,
+          "isError": false,
+          "screenshots": [],
+          "text": "[return value] { browsersList: 'function', sendCookies: 'function' }",
+        }
+      `)
+    } finally {
+      await fetch(`${SERVER_URL}/cli/session/delete`, {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ sessionId }),
+      })
+    }
+  })
+
   it('should read cookies via Network.getCookies through page CDP session', async () => {
     const browserContext = getBrowserContext()
     const serviceWorker = await getExtensionServiceWorker(browserContext)

@@ -80,7 +80,7 @@ console.log({ title, url: page.url() });
 
 ## Examples
 
-Variables in scope: `page`, `context`, `state` (persists between calls), `require`, `importModule`, native `import()`, and Node.js globals. Relative imports resolve from the session working directory.
+Variables in scope: `page`, `context`, `state` (persists between calls), `cloud` (local CLI sessions), `require`, `importModule`, native `import()`, and Node.js globals. Relative imports resolve from the session working directory.
 
 **Persist data in state:**
 

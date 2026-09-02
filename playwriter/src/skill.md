@@ -399,12 +399,43 @@ You can collaborate with the user - they can help with captchas, difficult eleme
 - `state` - object persisted between calls **within your session**. Each session has its own isolated state. Use to store pages, data, listeners (e.g., `state.page = await context.newPage()`)
 - `page` - a default page (may be shared with other agents). Prefer creating your own page and storing it in `state` (see "working with pages")
 - `context` - browser context, access all pages via `context.pages()`
+- `cloud` - list active cloud browsers and send the current page's cookies to one. Available in local CLI sessions, but not in cloud or remote-control sessions
 - `require` - load Node.js modules (e.g., `const fs = require('node:fs')`)
 - `import()` - use Node.js ESM to load local scripts, packages, and built-ins (e.g., `const helpers = await import('./scripts/helpers.js')`). Relative paths resolve from the session cwd
 - `importModule` - restricted async import for allowlisted Node.js built-ins (e.g., `const fs = await importModule('node:fs')`)
 - Node.js globals: `setTimeout`, `setInterval`, `fetch`, `URL`, `Buffer`, `crypto`, `process`, etc.
 
 **Not available in the sandbox:** `__dirname`, `__filename`.
+
+### sending current-page cookies to a cloud browser
+
+List active cloud browsers, then send the cookies that apply to the current page URL:
+
+```js
+const browsers = await cloud.browsers.list()
+console.log(browsers)
+await cloud.sendCookies({ to: browsers[0] })
+```
+
+You can use a cloud key or either session ID directly:
+
+```js
+await cloud.sendCookies({ to: 'cloud-1' })
+```
+
+By default, `sendCookies` reads cookies for `page.url()`. Pass `from` to use another page, or `urls` when the login uses more than one HTTP origin:
+
+```js
+await cloud.sendCookies({
+  from: state.page,
+  to: 'cloud-1',
+  urls: ['https://example.com', 'https://api.example.com'],
+})
+```
+
+The result contains the browser key, cookie count, domains, and skipped count. It never contains cookie values. This copies cookies only. It does not copy local storage, IndexedDB, service workers, saved passwords, or device-bound credentials.
+
+`cloud` is available for local extension, headless, and direct CLI sessions. It is not available inside managed cloud sessions, remote-control sessions, or the MCP server. Run `playwriter cloud login` or set `PLAYWRITER_API_KEY` on the CLI machine before you create the session. The CLI forwards the credentials to the relay without exposing them in the execution scope. Credentials already present on the relay machine also work.
 
 ### importing local scripts
 

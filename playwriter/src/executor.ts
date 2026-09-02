@@ -41,6 +41,8 @@ import { createRecordingApi, createStreamApi } from './screen-recording.js'
 import { createDemoVideo } from './ffmpeg.js'
 import { type GhostCursorClientOptions } from './ghost-cursor.js'
 import { GhostCursorController } from './ghost-cursor-controller.js'
+import { createCloudScope } from './cloud-scope.js'
+import type { CloudAuth } from './cloud-client.js'
 
 
 const __filename = fileURLToPath(import.meta.url)
@@ -376,6 +378,10 @@ export interface ExecutorOptions {
   cwd?: string
   /** Set when this executor is connected to a cloud Browser Use VM */
   cloudSession?: CloudSessionInfo
+  /** Expose local-to-cloud cookie transfer in the execution scope */
+  enableCloudScope?: boolean
+  /** Cloud API credentials kept outside the execution scope */
+  cloudAuth?: CloudAuth
 }
 
 function isRegExp(value: any): value is RegExp {
@@ -445,6 +451,8 @@ export class PlaywrightExecutor {
   private ghostCursorController: GhostCursorController
   /** Non-null when this executor is backed by a cloud Browser Use VM */
   private cloudSession: CloudSessionInfo | null
+  private enableCloudScope: boolean
+  private cloudAuth: CloudAuth | undefined
   /** Last minute bucket for which a cloud timeout warning was enqueued (dedup) */
   private lastCloudTimeoutWarningMinute: number | null = null
 
@@ -462,6 +470,8 @@ export class PlaywrightExecutor {
       this.logger.log(`[session cwd] ${cwdWarning}`)
     }
     this.cloudSession = options.cloudSession || null
+    this.enableCloudScope = options.enableCloudScope ?? false
+    this.cloudAuth = options.cloudAuth
     // ScopedFS expects an array of allowed directories. If cwd is provided, use it; otherwise use defaults.
     this.scopedFs = new ScopedFS(
       this.sessionCwd ? [this.sessionCwd, '/tmp', os.tmpdir()] : undefined,
@@ -1762,6 +1772,7 @@ export class PlaywrightExecutor {
           stop: streamApi.stop,
           status: streamApi.status,
         },
+        cloud: this.enableCloudScope ? createCloudScope({ defaultPage: page, auth: this.cloudAuth }) : undefined,
         // Backward-compatible aliases
         startRecording: recordingApi.start,
         stopRecording: recordingApi.stop,
@@ -2043,6 +2054,10 @@ export class ExecutorManager {
     cdpConfig?: CdpConfig
     /** Cloud session info (set when connecting to a Browser Use VM) */
     cloudSession?: CloudSessionInfo
+    /** Expose local-to-cloud cookie transfer in the execution scope */
+    enableCloudScope?: boolean
+    /** Cloud API credentials kept outside the execution scope */
+    cloudAuth?: CloudAuth
   }): PlaywrightExecutor {
     const { sessionId, cwd, sessionMetadata } = options
     let executor = this.executors.get(sessionId)
@@ -2064,6 +2079,8 @@ export class ExecutorManager {
         logger: this.logger,
         cwd,
         cloudSession: options.cloudSession,
+        enableCloudScope: options.enableCloudScope,
+        cloudAuth: options.cloudAuth,
       })
       this.executors.set(sessionId, executor)
     }

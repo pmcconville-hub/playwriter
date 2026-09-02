@@ -39,6 +39,7 @@ import { appendSessionToWsUrl } from './chrome-discovery.js'
 import * as relayState from './relay-state.js'
 import { WebSocket as NodeWebSocket } from 'ws'
 import { getRemoteDialRetryMs, parseRemoteControlUrl, type RemoteHelloMessage } from './remote-control.js'
+import type { CloudAuth } from './cloud-client.js'
 
 /**
  * Checks if a target should be filtered out (not exposed to Playwright).
@@ -2335,6 +2336,8 @@ export async function startPlayWriterCDPRelayServer({
       browser?: string
       /** Profile info from discovery */
       profiles?: Array<{ name: string; email: string }>
+      /** Cloud API credentials for local-to-cloud execution helpers */
+      cloudAuth?: CloudAuth
       /** Cloud session tracking metadata (set by CLI when connecting to a cloud browser) */
       cloud?: {
         cloudSessionId: string
@@ -2370,6 +2373,8 @@ export async function startPlayWriterCDPRelayServer({
           browser: 'Chrome (Headless)',
           profile: null,
         },
+        enableCloudScope: true,
+        cloudAuth: body.cloudAuth,
       })
       try {
         await executor.reset()
@@ -2409,6 +2414,8 @@ export async function startPlayWriterCDPRelayServer({
           profile: firstProfile ? { email: firstProfile.email, id: firstProfile.name } : null,
         },
         cloudSession: body.cloud ? { timeoutAt: cloudTimeoutAt, blockProxyResources: body.cloud.blockProxyResources } : undefined,
+        enableCloudScope: !body.cloud,
+        cloudAuth: body.cloudAuth,
       })
       const metadata = executor.getSessionMetadata()
 
@@ -2488,6 +2495,8 @@ export async function startPlayWriterCDPRelayServer({
         browser: conn.info.browser || null,
         profile: conn.info ? { email: conn.info.email || '', id: conn.info.id || '' } : null,
       },
+      enableCloudScope: true,
+      cloudAuth: body.cloudAuth,
     })
     const metadata = executor.getSessionMetadata()
     return c.json({
