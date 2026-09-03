@@ -885,6 +885,20 @@ describe('Relay Core Tests', () => {
     })
   }, 30000)
 
+  it('returns a structured error when the selected extension disconnected', async () => {
+    const response = await fetch(`${SERVER_URL}/cli/session/new`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ extensionId: 'disconnected-extension' }),
+    })
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual({
+      code: 'extension_connection_lost',
+      error: 'Extension not connected: disconnected-extension',
+    })
+  })
+
   it('should include uncaught errors from only the CLI session tracked page', async () => {
     const browserContext = getBrowserContext()
     const serviceWorker = await getExtensionServiceWorker(browserContext)

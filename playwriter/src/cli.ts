@@ -643,6 +643,7 @@ cli
       if (options.browser) {
         await handleCloudBrowserNotFound(options.browser, { hasCloudOptions: false })
       }
+      console.error('ERROR code=extension_not_connected')
       console.error('No connected browsers detected. Click the Playwriter extension icon.')
       console.error(pc.dim('Tip: Use --direct to connect via Chrome DevTools Protocol instead.'))
       console.error(pc.dim('Tip: Run `playwriter cloud login` to use cloud browsers.'))

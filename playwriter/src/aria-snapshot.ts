@@ -361,7 +361,7 @@ function buildBaseLocator({
   const trimmedName = name.trim()
   if (trimmedName.length > 0) {
     const escapedName = escapeLocatorValue(trimmedName)
-    return `role=${role}[name="${escapedName}"]`
+    return `role=${role}[name="${escapedName}"i]`
   }
   return `role=${role}`
 }
@@ -731,6 +731,10 @@ function buildLocatorLineText({ line, locator }: { line: SnapshotLine; locator: 
   return `${base} ${locator}`
 }
 
+function locatorIdentity(locator: string): string {
+  return locator.startsWith('role=') ? locator.toUpperCase() : locator
+}
+
 export function finalizeSnapshotOutput(
   lines: SnapshotLine[],
   nodes: SnapshotNode[],
@@ -740,7 +744,8 @@ export function finalizeSnapshotOutput(
     if (!line.baseLocator) {
       return acc
     }
-    acc.set(line.baseLocator, (acc.get(line.baseLocator) ?? 0) + 1)
+    const key = locatorIdentity(line.baseLocator)
+    acc.set(key, (acc.get(key) ?? 0) + 1)
     return acc
   }, new Map<string, number>())
 
@@ -749,9 +754,10 @@ export function finalizeSnapshotOutput(
     if (!line.baseLocator) {
       return acc
     }
-    const count = locatorCounts.get(line.baseLocator) ?? 0
-    const index = locatorIndices.get(line.baseLocator) ?? 0
-    locatorIndices.set(line.baseLocator, index + 1)
+    const key = locatorIdentity(line.baseLocator)
+    const count = locatorCounts.get(key) ?? 0
+    const index = locatorIndices.get(key) ?? 0
+    locatorIndices.set(key, index + 1)
     const locator = count > 1 ? `${line.baseLocator} >> nth=${index}` : line.baseLocator
     acc.push(locator)
     return acc
@@ -1254,7 +1260,7 @@ export async function getAriaSnapshot({
         return null
       }
       const escapedName = info.name.replace(/"/g, '\\"')
-      return `role=${info.role}[name="${escapedName}"]`
+      return `role=${info.role}[name="${escapedName}"i]`
     }
 
     const getRefsForLocators = async (locators: Array<Locator | ElementHandle>): Promise<Array<AriaRef | null>> => {

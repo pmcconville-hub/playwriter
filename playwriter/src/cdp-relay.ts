@@ -2484,7 +2484,10 @@ export async function startPlayWriterCDPRelayServer({
       const error = extensionId
         ? `Extension not connected: ${extensionId}`
         : 'Multiple extensions connected. Specify extensionId.'
-      return c.json({ error }, 404)
+      return c.json(
+        extensionId ? { code: 'extension_connection_lost', error } : { error },
+        404,
+      )
     }
     const manager = await getExecutorManager()
     const executor = manager.getExecutor({

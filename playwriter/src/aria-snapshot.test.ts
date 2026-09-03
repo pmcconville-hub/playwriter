@@ -298,6 +298,41 @@ describe('aria-snapshot', () => {
     }
   }, 30000)
 
+  it('generates a usable locator for CSS-transformed accessible text', async () => {
+    const htmlServer = await createHtmlServer({
+      htmlByPath: {
+        '/': dedent`
+          <!doctype html>
+          <button style="text-transform: capitalize">jersey 150</button>
+          <button>Save</button>
+          <button>save</button>
+        `,
+      },
+    })
+
+    try {
+      await page.goto(htmlServer.baseUrl, { waitUntil: 'domcontentloaded' })
+      const { snapshot } = await getAriaSnapshot({ page, interactiveOnly: true })
+      const locator = snapshot.match(/role=button\[name="[^"]+"i?\]/)?.[0]
+      if (!locator) {
+        throw new Error(`Snapshot did not contain a button locator: ${snapshot}`)
+      }
+
+      expect(await page.locator(locator).count()).toBe(1)
+      const caseVariantLocators = snapshot.match(/role=button\[name="save"i\](?: >> nth=\d+)?/gi) ?? []
+      expect(caseVariantLocators).toHaveLength(2)
+      expect(
+        await Promise.all(
+          caseVariantLocators.map((selector) => {
+            return page.locator(selector).count()
+          }),
+        ),
+      ).toEqual([1, 1])
+    } finally {
+      await htmlServer.close()
+    }
+  }, 30000)
+
   it('scopes snapshot to cross-origin iframe locator', async () => {
     const iframeServer = await createHtmlServer({
       htmlByPath: {
