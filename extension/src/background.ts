@@ -13,6 +13,7 @@ import type { ExtensionState, ConnectionState, TabState, TabInfo } from './types
 import { initPlaywriterToolbar } from './toolbar/toolbar'
 import type { CDPEvent, Protocol } from 'playwriter/src/cdp-types'
 import type { ExtensionCommandMessage, ExtensionResponseMessage } from 'playwriter/src/protocol'
+import { INVENTORY_READY_CAPABILITY } from 'playwriter/src/protocol'
 import { handleGhostBrowserCommand, type GhostBrowserCommandParams } from 'playwriter/src/ghost-browser'
 import { RemoteTunnel } from './remote-tunnel'
 import {
@@ -253,14 +254,7 @@ let tabGroupQueue: Promise<void> = Promise.resolve()
 // This ensures Playwright can build the iframe frame tree when connecting over CDP.
 let autoAttachParams: Protocol.Target.SetAutoAttachRequest | null = null
 
-// Buffer for recording chunks when WebSocket isn't ready.
-// Chunks are keyed by tabId and flushed when WebSocket opens.
-interface BufferedChunk {
-  tabId: number
-  data?: number[]
-  final?: boolean
-}
-const recordingChunkBuffer: BufferedChunk[] = []
+const MAX_RECORDING_SOCKET_BUFFERED_BYTES = 16 * 1024 * 1024
 
 // ============================================================================
 // Remote control: share a tab with a remote agent through a playwriter.dev tunnel.
@@ -300,35 +294,65 @@ function getAllRemoteScopedTabIds(): Set<number> {
   return ids
 }
 
-/**
- * Flush buffered recording chunks to the WebSocket.
- * Called when WebSocket becomes ready.
- */
-function flushRecordingChunkBuffer(ws: WebSocket): void {
-  if (recordingChunkBuffer.length === 0) {
+export function sendRecordingCancellation(tabId: number): void {
+  const ws = connectionManager.ws
+  if (ws?.readyState !== WebSocket.OPEN) {
     return
   }
+  ws.send(
+    JSON.stringify({
+      method: 'recordingCancelled',
+      params: { tabId },
+    }),
+  )
+}
 
-  logger.debug(`Flushing ${recordingChunkBuffer.length} buffered recording chunks`)
+function cancelRecordingTransport({ tabId, error }: { tabId: number; error: string }): void {
+  logger.error(`Cancelling recording transport for tab ${tabId}: ${error}`)
+  sendRecordingCancellation(tabId)
+  void chrome.runtime.sendMessage({ action: 'cancelRecording', tabId }).catch(() => {})
+}
 
-  while (recordingChunkBuffer.length > 0) {
-    const chunk = recordingChunkBuffer.shift()!
-    const { tabId, data, final } = chunk
-
-    // Send metadata message first
-    ws.send(
-      JSON.stringify({
-        method: 'recordingData',
-        params: { tabId, final },
-      }),
-    )
-
-    // Then send binary data if not final
-    if (data && !final) {
-      const buffer = new Uint8Array(data)
-      ws.send(buffer)
-    }
+function sendRecordingChunk({
+  tabId,
+  data,
+  final,
+}: {
+  tabId: number
+  data?: Uint8Array
+  final?: boolean
+}): { success: boolean; error?: string } {
+  const ws = connectionManager.ws
+  if (ws?.readyState !== WebSocket.OPEN) {
+    const error = 'Relay is not connected'
+    cancelRecordingTransport({ tabId, error })
+    return { success: false, error }
   }
+  const wireBytes = (data?.byteLength || 0) + 256
+  if (ws.bufferedAmount + wireBytes > MAX_RECORDING_SOCKET_BUFFERED_BYTES) {
+    const error = 'Recording socket buffer exceeded its memory limit'
+    cancelRecordingTransport({ tabId, error })
+    return { success: false, error }
+  }
+  ws.send(
+    JSON.stringify({
+      method: 'recordingData',
+      params: { tabId, final },
+    }),
+  )
+  if (data && !final) {
+    ws.send(data)
+  }
+  return { success: true }
+}
+
+function decodeRecordingChunk(value: string): Uint8Array {
+  const binary = atob(value)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+  return bytes
 }
 
 class ConnectionManager {
@@ -337,17 +361,17 @@ class ConnectionManager {
   preserveTabsOnDetach = false
 
   async ensureConnection(): Promise<void> {
+    // Reuse in-progress connection attempt - prevents races between user clicks and maintain loop
+    if (this.connectionPromise) {
+      return this.connectionPromise
+    }
+
     if (this.ws?.readyState === WebSocket.OPEN) {
       return
     }
 
     if (store.getState().connectionState === 'extension-replaced') {
       throw new Error('Another Playwriter extension is already connected')
-    }
-
-    // Reuse in-progress connection attempt - prevents races between user clicks and maintain loop
-    if (this.connectionPromise) {
-      return this.connectionPromise
     }
 
     // Wrap connect() with a global timeout to ensure it never hangs forever.
@@ -407,12 +431,14 @@ class ConnectionManager {
     if (typeof __PLAYWRITER_VERSION__ !== 'undefined') {
       relayUrl.searchParams.set('v', __PLAYWRITER_VERSION__)
     }
+    relayUrl.searchParams.set('capabilities', INVENTORY_READY_CAPABILITY)
     logger.debug('Creating WebSocket connection to:', relayUrl)
     const socket = new WebSocket(relayUrl.toString())
 
     await new Promise<void>((resolve, reject) => {
       let settled = false
-      const timeout = setTimeout(() => {
+      let handshakeTimeout: ReturnType<typeof setTimeout> | null = null
+      const openTimeout = setTimeout(() => {
         if (settled) return
         settled = true
         logger.debug('WebSocket connection TIMEOUT after 5 seconds')
@@ -422,62 +448,70 @@ class ConnectionManager {
         reject(new Error('Connection timeout'))
       }, 5000)
 
-      socket.onopen = () => {
+      const rejectConnection = (error: Error): void => {
         if (settled) return
         settled = true
-        logger.debug('WebSocket connected')
-        clearTimeout(timeout)
-
-        // Flush any buffered recording chunks now that WebSocket is ready
-        flushRecordingChunkBuffer(socket)
-
-        resolve()
+        clearTimeout(openTimeout)
+        if (handshakeTimeout) {
+          clearTimeout(handshakeTimeout)
+        }
+        reject(error)
       }
 
-      socket.onerror = (error) => {
-        logger.debug('WebSocket error during connection:', error)
-        if (settled) return
-        settled = true
-        clearTimeout(timeout)
-        reject(new Error('WebSocket connection failed'))
+      socket.onmessage = async (event: MessageEvent) => {
+        let message: any
+        try {
+          message = JSON.parse(event.data)
+        } catch (error: any) {
+          logger.debug('Error parsing message:', error)
+          sendToLocalRelay({ error: { code: -32700, message: `Error parsing message: ${error.message}` } })
+          return
+        }
+        await dispatchRelayMessage(message, localRelaySink)
       }
 
-      socket.onclose = (event) => {
-        logger.debug('WebSocket closed during connection:', { code: event.code, reason: event.reason })
-        if (settled) return
-        settled = true
-        clearTimeout(timeout)
-        // Normalize 4002 rejection to consistent error message for callers to detect
-        if (event.code === 4002 || event.reason === 'Extension Already In Use') {
-          reject(new Error('Extension Already In Use'))
-        } else {
-          reject(new Error(`WebSocket closed: ${event.reason || event.code}`))
+      socket.onerror = (event: Event) => {
+        logger.debug('WebSocket error:', event)
+        rejectConnection(new Error('WebSocket connection failed'))
+      }
+
+      socket.onclose = (event: CloseEvent) => {
+        logger.debug('WebSocket closed:', { code: event.code, reason: event.reason })
+        const error =
+          event.code === 4002 || event.reason === 'Extension Already In Use'
+            ? new Error('Extension Already In Use')
+            : new Error(`WebSocket closed: ${event.reason || event.code}`)
+        rejectConnection(error)
+        if (this.ws === socket) {
+          this.handleClose(event.reason, event.code)
         }
       }
-    })
 
-    this.ws = socket
-
-    this.ws.onmessage = async (event: MessageEvent) => {
-      let message: any
-      try {
-        message = JSON.parse(event.data)
-      } catch (error: any) {
-        logger.debug('Error parsing message:', error)
-        sendToLocalRelay({ error: { code: -32700, message: `Error parsing message: ${error.message}` } })
-        return
+      socket.onopen = () => {
+        if (settled) return
+        clearTimeout(openTimeout)
+        this.ws = socket
+        handshakeTimeout = setTimeout(() => {
+          socket.close(1011, 'Target inventory timeout')
+          rejectConnection(new Error('Target inventory timeout'))
+        }, 15_000)
+        void completeLocalRelayHandshake(socket).then(
+          () => {
+            if (settled) return
+            settled = true
+            logger.debug('WebSocket connected')
+            if (handshakeTimeout) {
+              clearTimeout(handshakeTimeout)
+            }
+            resolve()
+          },
+          (error) => {
+            socket.close(1011, 'Target inventory failed')
+            rejectConnection(new Error('Could not announce extension target inventory', { cause: error }))
+          },
+        )
       }
-
-      await dispatchRelayMessage(message, localRelaySink)
-    }
-
-    this.ws.onclose = (event: CloseEvent) => {
-      this.handleClose(event.reason, event.code)
-    }
-
-    this.ws.onerror = (event: Event) => {
-      logger.debug('WebSocket error:', event)
-    }
+    })
 
     logger.debug('Connection established')
   }
@@ -624,37 +658,6 @@ class ConnectionManager {
         await this.ensureConnection()
         store.setState({ connectionState: 'connected' })
 
-        // Announce tabs that stayed attached while the relay was down (remote-scoped
-        // tabs) so the local relay learns their targets. The relay dedupes targets it
-        // already knows, so re-announcing is safe.
-        await announceConnectedTabsToLocalRelay()
-
-        // Re-attach any tabs that were in 'connecting' state (from a previous disconnect)
-        const tabsToReattach = Array.from(store.getState().tabs.entries())
-          .filter(([_, tab]) => tab.state === 'connecting')
-          .map(([tabId]) => tabId)
-
-        for (const tabId of tabsToReattach) {
-          // Re-check state before attaching - might have been attached by user click
-          const currentTab = store.getState().tabs.get(tabId)
-          if (!currentTab || currentTab.state !== 'connecting') {
-            logger.debug('Skipping reattach, tab state changed:', tabId, currentTab?.state)
-            continue
-          }
-
-          try {
-            await chrome.tabs.get(tabId)
-            await attachTab(tabId)
-            logger.debug('Successfully re-attached tab:', tabId)
-          } catch (error: any) {
-            logger.debug('Failed to re-attach tab:', tabId, error.message)
-            store.setState((state) => {
-              const newTabs = new Map(state.tabs)
-              newTabs.delete(tabId)
-              return { tabs: newTabs }
-            })
-          }
-        }
         this.preserveTabsOnDetach = false
       } catch (error: any) {
         logger.debug('Connection attempt failed:', error.message)
@@ -1996,7 +1999,10 @@ function persistRemoteTabs(): void {
 // Re-announce currently attached tabs to the local relay after it reconnects.
 // Needed for remote-scoped tabs that stayed attached while the relay was down:
 // the relay only learns targets from Target.attachedToTarget events.
-async function announceConnectedTabsToLocalRelay(): Promise<void> {
+async function announceConnectedTabsToLocalRelay(socket = connectionManager.ws): Promise<void> {
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    throw new Error('Local relay connection changed during target inventory')
+  }
   const { tabs } = store.getState()
   for (const [tabId, tab] of tabs) {
     if (tab.state !== 'connected' || !tab.sessionId) {
@@ -2007,7 +2013,7 @@ async function announceConnectedTabsToLocalRelay(): Promise<void> {
         { tabId },
         'Target.getTargetInfo',
       )) as Protocol.Target.GetTargetInfoResponse
-      sendToLocalRelay({
+      socket.send(JSON.stringify({
         method: 'forwardCDPEvent',
         params: {
           method: 'Target.attachedToTarget',
@@ -2017,11 +2023,47 @@ async function announceConnectedTabsToLocalRelay(): Promise<void> {
             waitingForDebugger: false,
           },
         },
-      })
+      }))
     } catch (error) {
       logger.debug('Failed to re-announce tab to local relay:', tabId, error)
     }
   }
+}
+
+async function completeLocalRelayHandshake(socket: WebSocket): Promise<void> {
+  await announceConnectedTabsToLocalRelay(socket)
+  await reattachConnectingTabsToLocalRelay()
+  if (connectionManager.ws !== socket || socket.readyState !== WebSocket.OPEN) {
+    throw new Error('Local relay connection changed during target inventory')
+  }
+  socket.send(JSON.stringify({ method: 'ready' }))
+}
+
+async function reattachConnectingTabsToLocalRelay(): Promise<void> {
+  const tabsToReattach = Array.from(store.getState().tabs.entries())
+    .filter(([_, tab]) => tab.state === 'connecting')
+    .map(([tabId]) => tabId)
+
+  await Promise.all(
+    tabsToReattach.map(async (tabId) => {
+      const currentTab = store.getState().tabs.get(tabId)
+      if (!currentTab || currentTab.state !== 'connecting') {
+        return
+      }
+      try {
+        await chrome.tabs.get(tabId)
+        await attachTab(tabId)
+        logger.debug('Successfully re-attached tab:', tabId)
+      } catch (error) {
+        logger.debug('Failed to re-attach tab:', tabId, error instanceof Error ? error.message : String(error))
+        store.setState((state) => {
+          const newTabs = new Map(state.tabs)
+          newTabs.delete(tabId)
+          return { tabs: newTabs }
+        })
+      }
+    }),
+  )
 }
 
 // Introduce the extension without exposing local profile identity, then announce
@@ -3255,28 +3297,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === 'recordingChunk') {
-    const { tabId, data, final } = message
-
-    if (connectionManager.ws?.readyState === WebSocket.OPEN) {
-      // Send metadata message first
-      sendMessage({
-        method: 'recordingData',
-        params: { tabId, final },
+    try {
+      const result = sendRecordingChunk({
+        tabId: message.tabId,
+        data: typeof message.dataBase64 === 'string' ? decodeRecordingChunk(message.dataBase64) : undefined,
+        final: message.final,
       })
-
-      // Then send binary data if not final
-      if (data && !final) {
-        const buffer = new Uint8Array(data)
-        connectionManager.ws.send(buffer)
-      }
-    } else {
-      // Buffer chunks when WebSocket isn't ready - they'll be flushed when it opens.
-      // This prevents data loss during brief disconnections or slow WebSocket startup.
-      logger.debug(`Buffering recording chunk for tab ${tabId} (WebSocket not ready)`)
-      recordingChunkBuffer.push({ tabId, data, final })
+      sendResponse(result)
+    } catch (error) {
+      sendResponse({ success: false, error: error instanceof Error ? error.message : String(error) })
     }
-
-    return false // Sync response, no need to keep channel open
+    return true
   }
 
   if (message.action === 'recordingCancelled') {
@@ -3292,14 +3323,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return { tabs: newTabs }
     })
 
-    if (connectionManager.ws?.readyState === WebSocket.OPEN) {
-      sendMessage({
-        method: 'recordingCancelled',
-        params: { tabId },
-      })
-    }
+    sendRecordingCancellation(tabId)
 
-    return false
+    sendResponse({ success: true })
+    return true
   }
 
   return false

@@ -19,7 +19,7 @@ import type {
   OffscreenStopRecordingResult,
   OffscreenIsRecordingResult,
 } from './offscreen-types'
-import { store, connectionManager, logger, sendMessage, getTabBySessionId } from './background'
+import { store, logger, sendRecordingCancellation, getTabBySessionId } from './background'
 
 // Active recordings - kept outside store since MediaRecorder/MediaStream can't be serialized
 const activeRecordings: Map<number, RecordingInfo> = new Map()
@@ -159,7 +159,7 @@ export async function handleStartRecording(params: StartRecordingParams): Promis
     updateTabRecordingState(tabId, true)
 
     logger.debug('Recording started for tab:', tabId, 'mimeType:', result.mimeType)
-    return { success: true, tabId, startedAt }
+    return { success: true, tabId, startedAt, mimeType: result.mimeType }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error)
     logger.error('Failed to start recording:', error)
@@ -259,12 +259,7 @@ export async function handleCancelRecording(params: CancelRecordingParams): Prom
     updateTabRecordingState(tabId, false)
 
     // Send cancel marker
-    if (connectionManager.ws?.readyState === WebSocket.OPEN) {
-      sendMessage({
-        method: 'recordingCancelled',
-        params: { tabId },
-      })
-    }
+    sendRecordingCancellation(tabId)
 
     return { success: true }
   } catch (error: unknown) {

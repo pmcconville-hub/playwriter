@@ -12,6 +12,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { WSContext } from 'hono/ws'
 import type { Protocol } from './cdp-types.js'
+import { INVENTORY_READY_CAPABILITY } from './protocol.js'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,6 +62,8 @@ export type ExtensionEntry = {
   pendingRequests: Map<number, ExtensionPendingRequest>
   messageId: number
   pingInterval: ReturnType<typeof setInterval> | null
+  capabilities: ReadonlySet<string>
+  inventoryReady: boolean
 }
 
 export type PlaywrightClient = {
@@ -169,11 +172,13 @@ export function addExtension(
     info,
     stableKey,
     ws,
+    capabilities = [],
   }: {
     id: string
     info: ExtensionInfo
     stableKey: string
     ws: ExtensionSocket | null
+    capabilities?: string[]
   },
 ): RelayState {
   const newExtensions = new Map(state.extensions)
@@ -187,6 +192,8 @@ export function addExtension(
     pendingRequests: new Map(),
     messageId: 0,
     pingInterval: null,
+    capabilities: new Set(capabilities),
+    inventoryReady: !capabilities.includes(INVENTORY_READY_CAPABILITY),
   })
   return { ...state, extensions: newExtensions }
 }
@@ -295,7 +302,29 @@ export function updateExtensionInfo(
     return state
   }
   const newExtensions = new Map(state.extensions)
-  newExtensions.set(extensionId, { ...ext, info: { ...ext.info, ...info } })
+  newExtensions.set(extensionId, {
+    ...ext,
+    info: {
+      browser: info.browser ?? ext.info.browser,
+      email: info.email ?? ext.info.email,
+      id: info.id ?? ext.info.id,
+      installId: info.installId ?? ext.info.installId,
+      version: info.version ?? ext.info.version,
+    },
+  })
+  return { ...state, extensions: newExtensions }
+}
+
+export function markExtensionInventoryReady(
+  state: RelayState,
+  { extensionId }: { extensionId: string },
+): RelayState {
+  const ext = state.extensions.get(extensionId)
+  if (!ext || ext.inventoryReady) {
+    return state
+  }
+  const newExtensions = new Map(state.extensions)
+  newExtensions.set(extensionId, { ...ext, inventoryReady: true })
   return { ...state, extensions: newExtensions }
 }
 

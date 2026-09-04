@@ -58,6 +58,8 @@ interface OffscreenRecordingState {
   stream: MediaStream
   startedAt: number
   tabId: number
+  chunkChain: Promise<void>
+  cancelled: boolean
 }
 
 // Map of tabId -> recording state for concurrent recording support
@@ -121,6 +123,7 @@ async function handleCopyText(message: OffscreenCopyTextMessage): Promise<Offscr
 
 async function handleStartRecording(params: OffscreenStartRecordingMessage): Promise<OffscreenStartRecordingResult> {
   const { tabId } = params
+  let stream: MediaStream | null = null
 
   if (recordings.has(tabId)) {
     return { success: false, error: `Recording already in progress for tab ${tabId}` }
@@ -149,7 +152,7 @@ async function handleStartRecording(params: OffscreenStartRecordingMessage): Pro
 
     // Get media stream from the streamId provided by tabCapture.getMediaStreamId
     // Cast to MediaStreamConstraints since Chrome accepts the extended constraints
-    const stream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       audio: audioConstraints,
       video: videoConstraints,
     } as MediaStreamConstraints)
@@ -161,26 +164,39 @@ async function handleStartRecording(params: OffscreenStartRecordingMessage): Pro
     })
 
     const startedAt = Date.now()
-
-    recordings.set(tabId, {
+    const recording: OffscreenRecordingState = {
       recorder,
       stream,
       startedAt,
       tabId,
-    })
+      chunkChain: Promise.resolve(),
+      cancelled: false,
+    }
+    recordings.set(tabId, recording)
 
     // Send chunks to service worker - each chunk includes tabId for routing
-    recorder.ondataavailable = async (event) => {
-      if (event.data.size > 0) {
-        // Convert blob to array buffer and send to service worker
-        const arrayBuffer = await event.data.arrayBuffer()
-        const uint8Array = new Uint8Array(arrayBuffer)
-        void chrome.runtime.sendMessage({
-          action: 'recordingChunk',
-          tabId,
-          data: Array.from(uint8Array), // Convert to regular array for message passing
-        })
+    recorder.ondataavailable = (event) => {
+      if (event.data.size === 0) {
+        return
       }
+      recording.chunkChain = recording.chunkChain
+        .then(async () => {
+          if (recording.cancelled) {
+            return
+          }
+          const result = await chrome.runtime.sendMessage({
+            action: 'recordingChunk',
+            tabId,
+            dataBase64: await blobToBase64(event.data),
+          })
+          if (result?.success === false) {
+            throw new Error(result.error || 'Could not send recording chunk')
+          }
+        })
+        .catch((error) => {
+          console.error(`Failed to send recording chunk for tab ${tabId}:`, error)
+          handleCancelRecordingForTab(tabId)
+        })
     }
 
     recorder.onerror = (event: Event) => {
@@ -209,8 +225,12 @@ async function handleStartRecording(params: OffscreenStartRecordingMessage): Pro
       recorder.start(1000)
     })
 
-    return { success: true, tabId, startedAt, mimeType: 'video/mp4' }
+    return { success: true, tabId, startedAt, mimeType: recorder.mimeType || 'video/mp4' }
   } catch (error: any) {
+    stream?.getTracks().map((track) => {
+      track.stop()
+    })
+    recordings.delete(tabId)
     console.error(`Failed to start recording for tab ${tabId}:`, error)
     return { success: false, error: error.message }
   }
@@ -242,28 +262,45 @@ async function handleStopRecording(params: OffscreenStopRecordingMessage): Promi
         resolve()
       }
     })
-
-    // Stop all tracks
-    stream.getTracks().forEach((track) => {
-      track.stop()
-    })
+    await recording.chunkChain
 
     const duration = Date.now() - startedAt
 
     // Send final marker
-    void chrome.runtime.sendMessage({
+    await chrome.runtime.sendMessage({
       action: 'recordingChunk',
       tabId,
       final: true,
     })
 
-    recordings.delete(tabId)
-
     return { success: true, tabId, duration }
   } catch (error: any) {
     console.error(`Failed to stop recording for tab ${tabId}:`, error)
     return { success: false, error: error.message }
+  } finally {
+    recording.stream.getTracks().forEach((track) => {
+      track.stop()
+    })
+    recordings.delete(tabId)
   }
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result
+      if (typeof result !== 'string') {
+        reject(new Error('Could not encode recording chunk'))
+        return
+      }
+      resolve(result.slice(result.indexOf(',') + 1))
+    }
+    reader.onerror = () => {
+      reject(reader.error || new Error('Could not read recording chunk'))
+    }
+    reader.readAsDataURL(blob)
+  })
 }
 
 function handleIsRecording(params: OffscreenIsRecordingMessage): OffscreenIsRecordingResult {
@@ -296,6 +333,7 @@ function handleCancelRecordingForTab(tabId: number): OffscreenCancelRecordingRes
 
   try {
     const { recorder, stream } = recording
+    recording.cancelled = true
 
     if (recorder.state !== 'inactive') {
       recorder.stop()

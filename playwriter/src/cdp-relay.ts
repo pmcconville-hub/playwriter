@@ -724,7 +724,7 @@ export async function startPlayWriterCDPRelayServer({
         if (sessionId) {
           break
         }
-        if (conn) {
+        if (conn?.inventoryReady) {
           await maybeAutoCreateInitialTab(conn.id)
         }
         // Forward auto-attach so Chrome emits iframe Target.attachedToTarget events.
@@ -1059,6 +1059,7 @@ export async function startPlayWriterCDPRelayServer({
       browser: info?.browser || null,
       profile: info ? { email: info.email || '', id: info.id || '' } : null,
       playwriterVersion: info?.version || null,
+      inventoryReady: defaultExtension?.inventoryReady ?? false,
     })
   })
 
@@ -1071,6 +1072,7 @@ export async function startPlayWriterCDPRelayServer({
         profile: ext.info ? { email: ext.info.email || '', id: ext.info.id || '' } : null,
         activeTargets: ext.connectedTargets.size,
         playwriterVersion: ext.info?.version || null,
+        inventoryReady: ext.inventoryReady,
       }
     })
     return c.json({ extensions })
@@ -1442,6 +1444,16 @@ export async function startPlayWriterCDPRelayServer({
     }
   }
 
+  const getExtensionCapabilitiesFromRequest = (c: {
+    req: { query: (name: string) => string | undefined }
+  }): string[] => {
+    return (c.req.query('capabilities') || '')
+      .split(',')
+      .filter((capability) => {
+        return Boolean(capability)
+      })
+  }
+
   app.get(
     '/extension',
     (c, next) => {
@@ -1478,8 +1490,13 @@ export async function startPlayWriterCDPRelayServer({
     },
     upgradeWebSocket((c) => {
       const incomingExtensionInfo = getExtensionInfoFromRequest(c)
+      const incomingCapabilities = getExtensionCapabilitiesFromRequest(c)
       const connectionId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
-      const handlers = createExtensionSocketHandlers({ connectionId, initialInfo: incomingExtensionInfo })
+      const handlers = createExtensionSocketHandlers({
+        connectionId,
+        initialInfo: incomingExtensionInfo,
+        initialCapabilities: incomingCapabilities,
+      })
       return {
         onOpen(_event, ws) {
           handlers.onOpen(ws)
@@ -1510,10 +1527,12 @@ export async function startPlayWriterCDPRelayServer({
   function createExtensionSocketHandlers({
     connectionId,
     initialInfo,
+    initialCapabilities = [],
     stableKeyOverride,
   }: {
     connectionId: string
     initialInfo: relayState.ExtensionInfo
+    initialCapabilities?: string[]
     /** Remote dials pass a hashed `remote:` key so sessions survive reconnects without storing the secret. */
     stableKeyOverride?: string
   }): ExtensionSocketHandlers {
@@ -1533,7 +1552,13 @@ export async function startPlayWriterCDPRelayServer({
           // State transition: add extension with ws handle included.
           // Existing same-stableKey entry stays until old socket onClose.
           store.setState((s) => {
-            return relayState.addExtension(s, { id: connectionId, info: initialInfo, stableKey, ws })
+            return relayState.addExtension(s, {
+              id: connectionId,
+              info: initialInfo,
+              stableKey,
+              ws,
+              capabilities: initialCapabilities,
+            })
           })
 
           startExtensionPing(connectionId)
@@ -1594,6 +1619,17 @@ export async function startPlayWriterCDPRelayServer({
                 `Extension hello (${connectionId}): ${helloInfo.browser || 'unknown'} v${helloInfo.version || '?'}${helloInfo.remote ? ' (remote tunnel)' : ''}`,
               ),
             )
+            return
+          }
+
+          if (message.method === 'ready') {
+            store.setState((s) => relayState.markExtensionInventoryReady(s, { extensionId: connectionId }))
+            const hasBoundClient = Array.from(store.getState().playwrightClients.values()).some((client) => {
+              return client.extensionId === connectionId
+            })
+            if (hasBoundClient) {
+              await maybeAutoCreateInitialTab(connectionId)
+            }
             return
           }
 

@@ -2,6 +2,8 @@ import { CDPEventFor, ProtocolMapping } from './cdp-types.js'
 
 export const VERSION = 1
 
+export const INVENTORY_READY_CAPABILITY = 'inventory-ready-v1'
+
 type ForwardCDPCommand = {
   [K in keyof ProtocolMapping.Commands]: {
     id: number
@@ -76,6 +78,24 @@ export type RecordingCancelledMessage = {
   }
 }
 
+export type ExtensionHelloMessage = {
+  id?: undefined
+  method: 'hello'
+  params: {
+    browser?: string
+    email?: string
+    id?: string
+    installId?: string
+    version?: string
+    remote?: boolean
+  }
+}
+
+export type ExtensionReadyMessage = {
+  id?: undefined
+  method: 'ready'
+}
+
 export type ExtensionMessage =
   | ExtensionResponseMessage
   | ExtensionEventMessage
@@ -83,6 +103,8 @@ export type ExtensionMessage =
   | ExtensionPongMessage
   | RecordingDataMessage
   | RecordingCancelledMessage
+  | ExtensionHelloMessage
+  | ExtensionReadyMessage
 
 // Recording command messages (MCP -> Extension via relay)
 export type StartRecordingParams = {

@@ -106,7 +106,7 @@ export type OffscreenCopyTextResult = { success: true } | { success: false; erro
 export interface OffscreenRecordingChunkMessage {
   action: 'recordingChunk'
   tabId: number
-  data?: number[] // Array from Uint8Array for message passing
+  dataBase64?: string
   final?: boolean
 }
 

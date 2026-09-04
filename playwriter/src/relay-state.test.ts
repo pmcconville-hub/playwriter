@@ -109,8 +109,23 @@ describe('addExtension', () => {
     expect(ext.messageId).toBe(0)
     expect(ext.pendingRequests.size).toBe(0)
     expect(ext.pingInterval).toBeNull()
+    expect(ext.inventoryReady).toBe(true)
     // Original unchanged (immutable)
     expect(before.extensions.size).toBe(0)
+  })
+
+  test('starts inventory negotiation from additive connection capabilities', () => {
+    const state = relayState.addExtension(emptyState(), {
+      id: 'ext-1',
+      info: { browser: 'Chrome' },
+      stableKey: 'profile:chrome-1',
+      ws: fakeWs(),
+      capabilities: ['inventory-ready-v1'],
+    })
+
+    expect(state.extensions.get('ext-1')?.inventoryReady).toBe(false)
+    const after = relayState.markExtensionInventoryReady(state, { extensionId: 'ext-1' })
+    expect(after.extensions.get('ext-1')?.inventoryReady).toBe(true)
   })
 
   test('adding extension with same stableKey keeps old entry (removed on socket close)', () => {
@@ -213,6 +228,30 @@ describe('removePlaywrightClient', () => {
 })
 
 describe('extension I/O fields', () => {
+  test('does not erase query identity with missing hello fields', () => {
+    const before = stateWithExtension('ext-1', {
+      browser: 'Chromium',
+      email: 'person@example.com',
+      id: 'profile-id',
+      installId: 'install-id',
+      version: '1.0.0',
+    })
+    const after = relayState.updateExtensionInfo(before, {
+      extensionId: 'ext-1',
+      info: { version: '1.1.0' },
+    })
+
+    expect(after.extensions.get('ext-1')?.info).toMatchInlineSnapshot(`
+      {
+        "browser": "Chromium",
+        "email": "person@example.com",
+        "id": "profile-id",
+        "installId": "install-id",
+        "version": "1.1.0",
+      }
+    `)
+  })
+
   test('adds and removes pending extension requests', () => {
     let state = stateWithExtension('ext-1')
 

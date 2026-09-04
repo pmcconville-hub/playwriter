@@ -35,6 +35,17 @@ describe('Extension Connection Tests', () => {
     return testCtx.browserContext
   }
 
+  it('completes the additive extension inventory handshake', async () => {
+    const response = await fetch(`http://127.0.0.1:${TEST_PORT}/extension/status`)
+    const status = await response.json()
+
+    expect(status).toMatchObject({
+      connected: true,
+      browser: expect.any(String),
+      inventoryReady: true,
+    })
+  })
+
   it('should handle new pages and toggling with new connections', async () => {
     const browserContext = getBrowserContext()
     const serviceWorker = await getExtensionServiceWorker(browserContext)
