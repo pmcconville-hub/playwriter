@@ -43,6 +43,7 @@ export function initPlaywriterToolbar(): void {
   let pinMoveEvent: MouseEvent | null = null
   let isRecording = false
   let startInFlight = false
+  let pendingStop = false
   let isDragging = false
   // Declared here so the hoisted setPinMode can reference it before assignment.
   let pinBtn!: HTMLButtonElement
@@ -211,6 +212,7 @@ export function initPlaywriterToolbar(): void {
       outline: none;
       white-space: nowrap;
       font-family: inherit;
+      min-width: 152px;
     }
     .record-btn:hover {
       background: rgba(255,255,255,0.08);
@@ -224,8 +226,7 @@ export function initPlaywriterToolbar(): void {
       color: rgba(228,228,231,1);
     }
     .record-btn.loading {
-      cursor: default;
-      pointer-events: none;
+      cursor: progress;
     }
     .remote-btn svg {
       color: #7dd3fc;
@@ -941,7 +942,6 @@ export function initPlaywriterToolbar(): void {
 
   function updateRecordBtn(): void {
     recordBtn.classList.remove('active', 'loading')
-    recordBtn.disabled = false
     if (isRecording) {
       recordBtn.innerHTML = STOP_SVG + ' <span>Stop recording\u2026</span>'
       recordBtn.setAttribute('data-tooltip', 'Stop recording')
@@ -952,7 +952,6 @@ export function initPlaywriterToolbar(): void {
       recordBtn.innerHTML = SPINNER_SVG + ' <span>Starting\u2026</span>'
       recordBtn.setAttribute('data-tooltip', 'Starting recorder')
       recordBtn.classList.add('loading')
-      recordBtn.disabled = true
       return
     }
     recordBtn.innerHTML = RECORD_SVG + ' <span>Record Skill</span>'
@@ -969,6 +968,14 @@ export function initPlaywriterToolbar(): void {
       }
     }
     updateRecordBtn()
+    if (recording && pendingStop) {
+      pendingStop = false
+      window.__playwriterToolbarStopRecording?.()
+      return
+    }
+    if (!recording) {
+      pendingStop = false
+    }
   }
 
   recordBtn.addEventListener('click', (e: MouseEvent) => {
@@ -982,6 +989,7 @@ export function initPlaywriterToolbar(): void {
       return
     }
     if (startInFlight) {
+      pendingStop = true
       return
     }
     if (!window.__playwriterToolbarStartRecording) {

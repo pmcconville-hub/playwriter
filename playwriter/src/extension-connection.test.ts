@@ -743,22 +743,25 @@ describe('Extension Connection Tests', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 100))
 
-    // 3. Verify MCP cannot execute code anymore (no pages available)
+    // 3. Detached tabs leave Playwright. Auto-enable may create a blank tab,
+    // so execute still succeeds; the disconnected page must not be listed.
     const afterDisconnect = await client.callTool({
       name: 'execute',
       arguments: {
         code: js`
           const pages = context.pages();
+          const testPage = pages.find(p => p.url().includes('disconnect-test'));
           console.log('Pages after disconnect:', pages.length);
-          return { pagesCount: pages.length };
+          console.log('Found test page:', !!testPage);
+          return { pagesCount: pages.length, foundTestPage: !!testPage };
         `,
       },
     })
 
     const afterDisconnectOutput = (afterDisconnect as any).content[0].text
     console.log('After disconnect:', afterDisconnectOutput)
-    expect((afterDisconnect as any).isError).toBe(true)
-    expect(afterDisconnectOutput).toContain('No Playwright pages are available')
+    expect((afterDisconnect as any).isError).toBeFalsy()
+    expect(afterDisconnectOutput).toContain('foundTestPage: false')
 
     // 4. Re-enable extension on the same page
     console.log('Re-enabling extension...')

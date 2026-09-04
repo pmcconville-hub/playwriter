@@ -194,6 +194,7 @@ describe('CDP Session Tests', () => {
     await page.setContent(`
       <html>
         <head>
+          <title>script-list-test</title>
           <script src="data:text/javascript,function hello() { return 1; }"></script>
           <script src="data:text/javascript,function world() { return 2; }"></script>
         </head>
@@ -208,10 +209,14 @@ describe('CDP Session Tests', () => {
     await new Promise((r) => setTimeout(r, 100))
 
     const browser = await chromium.connectOverCDP(getCdpUrl({ port: TEST_PORT }))
-    const cdpPage = browser
-      .contexts()[0]
-      .pages()
-      .find((p) => p.url().startsWith('about:'))
+    const cdpPages = browser.contexts()[0].pages()
+    const cdpPage = (
+      await Promise.all(
+        cdpPages.map(async (candidate) => {
+          return { candidate, title: await candidate.title() }
+        }),
+      )
+    ).find((entry) => entry.title === 'script-list-test')?.candidate
     expect(cdpPage).toBeDefined()
 
     const wsUrl = getCdpUrl({ port: TEST_PORT })

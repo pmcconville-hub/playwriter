@@ -812,7 +812,7 @@ describe('Relay Core Tests', () => {
       name: 'execute',
       arguments: {
         code: js`
-          const logs = await getLatestLogs();
+          const logs = await getLatestLogs({ page: state.testLogPage });
           logs.forEach(log => console.log(log));
         `,
       },
@@ -829,7 +829,7 @@ describe('Relay Core Tests', () => {
       name: 'execute',
       arguments: {
         code: js`
-          const logs = await getLatestLogs({ search: 'error' });
+          const logs = await getLatestLogs({ page: state.testLogPage, search: 'error' });
           logs.forEach(log => console.log(log));
         `,
       },
@@ -1172,7 +1172,10 @@ describe('Relay Core Tests', () => {
       name: 'execute',
       arguments: {
         code: js`
-          const logs = await getLatestLogs();
+          const logs = [
+            ...(await getLatestLogs({ page: state.pageA })),
+            ...(await getLatestLogs({ page: state.pageB })),
+          ];
           console.log('All logs:', logs.length);
           logs.forEach(log => console.log(log));
         `,
@@ -1246,7 +1249,7 @@ describe('Relay Core Tests', () => {
       name: 'execute',
       arguments: {
         code: js`
-          const logs = await getLatestLogs();
+          const logs = await getLatestLogs({ page: state.pageB });
           console.log('All logs after closing page A:', logs.length);
           logs.forEach(log => console.log(log));
         `,

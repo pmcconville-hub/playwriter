@@ -2118,5 +2118,8 @@ cli.command('skill', 'Print the full playwriter usage instructions').action(() =
 cli.help()
 cli.completions()
 cli.version(VERSION)
+cli.on('command:*', () => {
+  process.stderr.write('Run "playwriter --help" for usage information.\n')
+})
 
 await cli.parse()
