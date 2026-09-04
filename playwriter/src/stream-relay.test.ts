@@ -185,7 +185,10 @@ describe.skipIf(!hasFfmpeg)('StreamRelay end-to-end pipe', () => {
       }
       return { success: true }
     }
-    const relay = new StreamRelay(sendToExtension, () => true)
+    const relay = new StreamRelay({
+      sendToExtension,
+      isExtensionConnected: () => true,
+    })
     relayRef.current = relay
 
     const startResult = await relay.startStream({
@@ -203,8 +206,6 @@ describe.skipIf(!hasFfmpeg)('StreamRelay end-to-end pipe', () => {
     expect(status.streaming).toBe(true)
     expect(status.destinations).toEqual([outputPath])
 
-    // Feed the capture in 64KB chunks, each preceded by its metadata message
-    // like the extension does (recordingData without final, then binary).
     const mp4 = await generateFragmentedMp4()
     expect(mp4.length).toBeGreaterThan(10000)
     const chunkSize = 64 * 1024
@@ -245,7 +246,7 @@ describe.skipIf(!hasFfmpeg)('StreamRelay end-to-end pipe', () => {
       }
       return { success: true }
     }
-    const relay = new StreamRelay(sendToExtension, () => true)
+    const relay = new StreamRelay({ sendToExtension, isExtensionConnected: () => true })
     relayRef.current = relay
 
     await relay.startStream({ rtmpUrls: [outputPath], resolution: '320x240', audio: false, codec: 'libx264' })
@@ -275,7 +276,7 @@ describe.skipIf(!hasFfmpeg)('StreamRelay end-to-end pipe', () => {
       }
       return { success: true }
     }
-    const relay = new StreamRelay(sendToExtension, () => true)
+    const relay = new StreamRelay({ sendToExtension, isExtensionConnected: () => true })
 
     await relay.startStream({ rtmpUrls: [outputPath], resolution: '320x240', audio: false, codec: 'libx264' })
     const mp4 = await generateFragmentedMp4()
@@ -302,7 +303,7 @@ describe.skipIf(!hasFfmpeg)('StreamRelay end-to-end pipe', () => {
       }
       return { success: true }
     }
-    const relay = new StreamRelay(sendToExtension, () => true)
+    const relay = new StreamRelay({ sendToExtension, isExtensionConnected: () => true })
 
     const startResult = await relay.startStream({
       rtmpUrls: [secretUrl],
@@ -344,7 +345,10 @@ describe.skipIf(!hasFfmpeg)('StreamRelay end-to-end pipe', () => {
   }, 30000)
 
   test('unknown tab chunks are not consumed', async () => {
-    const relay = new StreamRelay(async () => ({ success: true }), () => true)
+    const relay = new StreamRelay({
+      sendToExtension: async () => ({ success: true }),
+      isExtensionConnected: () => true,
+    })
     expect(relay.handleRecordingData({ method: 'recordingData', params: { tabId: 7 } })).toBe(false)
     expect(relay.handleBinaryData(Buffer.from('abc'))).toBe(false)
     const stopParams: StopRecordingParams = {}

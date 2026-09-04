@@ -150,6 +150,7 @@ export type StartRecordingResult =
       success: true
       tabId: number
       startedAt: number
+      mimeType?: string
     }
   | {
       success: false

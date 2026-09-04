@@ -515,19 +515,16 @@ export async function startPlayWriterCDPRelayServer({
     if (!recordingRelays.has(connId)) {
       recordingRelays.set(
         connId,
-        new RecordingRelay(
-          (params) => sendToExtension({ extensionId: connId, ...params }),
-          () => store.getState().extensions.has(connId),
+        new RecordingRelay({
+          sendToExtension: (params) => sendToExtension({ extensionId: connId, ...params }),
+          isExtensionConnected: () => store.getState().extensions.has(connId),
           logger,
-        ),
+        }),
       )
     }
     return recordingRelays.get(connId) || null
   }
 
-  // Stream relays pipe capture chunks to ffmpeg for live RTMP streaming
-  // instead of accumulating them like RecordingRelay. Keyed per extension
-  // connection exactly like recordingRelays.
   const streamRelays = new Map<string, StreamRelay>()
 
   const getStreamRelay = (extensionId?: string | null): StreamRelay | null => {
@@ -540,11 +537,11 @@ export async function startPlayWriterCDPRelayServer({
     if (!streamRelays.has(connId)) {
       streamRelays.set(
         connId,
-        new StreamRelay(
-          (params) => sendToExtension({ extensionId: connId, ...params }),
-          () => store.getState().extensions.has(connId),
+        new StreamRelay({
+          sendToExtension: (params) => sendToExtension({ extensionId: connId, ...params }),
+          isExtensionConnected: () => store.getState().extensions.has(connId),
           logger,
-        ),
+        }),
       )
     }
     return streamRelays.get(connId) || null
@@ -1926,22 +1923,6 @@ export async function startPlayWriterCDPRelayServer({
         onClose(event) {
           logger?.log(`Extension disconnected: code=${event.code} reason=${event.reason || 'none'} (${connectionId})`)
 
-          // Cancel recordings BEFORE removing extension state (cancelRecording checks isExtensionConnected)
-          const recordingRelay = recordingRelays.get(connectionId)
-          if (recordingRelay) {
-            recordingRelay.cancelRecording({}).catch(() => {
-              // Ignore errors during cleanup
-            })
-          }
-          recordingRelays.delete(connectionId)
-
-          // Kill any active ffmpeg streams for this extension connection
-          const streamRelay = streamRelays.get(connectionId)
-          if (streamRelay) {
-            streamRelay.destroyAll('Extension disconnected')
-          }
-          streamRelays.delete(connectionId)
-
           // Reject all pending I/O requests (state cleanup happens in removeExtension below)
           const closingExt = store.getState().extensions.get(connectionId)
           if (closingExt) {
@@ -1963,6 +1944,17 @@ export async function startPlayWriterCDPRelayServer({
           const successorExtension = closingExtension
             ? successorCandidates[0]
             : undefined
+
+          const recordingRelay = recordingRelays.get(connectionId)
+          if (recordingRelay) {
+            recordingRelay.destroyAll('Extension disconnected')
+          }
+          recordingRelays.delete(connectionId)
+          const streamRelay = streamRelays.get(connectionId)
+          if (streamRelay) {
+            streamRelay.destroyAll('Extension disconnected')
+          }
+          streamRelays.delete(connectionId)
 
           if (successorExtension) {
             logger?.log(
@@ -3038,6 +3030,14 @@ export async function startPlayWriterCDPRelayServer({
       const { extensions, playwrightClients } = store.getState()
 
       closeAllRemoteDials()
+      for (const recordingRelay of recordingRelays.values()) {
+        recordingRelay.destroyAll('Relay stopped')
+      }
+      recordingRelays.clear()
+      for (const streamRelay of streamRelays.values()) {
+        streamRelay.destroyAll('Relay stopped')
+      }
+      streamRelays.clear()
 
       for (const client of playwrightClients.values()) {
         client.ws.close(1000, 'Server stopped')
@@ -3050,10 +3050,7 @@ export async function startPlayWriterCDPRelayServer({
         ext.ws?.close(1000, 'Server stopped')
       }
 
-      // Close shared headless browser if any headless sessions were created (fire-and-forget)
-      void import('./executor.js').then(({ PlaywrightExecutor }) => {
-        return PlaywrightExecutor.closeSharedHeadlessBrowser()
-      })
+      void executorManager?.disposeAll()
 
       // Reset store state
       store.setState({

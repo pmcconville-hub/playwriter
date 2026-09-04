@@ -213,7 +213,7 @@ interface ActiveStream {
 
 export class StreamRelay {
   private activeStreams = new Map<number, ActiveStream>()
-  // Which tabId just sent recordingData metadata - routes the next binary chunk.
+  // Legacy transport routes the next binary chunk from recordingData metadata.
   // Each relay (RecordingRelay, StreamRelay) tracks its own; tabId sets are
   // disjoint because the extension refuses a second capture of the same tab.
   private lastMetadataTabId: number | null = null
@@ -223,11 +223,15 @@ export class StreamRelay {
   private isExtensionConnected: () => boolean
   private logger?: { log(...args: unknown[]): void; error(...args: unknown[]): void }
 
-  constructor(
-    sendToExtension: (params: { method: string; params?: unknown; timeout?: number }) => Promise<unknown>,
-    isExtensionConnected: () => boolean,
-    logger?: { log(...args: unknown[]): void; error(...args: unknown[]): void },
-  ) {
+  constructor({
+    sendToExtension,
+    isExtensionConnected,
+    logger,
+  }: {
+    sendToExtension: (params: { method: string; params?: unknown; timeout?: number }) => Promise<unknown>
+    isExtensionConnected: () => boolean
+    logger?: { log(...args: unknown[]): void; error(...args: unknown[]): void }
+  }) {
     this.sendToExtension = sendToExtension
     this.isExtensionConnected = isExtensionConnected
     this.logger = logger
@@ -247,22 +251,7 @@ export class StreamRelay {
       return false
     }
 
-    stream.stats.chunksReceived += 1
-    stream.stats.bytesReceived += buffer.length
-
-    const stdin = stream.ffmpeg.stdin
-    if (!stdin.writable) {
-      return true
-    }
-
-    // Backpressure: if ffmpeg can't keep up (dead RTMP endpoint, slow encoder),
-    // stdin buffers grow. Never buffer unbounded - kill the stream instead.
-    if (stdin.writableLength > MAX_STDIN_BUFFERED_BYTES) {
-      this.failStream(stream, `ffmpeg stalled: ${stdin.writableLength} bytes buffered in stdin`)
-      return true
-    }
-
-    stdin.write(buffer)
+    this.writeStreamPayload({ stream, buffer })
     return true
   }
 
@@ -513,6 +502,21 @@ export class StreamRelay {
     stream.ffmpeg.kill('SIGKILL')
     stream.resolveStop?.({ success: false, error })
     this.sendToExtension({ method: 'cancelRecording', params: { sessionId: stream.sessionId }, timeout: 5000 }).catch(() => {})
+  }
+
+  private writeStreamPayload({ stream, buffer }: { stream: ActiveStream; buffer: Buffer }): void {
+    stream.stats.chunksReceived += 1
+    stream.stats.bytesReceived += buffer.length
+
+    const stdin = stream.ffmpeg.stdin
+    if (!stdin.writable) {
+      return
+    }
+    if (stdin.writableLength > MAX_STDIN_BUFFERED_BYTES) {
+      this.failStream(stream, `ffmpeg stalled: ${stdin.writableLength} bytes buffered in stdin`)
+      return
+    }
+    stdin.write(buffer)
   }
 
   private findStream(sessionId?: string): ActiveStream | undefined {

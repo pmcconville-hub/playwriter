@@ -1,9 +1,11 @@
 /**
- * Unit tests for fitToAspectRatio — verifies viewport shrink-to-fit
- * for common screen sizes and aspect ratios.
+ * Tests viewport sizing and atomic recording file output.
  */
 import { describe, test, expect } from 'vitest'
+import fs from 'node:fs'
+import path from 'node:path'
 import { fitToAspectRatio } from './screen-recording.js'
+import { RecordingOutput } from './recording-relay.js'
 
 describe('fitToAspectRatio', () => {
   test('common sizes → 16:9', () => {
@@ -106,6 +108,46 @@ describe('fitToAspectRatio', () => {
       const result = fitToAspectRatio(size, ratio)
       expect(result.width).toBeLessThanOrEqual(size.width)
       expect(result.height).toBeLessThanOrEqual(size.height)
+    }
+  })
+})
+
+describe('RecordingOutput', () => {
+  test('keeps output hidden until all chunks are complete', () => {
+    const parent = path.join(process.cwd(), 'tmp')
+    fs.mkdirSync(parent, { recursive: true })
+    const dir = fs.mkdtempSync(path.join(parent, 'recording-output-'))
+    const outputPath = path.join(dir, 'recording.mp4')
+
+    try {
+      const output = RecordingOutput.open({ outputPath })
+      output.append(Buffer.from('first'))
+      output.append(Buffer.from('-second'))
+
+      expect(fs.existsSync(outputPath)).toBe(false)
+      expect(output.finish()).toEqual({ path: outputPath, size: 12 })
+      expect(fs.readFileSync(outputPath, 'utf8')).toBe('first-second')
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('removes partial output after cancellation', () => {
+    const parent = path.join(process.cwd(), 'tmp')
+    fs.mkdirSync(parent, { recursive: true })
+    const dir = fs.mkdtempSync(path.join(parent, 'recording-output-'))
+    const outputPath = path.join(dir, 'recording.mp4')
+
+    try {
+      const output = RecordingOutput.open({ outputPath })
+      output.append(Buffer.from('partial'))
+      const temporaryPath = output.temporaryPath
+      output.cancel()
+
+      expect(fs.existsSync(outputPath)).toBe(false)
+      expect(fs.existsSync(temporaryPath)).toBe(false)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
     }
   })
 })

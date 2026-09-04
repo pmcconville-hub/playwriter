@@ -1,10 +1,11 @@
 /**
  * Recording relay functionality for the CDP relay server.
- * Handles recording state, chunk accumulation, and file writing.
+ * Handles recording state and streams capture chunks into atomic output files.
  */
 
 import fs from 'node:fs'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import pc from 'picocolors'
 import type {
   StartRecordingParams,
@@ -19,12 +20,72 @@ import type {
   RecordingCancelledMessage,
 } from './protocol.js'
 
-// Recording state - tracks active recordings and their accumulated chunks
+export class RecordingOutput {
+  readonly outputPath: string
+  readonly temporaryPath: string
+  private fd: number | null
+  private bytesWritten = 0
+
+  private constructor({ outputPath, temporaryPath, fd }: { outputPath: string; temporaryPath: string; fd: number }) {
+    this.outputPath = outputPath
+    this.temporaryPath = temporaryPath
+    this.fd = fd
+  }
+
+  static open({ outputPath }: { outputPath: string }): RecordingOutput {
+    const directory = path.dirname(outputPath)
+    fs.mkdirSync(directory, { recursive: true })
+    const temporaryPath = path.join(
+      directory,
+      `.${path.basename(outputPath)}.${process.pid}.${crypto.randomUUID()}.tmp`,
+    )
+    const fd = fs.openSync(temporaryPath, 'w')
+    return new RecordingOutput({ outputPath, temporaryPath, fd })
+  }
+
+  append(chunk: Buffer): void {
+    if (this.fd === null) {
+      throw new Error('Recording output is closed')
+    }
+    let offset = 0
+    while (offset < chunk.length) {
+      const written = fs.writeSync(this.fd, chunk, offset)
+      if (written <= 0) {
+        throw new Error('Recording output write made no progress')
+      }
+      offset += written
+    }
+    this.bytesWritten += chunk.length
+  }
+
+  finish(): { path: string; size: number } {
+    if (this.fd === null) {
+      throw new Error('Recording output is closed')
+    }
+    fs.closeSync(this.fd)
+    this.fd = null
+    fs.renameSync(this.temporaryPath, this.outputPath)
+    return { path: this.outputPath, size: this.bytesWritten }
+  }
+
+  cancel(): void {
+    if (this.fd !== null) {
+      try {
+        fs.closeSync(this.fd)
+      } catch {}
+      this.fd = null
+    }
+    try {
+      fs.unlinkSync(this.temporaryPath)
+    } catch {}
+  }
+}
+
 export interface ActiveRecording {
   tabId: number
   sessionId?: string // The sessionId used to start this recording, for lookup when stopping
-  outputPath: string
-  chunks: Buffer[]
+  output: RecordingOutput
+  chunksReceived: number
   startedAt: number
   resolveStop?: (result: StopRecordingResult) => void
 }
@@ -37,11 +98,15 @@ export class RecordingRelay {
   private isExtensionConnected: () => boolean
   private logger?: { log(...args: unknown[]): void; error(...args: unknown[]): void }
 
-  constructor(
-    sendToExtension: (params: { method: string; params?: unknown; timeout?: number }) => Promise<unknown>,
-    isExtensionConnected: () => boolean,
-    logger?: { log(...args: unknown[]): void; error(...args: unknown[]): void },
-  ) {
+  constructor({
+    sendToExtension,
+    isExtensionConnected,
+    logger,
+  }: {
+    sendToExtension: (params: { method: string; params?: unknown; timeout?: number }) => Promise<unknown>
+    isExtensionConnected: () => boolean
+    logger?: { log(...args: unknown[]): void; error(...args: unknown[]): void }
+  }) {
     this.sendToExtension = sendToExtension
     this.isExtensionConnected = isExtensionConnected
     this.logger = logger
@@ -57,12 +122,7 @@ export class RecordingRelay {
     if (tabId !== null) {
       const recording = this.activeRecordings.get(tabId)
       if (recording) {
-        recording.chunks.push(buffer)
-        this.logger?.log(
-          pc.blue(
-            `Received recording chunk for tab ${tabId}: ${buffer.length} bytes (total chunks: ${recording.chunks.length})`,
-          ),
-        )
+        this.appendRecordingPayload({ recording, buffer })
       } else {
         this.logger?.log(pc.yellow(`Received recording chunk for unknown tab ${tabId}, ignoring`))
       }
@@ -83,32 +143,7 @@ export class RecordingRelay {
     }
 
     if (recording && final) {
-      try {
-        const totalSize = recording.chunks.reduce((sum, chunk) => sum + chunk.length, 0)
-        const combined = Buffer.concat(recording.chunks)
-        fs.writeFileSync(recording.outputPath, combined)
-
-        const duration = Date.now() - recording.startedAt
-        this.logger?.log(pc.green(`Recording saved: ${recording.outputPath} (${totalSize} bytes, ${duration}ms)`))
-
-        if (recording.resolveStop) {
-          recording.resolveStop({
-            success: true,
-            tabId,
-            duration,
-            path: recording.outputPath,
-            size: totalSize,
-          })
-        }
-      } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : String(error)
-        this.logger?.error('Failed to write recording:', error)
-        if (recording.resolveStop) {
-          recording.resolveStop({ success: false, error: errorMessage })
-        }
-      }
-
-      this.activeRecordings.delete(tabId)
+      this.finishRecording(recording)
     }
   }
 
@@ -120,10 +155,7 @@ export class RecordingRelay {
     const recording = this.activeRecordings.get(tabId)
     if (recording) {
       this.logger?.log(pc.yellow(`Recording cancelled for tab ${tabId}`))
-      if (recording.resolveStop) {
-        recording.resolveStop({ success: false, error: 'Recording was cancelled' })
-      }
-      this.activeRecordings.delete(tabId)
+      this.failRecording({ recording, error: 'Recording was cancelled' })
     }
   }
 
@@ -138,11 +170,17 @@ export class RecordingRelay {
       return { success: false, error: 'Extension not connected' }
     }
 
-    const dir = path.dirname(outputPath)
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true })
+    const output = (() => {
+      try {
+        return RecordingOutput.open({ outputPath: path.resolve(outputPath) })
+      } catch (error) {
+        this.logger?.error('Failed to open recording output:', error)
+        return error instanceof Error ? error : new Error(String(error))
+      }
+    })()
+    if (output instanceof Error) {
+      return { success: false, error: output.message }
     }
-
     try {
       const result = (await this.sendToExtension({
         method: 'startRecording',
@@ -151,6 +189,7 @@ export class RecordingRelay {
       })) as StartRecordingResult
 
       if (!result) {
+        output.cancel()
         return { success: false, error: 'Extension returned empty result' }
       }
 
@@ -158,8 +197,8 @@ export class RecordingRelay {
         this.activeRecordings.set(result.tabId, {
           tabId: result.tabId,
           sessionId: recordingParams.sessionId,
-          outputPath,
-          chunks: [],
+          output,
+          chunksReceived: 0,
           startedAt: result.startedAt,
         })
         this.logger?.log(
@@ -167,10 +206,13 @@ export class RecordingRelay {
             `Recording started for tab ${result.tabId} (sessionId: ${recordingParams.sessionId || 'none'}), output: ${outputPath}`,
           ),
         )
+      } else {
+        output.cancel()
       }
 
       return result
     } catch (error: unknown) {
+      output.cancel()
       const errorMessage = error instanceof Error ? error.message : String(error)
       this.logger?.error('Start recording error:', error)
       return { success: false, error: errorMessage }
@@ -213,6 +255,8 @@ export class RecordingRelay {
       timeoutId = setTimeout(() => {
         if (recording.resolveStop) {
           recording.resolveStop = undefined
+          recording.output.cancel()
+          this.activeRecordings.delete(recording.tabId)
           resolve({ success: false, error: 'Timeout waiting for recording data' })
         }
       }, 30000)
@@ -226,8 +270,7 @@ export class RecordingRelay {
       })) as StopRecordingResult
 
       if (!result.success) {
-        recording.resolveStop = undefined
-        this.activeRecordings.delete(recording.tabId)
+        this.failRecording({ recording, error: result.error || 'Extension failed to stop recording' })
         return result
       }
 
@@ -235,6 +278,7 @@ export class RecordingRelay {
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       this.logger?.error('Stop recording error:', error)
+      this.failRecording({ recording, error: errorMessage })
       return { success: false, error: errorMessage }
     }
   }
@@ -271,5 +315,63 @@ export class RecordingRelay {
       this.logger?.error('Cancel recording error:', error)
       return { success: false, error: errorMessage }
     }
+  }
+
+  destroyAll(reason: string): void {
+    Array.from(this.activeRecordings.values()).map((recording) => {
+      this.failRecording({ recording, error: reason })
+    })
+  }
+
+  private failRecording({ recording, error }: { recording: ActiveRecording; error: string }): void {
+    recording.output.cancel()
+    recording.resolveStop?.({ success: false, error })
+    recording.resolveStop = undefined
+    this.activeRecordings.delete(recording.tabId)
+  }
+
+  private appendRecordingPayload({ recording, buffer }: { recording: ActiveRecording; buffer: Buffer }): void {
+    try {
+      recording.output.append(buffer)
+      recording.chunksReceived += 1
+      this.logger?.log(
+        pc.blue(
+          `Received recording chunk for tab ${recording.tabId}: ${buffer.length} bytes (total chunks: ${recording.chunksReceived})`,
+        ),
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.failRecording({ recording, error: `Failed to write recording: ${message}` })
+      this.requestRecordingCancellation(recording)
+    }
+  }
+
+  private finishRecording(recording: ActiveRecording): void {
+    try {
+      const output = recording.output.finish()
+      const duration = Date.now() - recording.startedAt
+      this.logger?.log(pc.green(`Recording saved: ${output.path} (${output.size} bytes, ${duration}ms)`))
+      recording.resolveStop?.({
+        success: true,
+        tabId: recording.tabId,
+        duration,
+        path: output.path,
+        size: output.size,
+      })
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      this.logger?.error('Failed to write recording:', error)
+      recording.output.cancel()
+      recording.resolveStop?.({ success: false, error: errorMessage })
+    }
+    this.activeRecordings.delete(recording.tabId)
+  }
+
+  private requestRecordingCancellation(recording: ActiveRecording): void {
+    void this.sendToExtension({
+      method: 'cancelRecording',
+      params: recording.sessionId ? { sessionId: recording.sessionId } : {},
+      timeout: 5000,
+    }).catch(() => {})
   }
 }
