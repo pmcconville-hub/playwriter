@@ -45,9 +45,11 @@ this workflow (or ask the user), then `playwriter recorder stop <id>`.
 
 `recorder events` prints one JSON object per line (jq-friendly). `t` is seconds
 since start. Every event has a sequential `id` and `ms` (milliseconds since start).
-The default output is a **thin timeline**: heavy payloads (network bodies) are
-replaced by sizes. Pass event ids to get full details. Defaults to the latest
-recording; pass `-r <recordingId>` for an older one.
+The default output is a **thin timeline**: stored network bodies are replaced by
+sizes. Pass event ids to get sanitized details. Credential-like URL and body
+fields are replaced with `[redacted]`. Large, encoded, unknown-size, and
+multipart bodies can be truncated or omitted. Defaults to the latest recording;
+pass `-r <recordingId>` for an older one.
 
 ```bash
 # thin timeline
@@ -70,14 +72,16 @@ playwriter recorder events | jq 'select(.type == "download" or .type == "console
 
 Event types: `recording-started`, `action` (`.code` is locator code such as
 `await page.getByRole('button', { name: 'Submit' }).click()`), `signal`,
-`navigation`, `page-opened`, `page-closed`, `network` (mutating xhr/fetch only, with
-truncated `responseBody`; **WebSockets are not captured**), `download`,
+`navigation`, `page-opened`, `page-closed`, `network` (mutating xhr/fetch only,
+with sanitized, bounded body data; **WebSockets are not captured**), `download`,
 `console`, `page-error`, `recording-stopped` (includes `framesDir` and
 `frameCount`).
 
 Action events also carry structured fields copied from Playwright: `text` (fill),
 `key` (press), `options` (select), `files` (setInputFiles), `button` and
-`modifiers` (click/press). Prefer those over parsing `.code`.
+`modifiers` (click/press). Fill values use `[redacted]` in both `text` and
+`.code`. Treat each one as an input parameter. Prefer structured fields over
+parsing `.code`.
 
 Drop select-all / modifier keypresses that happen just before a fill. They are
 noise. The fill already has the final text.
@@ -283,8 +287,8 @@ Rules:
 - One `request` helper on the class. Every method goes through it.
 - Throw on non-OK. The message must include **method, path, status, and
   response text** so a later agent can debug without re-recording.
-- Keep payloads from the recorded `network` events. Parameterize the fields
-  the user typed.
+- Use the safe structure from recorded `network` events. Treat redacted,
+  truncated, or omitted values as parameters that must be supplied or fetched.
 - Open the site origin first so `fetch('/api/...')` is same-origin.
 - If a call needs a prior id or csrf token, fetch that in another method and
   pass it through the constructor or as a method arg. Do not hardcode tokens.

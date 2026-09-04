@@ -9,7 +9,7 @@ import path from 'node:path'
 import { chromium } from '@xmorse/playwright-core'
 import { getCdpUrl } from './utils.js'
 import { getCDPSessionForPage } from './cdp-session.js'
-import { parseRecording, projectThinEvent } from './action-recorder.js'
+import { parseRecording, projectThinEvent, sanitizeRecordedBody, sanitizeRecordedUrl } from './action-recorder.js'
 import { setupTestContext, cleanupTestContext, getExtensionServiceWorker, type TestContext } from './test-utils.js'
 import './test-declarations.js'
 
@@ -17,6 +17,112 @@ const TEST_PORT = 19997
 const SERVER_URL = `http://127.0.0.1:${TEST_PORT}`
 
 const jsonHeaders = { 'Content-Type': 'application/json' }
+
+describe('recorded network redaction', () => {
+  it('redacts URL and structured body secrets while keeping useful fields', () => {
+    expect(
+      sanitizeRecordedUrl(
+        'https://user:password@example.com/api?access_token=url-secret&X-Amz-Signature=signed-secret&query=visible#private-fragment',
+      ),
+    ).toMatchInlineSnapshot(`
+      {
+        "redacted": true,
+        "value": "https://%5Bredacted%5D:%5Bredacted%5D@example.com/api?access_token=%5Bredacted%5D&X-Amz-Signature=%5Bredacted%5D&query=visible",
+      }
+    `)
+    expect(
+      sanitizeRecordedBody({
+        body: JSON.stringify({
+          email: 'person@example.com',
+          password: 'body-secret',
+          nested: { refresh_token: 'refresh-secret', count: 2 },
+        }),
+        contentType: 'application/json',
+        maxBytes: 1000,
+      }),
+    ).toMatchInlineSnapshot(`
+      {
+        "originalBytes": 104,
+        "redacted": true,
+        "truncated": false,
+        "value": "{"email":"person@example.com","password":"[redacted]","nested":{"refresh_token":"[redacted]","count":2}}",
+      }
+    `)
+    expect(
+      sanitizeRecordedBody({
+        body: 'name=Tommy&csrf_token=form-secret',
+        contentType: 'application/x-www-form-urlencoded',
+        maxBytes: 1000,
+      }),
+    ).toMatchInlineSnapshot(`
+      {
+        "originalBytes": 36,
+        "redacted": true,
+        "truncated": false,
+        "value": "name=Tommy&csrf_token=%5Bredacted%5D",
+      }
+    `)
+    expect(
+      sanitizeRecordedBody({
+        body: '{"password":"unterminated',
+        contentType: 'application/json',
+        maxBytes: 1000,
+      }),
+    ).toMatchInlineSnapshot(`
+      {
+        "originalBytes": 27,
+        "redacted": true,
+        "truncated": false,
+        "value": "[omitted invalid JSON body]",
+      }
+    `)
+    expect(
+      sanitizeRecordedBody({
+        body: JSON.stringify({ tokenizer: 'keep', secretary: 'keep', cookiePolicy: 'keep' }),
+        contentType: 'application/json',
+        maxBytes: 1000,
+      }),
+    ).toMatchInlineSnapshot(`
+      {
+        "originalBytes": 61,
+        "redacted": false,
+        "truncated": false,
+        "value": "{"tokenizer":"keep","secretary":"keep","cookiePolicy":"keep"}",
+      }
+    `)
+    expect(
+      sanitizeRecordedBody({
+        body: 'password=plain-text-secret',
+        contentType: 'text/plain',
+        maxBytes: 1000,
+      }),
+    ).toMatchInlineSnapshot(`
+      {
+        "originalBytes": 27,
+        "redacted": true,
+        "truncated": false,
+        "value": "[omitted unstructured body]",
+      }
+    `)
+  })
+
+  it('limits recorded bodies by UTF-8 bytes', () => {
+    expect(
+      sanitizeRecordedBody({
+        body: JSON.stringify({ message: '😀😀😀😀' }),
+        contentType: 'application/json',
+        maxBytes: 20,
+      }),
+    ).toMatchInlineSnapshot(`
+      {
+        "originalBytes": 30,
+        "redacted": false,
+        "truncated": true,
+        "value": "{"message":"😀😀",
+      }
+    `)
+  })
+})
 
 describe('action recording', () => {
   let testCtx: TestContext | null = null
@@ -90,6 +196,7 @@ describe('action recording', () => {
       document.body.innerHTML = `
         <button id="submit-btn" onclick="localStorage.setItem('submitted', 'yes'); this.textContent = 'Done!'">Submit order</button>
         <input id="email" placeholder="Email address" type="text" />
+        <input id="password" placeholder="Password" type="password" />
         <input id="attachment" aria-label="Attachment" type="file" />
       `
     })
@@ -107,13 +214,19 @@ describe('action recording', () => {
     await clickAt('#submit-btn')
     await clickAt('#email')
     await cdp.send('Input.insertText', { text: 'hi@example.com' })
+    await clickAt('#password')
+    await cdp.send('Input.insertText', { text: 'recorded-password-secret' })
 
     // trigger the extra recorded signals: console error, in-page POST fetch
     // (GET is dropped; only mutating xhr/fetch is recorded), and a file upload
     await cdpPage!.evaluate(async () => {
       console.error('recorder-test-error')
       await fetch('/?get-should-be-dropped')
-      await fetch('/', { method: 'POST', body: 'recorder-test' }).then((r) => r.text())
+      await fetch('/?access_token=recorded-url-secret&query=visible', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: 'recorded-body-secret', operation: 'recorder-test' }),
+      }).then((r) => r.text())
     })
     const tmpFile = path.join(os.tmpdir(), 'recorder-test-attachment.txt')
     fs.writeFileSync(tmpFile, 'hello')
@@ -141,6 +254,12 @@ describe('action recording', () => {
     expect(stop.eventCount).toBeGreaterThan(3)
 
     const events = parseRecording(fs.readFileSync(stop.filePath, 'utf-8'))
+    const serializedEvents = JSON.stringify(events)
+    expect(serializedEvents).not.toContain('recorded-password-secret')
+    expect(serializedEvents).not.toContain('recorded-url-secret')
+    expect(serializedEvents).not.toContain('recorded-body-secret')
+    expect(serializedEvents).toContain('[redacted]')
+    expect(serializedEvents).toContain('recorder-test')
 
     // recorded actions carry generated locator code
     const actionCodes = events.filter((e) => e.type === 'action').map((e) => e.code)
@@ -148,7 +267,9 @@ describe('action recording', () => {
       [
         "await page1.getByRole('button', { name: 'Submit order' }).click();",
         "await page1.getByRole('textbox', { name: 'Email address' }).click();",
-        "await page1.getByRole('textbox', { name: 'Email address' }).fill('hi@example.com');",
+        "await page1.getByRole('textbox', { name: 'Email address' }).fill('[redacted]');",
+        "await page1.getByRole('textbox', { name: 'Password' }).click();",
+        "await page1.getByRole('textbox', { name: 'Password' }).fill('[redacted]');",
         "await page1.getByRole('button', { name: 'Attachment' }).setInputFiles('recorder-test-attachment.txt');",
         "await page1.getByRole('button', { name: 'Done!' }).click();",
       ]
@@ -166,16 +287,20 @@ describe('action recording', () => {
     expect(clickActions[0].button).toBe('left')
     expect(clickActions[0].x).toBeUndefined()
     const fillActions = events.filter((e) => e.type === 'action' && e.action === 'fill')
-    expect(fillActions[0].text).toBe('hi@example.com')
+    expect(fillActions.map((event) => event.text)).toEqual(['[redacted]', '[redacted]'])
     // console.error was recorded
     const consoleEvents = events.filter((e) => e.type === 'console')
     expect(JSON.stringify(consoleEvents)).toContain('recorder-test-error')
-    // mutating in-page fetch captured with its textual response body
+    // mutating in-page fetch keeps useful structure without persisted secrets
     const fetchEvents = events.filter((e) => e.type === 'network' && e.resourceType === 'fetch')
     expect(fetchEvents.length).toBeGreaterThan(0)
     expect(fetchEvents.every((e) => e.method === 'POST')).toBe(true)
     expect(JSON.stringify(fetchEvents)).not.toContain('get-should-be-dropped')
-    expect(JSON.stringify(fetchEvents)).toContain('Example Domain')
+    expect(fetchEvents[0]).toMatchObject({
+      postDataRedacted: true,
+      urlRedacted: true,
+    })
+    expect(fetchEvents[0].responseBody || fetchEvents[0].responseBodyOmitted).toBeTruthy()
     const uploadActions = events.filter((e) => e.type === 'action' && String(e.code).includes('setInputFiles'))
     expect(JSON.stringify(uploadActions)).toContain('recorder-test-attachment.txt')
     expect(uploadActions[0].files).toEqual(['recorder-test-attachment.txt'])
@@ -184,7 +309,8 @@ describe('action recording', () => {
     // thin projection replaces heavy payloads with sizes
     const thinFetch = projectThinEvent(fetchEvents[0])
     expect(thinFetch.responseBody).toBeUndefined()
-    expect(typeof thinFetch.responseBodySize).toBe('number')
+    expect(thinFetch.postData).toBeUndefined()
+    expect(typeof thinFetch.postDataSize).toBe('number')
 
     // stopping again → 404, no active recording
     const stopAgainResponse = await fetch(`${SERVER_URL}/recorder/stop`, {
@@ -260,8 +386,10 @@ describe('action recording', () => {
     const stop3 = (await stop3Response.json()) as { filePath: string }
     const events3 = parseRecording(fs.readFileSync(stop3.filePath, 'utf-8'))
     const fills3 = events3.filter((e) => e.type === 'action' && e.action === 'fill')
-    expect(fills3.map((e) => e.code)).toEqual(["await page1.getByRole('textbox', { name: 'Search' }).fill('abc');"])
-    expect(fills3[0].text).toBe('abc')
+    expect(fills3.map((e) => e.code)).toEqual([
+      "await page1.getByRole('textbox', { name: 'Search' }).fill('[redacted]');",
+    ])
+    expect(fills3[0].text).toBe('[redacted]')
 
     await browser.close()
   }, 120000)

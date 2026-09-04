@@ -1545,7 +1545,7 @@ cli
 cli
   .command(
     'recorder events [...eventIds]',
-    'Print recorded events as jsonl. Uses the latest recording unless `--recording` is passed. Default output is a thin timeline view (heavy payloads shown as sizes). Pass event ids to print their full details (network request/response bodies).',
+    'Print recorded events as jsonl. Uses the latest recording unless `--recording` is passed. Default output is a thin timeline view. Pass event ids to print sanitized network details.',
   )
   .option('-r, --recording <id>', 'Recording ID (defaults to the latest recording)')
   .option('--host <host>', 'Remote relay server host')

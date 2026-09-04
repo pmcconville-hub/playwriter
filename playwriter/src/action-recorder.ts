@@ -71,13 +71,35 @@ interface RecorderLogger {
 }
 
 interface ActionInContext {
-  action: { name: string; selector?: string; [key: string]: unknown }
+  action: {
+    name: string
+    selector?: string
+    text?: string
+    key?: string
+    options?: string[]
+    files?: string[]
+    button?: string
+    modifiers?: number
+    clickCount?: number
+    url?: string
+  }
   frame?: { pageAlias?: string; framePath?: string[] }
 }
 
 interface SignalInContext {
-  signal: { name: string; url?: string; [key: string]: unknown }
+  signal: { name: string; url?: string }
   frame?: { pageAlias?: string }
+}
+
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
+
+type ExtraActionFields = {
+  text?: string
+  key?: string
+  options?: string[]
+  files?: string[]
+  button?: string
+  modifiers?: number
 }
 
 declare module '@xmorse/playwright-core' {
@@ -160,10 +182,34 @@ export const DEFAULT_RECORDER_DISABLE_TIMEOUT_MS = 2_000
 // Cap concurrent recordings. A new start past the cap stops the oldest
 // recording instead of failing.
 export const MAX_ACTIVE_RECORDINGS = 10
-const MAX_RESPONSE_BODY_CHARS = 50000
-const MAX_POST_DATA_CHARS = 10000
+const MAX_RESPONSE_BODY_BYTES = 50000
+const MAX_POST_DATA_BYTES = 10000
 const MAX_CONSOLE_TEXT_CHARS = 2000
 const TEXTUAL_CONTENT_TYPE = /json|text|xml|x-www-form-urlencoded|graphql/i
+const SENSITIVE_FIELD_NAMES = [
+  'apikey',
+  'authorization',
+  'cookie',
+  'code',
+  'credential',
+  'csrf',
+  'onetimecode',
+  'otp',
+  'passwd',
+  'password',
+  'privatekey',
+  'refreshtoken',
+  'secret',
+  'secretaccesskey',
+  'session',
+  'sessionid',
+  'sig',
+  'signature',
+  'token',
+  'xamzcredential',
+  'xamzsecuritytoken',
+  'xamzsignature',
+]
 const TELEMETRY_HOST_SUFFIXES = [
   'google-analytics.com',
   'googletagmanager.com',
@@ -200,6 +246,129 @@ function truncate(value: string, max: number): string {
     return value
   }
   return value.slice(0, max) + `… (${value.length - max} more chars)`
+}
+
+function isSensitiveFieldName(name: string): boolean {
+  const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, '')
+  return SENSITIVE_FIELD_NAMES.some((field) => {
+    return normalized === field || normalized.endsWith(field)
+  })
+}
+
+function redactStructuredValue(value: JsonValue): { value: JsonValue; redacted: boolean } {
+  if (Array.isArray(value)) {
+    const items = value.map((item) => {
+      return redactStructuredValue(item)
+    })
+    return {
+      value: items.map((item) => {
+        return item.value
+      }),
+      redacted: items.some((item) => {
+        return item.redacted
+      }),
+    }
+  }
+  if (!value || typeof value !== 'object') {
+    return { value, redacted: false }
+  }
+
+  const entries = Object.entries(value).map(([key, item]) => {
+    if (isSensitiveFieldName(key)) {
+      return [key, { value: '[redacted]', redacted: true }] as const
+    }
+    return [key, redactStructuredValue(item)] as const
+  })
+  return {
+    value: Object.fromEntries(
+      entries.map(([key, item]) => {
+        return [key, item.value]
+      }),
+    ),
+    redacted: entries.some(([, item]) => {
+      return item.redacted
+    }),
+  }
+}
+
+function limitUtf8(value: string, maxBytes: number): { value: string; truncated: boolean; originalBytes: number } {
+  const bytes = Buffer.from(value)
+  if (bytes.length <= maxBytes) {
+    return { value, truncated: false, originalBytes: bytes.length }
+  }
+  const limited = bytes
+    .subarray(0, Math.max(0, maxBytes))
+    .toString('utf8')
+    .replace(/\uFFFD$/u, '')
+  return { value: limited, truncated: true, originalBytes: bytes.length }
+}
+
+export function sanitizeRecordedUrl(url: string): { value: string; redacted: boolean } {
+  try {
+    const parsed = new URL(url)
+    const hasCredentials = Boolean(parsed.username || parsed.password)
+    if (parsed.username) {
+      parsed.username = '[redacted]'
+    }
+    if (parsed.password) {
+      parsed.password = '[redacted]'
+    }
+    const entries = [...parsed.searchParams.entries()]
+    const redacted = entries.some(([key]) => {
+      return isSensitiveFieldName(key)
+    })
+    parsed.search = new URLSearchParams(
+      entries.map<[string, string]>(([key, value]) => {
+        return [key, isSensitiveFieldName(key) ? '[redacted]' : value]
+      }),
+    ).toString()
+    const hadFragment = Boolean(parsed.hash)
+    parsed.hash = ''
+    return { value: parsed.toString(), redacted: redacted || hadFragment || hasCredentials }
+  } catch {
+    return { value: url, redacted: false }
+  }
+}
+
+export function sanitizeRecordedBody({
+  body,
+  contentType,
+  maxBytes,
+}: {
+  body: string
+  contentType: string
+  maxBytes: number
+}): { value: string; redacted: boolean; truncated: boolean; originalBytes: number } {
+  const mediaType = contentType.toLowerCase()
+  const sanitized = (() => {
+    if (mediaType.includes('json')) {
+      try {
+        const parsed: JsonValue = JSON.parse(body)
+        const result = redactStructuredValue(parsed)
+        return { value: JSON.stringify(result.value), redacted: result.redacted }
+      } catch {
+        return { value: '[omitted invalid JSON body]', redacted: true }
+      }
+    }
+    if (mediaType.includes('application/x-www-form-urlencoded')) {
+      const params = new URLSearchParams(body)
+      const entries = [...params.entries()]
+      const redacted = entries.some(([key]) => {
+        return isSensitiveFieldName(key)
+      })
+      const sanitized = new URLSearchParams(
+        entries.map<[string, string]>(([key, value]) => {
+          return [key, isSensitiveFieldName(key) ? '[redacted]' : value]
+        }),
+      )
+      return { value: sanitized.toString(), redacted }
+    }
+    if (mediaType.includes('multipart/form-data')) {
+      return { value: '[omitted multipart body]', redacted: true }
+    }
+    return { value: '[omitted unstructured body]', redacted: true }
+  })()
+  return { ...limitUtf8(sanitized.value, maxBytes), redacted: sanitized.redacted }
 }
 
 // Thin projection of an event for the default `recorder events` timeline view.
@@ -530,10 +699,12 @@ export class ActionRecorder {
           if (this.state !== 'recording') {
             return
           }
+          const signalUrl = signalInContext.signal.url ? sanitizeRecordedUrl(signalInContext.signal.url) : null
           this.writeEvent({
             type: 'signal',
             signal: signalInContext.signal.name,
-            url: signalInContext.signal.url,
+            url: signalUrl?.value,
+            urlRedacted: signalUrl?.redacted || undefined,
             pageAlias: signalInContext.frame?.pageAlias,
             pageUrl: safePageUrl(page),
           })
@@ -683,7 +854,8 @@ export class ActionRecorder {
         if (this.state !== 'recording' || frame !== page.mainFrame()) {
           return
         }
-        this.writeEvent({ type: 'navigation', url: frame.url() })
+        const url = sanitizeRecordedUrl(frame.url())
+        this.writeEvent({ type: 'navigation', url: url.value, urlRedacted: url.redacted || undefined })
         // Same as the toolbar: MAIN-world script dies on hard navigation.
         // Re-inject once the new document exists.
         page.evaluate(installClickRipple).catch(() => {})
@@ -702,9 +874,11 @@ export class ActionRecorder {
         if (this.state !== 'recording') {
           return
         }
+        const url = sanitizeRecordedUrl(download.url())
         this.writeEvent({
           type: 'download',
-          url: truncate(download.url(), 500),
+          url: truncate(url.value, 500),
+          urlRedacted: url.redacted || undefined,
           suggestedFilename: download.suggestedFilename(),
           pageUrl: safePageUrl(page),
         })
@@ -752,7 +926,7 @@ export class ActionRecorder {
     if (this.state !== 'recording') {
       return
     }
-    const codeText = sanitizeLocatorText(code.trim())
+    const rawCodeText = sanitizeLocatorText(code.trim())
     const selector = actionInContext.action.selector
       ? sanitizeLocatorText(actionInContext.action.selector)
       : undefined
@@ -760,7 +934,18 @@ export class ActionRecorder {
     const clickCount = typeof actionInContext.action.clickCount === 'number' ? actionInContext.action.clickCount : undefined
     const pageAlias = actionInContext.frame?.pageAlias
     const framePath = actionInContext.frame?.framePath?.length ? actionInContext.frame.framePath : undefined
-    const extras = extraActionFields(actionInContext.action)
+    const redactText = actionName === 'fill'
+    const actionUrl = actionInContext.action.url ? sanitizeRecordedUrl(actionInContext.action.url) : null
+    const codeText = (() => {
+      if (redactText) {
+        return redactFillCode(rawCodeText)
+      }
+      if (actionUrl?.redacted && actionInContext.action.url) {
+        return rawCodeText.replace(actionInContext.action.url, actionUrl.value)
+      }
+      return rawCodeText
+    })()
+    const extras = extraActionFields({ action: actionInContext.action, redactText })
     // actionUpdated = same fill / dblclick. Only edit if it is the same action.
     if (isUpdate) {
       const last = this.lastAction()
@@ -790,6 +975,7 @@ export class ActionRecorder {
       pageAlias,
       framePath,
       pageUrl: safePageUrl(page),
+      redacted: redactText || actionUrl?.redacted || undefined,
       ...extras,
     })
   }
@@ -910,28 +1096,59 @@ export class ActionRecorder {
     this.enqueueCapture(async () => {
       const response = failure ? null : await request.response().catch(() => null)
       const postData = request.postData()
+      const requestContentType = request.headers()['content-type'] || ''
+      const sanitizedUrl = sanitizeRecordedUrl(url)
+      const sanitizedPostData = postData
+        ? sanitizeRecordedBody({ body: postData, contentType: requestContentType, maxBytes: MAX_POST_DATA_BYTES })
+        : null
       // Capture textual xhr/fetch response bodies (truncated): they let the
       // agent reverse-engineer the site's API into typed clients or skills
       // that call the API directly instead of driving the UI
       const contentType = response?.headers()['content-type']
-      const responseBody: string | null = await (async () => {
+      const responseCapture = await (async (): Promise<{
+        body: ReturnType<typeof sanitizeRecordedBody> | null
+        omitted?: 'encoded' | 'too-large' | 'unknown-size' | 'unavailable'
+      }> => {
         if (!response || resourceType === 'document' || !contentType || !TEXTUAL_CONTENT_TYPE.test(contentType)) {
-          return null
+          return { body: null }
+        }
+        const headers = response.headers()
+        const contentEncoding = headers['content-encoding']
+        if (contentEncoding && contentEncoding !== 'identity') {
+          return { body: null, omitted: 'encoded' }
+        }
+        const sizes = await request.sizes().catch(() => null)
+        if (!sizes || !Number.isSafeInteger(sizes.responseBodySize) || sizes.responseBodySize < 0) {
+          return { body: null, omitted: 'unknown-size' }
+        }
+        if (sizes.responseBodySize > MAX_RESPONSE_BODY_BYTES) {
+          return { body: null, omitted: 'too-large' }
         }
         const body = await response.text().catch(() => null)
-        return body ? truncate(body, MAX_RESPONSE_BODY_CHARS) : null
+        if (!body) {
+          return { body: null, omitted: 'unavailable' }
+        }
+        return {
+          body: sanitizeRecordedBody({ body, contentType, maxBytes: MAX_RESPONSE_BODY_BYTES }),
+        }
       })()
       this.writeEvent(
         {
           type: 'network',
           method: request.method(),
-          url: truncate(url, 500),
+          url: truncate(sanitizedUrl.value, 500),
+          urlRedacted: sanitizedUrl.redacted || undefined,
           resourceType,
           status: response?.status(),
           contentType,
           failure: failure || undefined,
-          postData: postData ? truncate(postData, MAX_POST_DATA_CHARS) : undefined,
-          responseBody: responseBody || undefined,
+          postData: sanitizedPostData?.value || undefined,
+          postDataRedacted: sanitizedPostData?.redacted || undefined,
+          postDataTruncated: sanitizedPostData?.truncated || undefined,
+          responseBody: responseCapture.body?.value || undefined,
+          responseBodyRedacted: responseCapture.body?.redacted || undefined,
+          responseBodyTruncated: responseCapture.body?.truncated || undefined,
+          responseBodyOmitted: responseCapture.omitted,
         },
         observedAt,
       )
@@ -985,7 +1202,7 @@ function installClickRipple() {
 
 function safePageUrl(page: Page): string {
   try {
-    return page.url()
+    return sanitizeRecordedUrl(page.url()).value
   } catch {
     return ''
   }
@@ -999,10 +1216,24 @@ function sanitizeLocatorText(text: string): string {
 
 // Fields Playwright already puts on the action object. Copy them onto the
 // recorded event so agents do not have to parse `.code`.
-function extraActionFields(action: { [key: string]: unknown }): Record<string, unknown> {
-  const fields: Record<string, unknown> = {}
+function redactFillCode(code: string): string {
+  const fillIndex = code.lastIndexOf('.fill(')
+  if (fillIndex < 0) {
+    return code
+  }
+  return `${code.slice(0, fillIndex)}.fill('[redacted]');`
+}
+
+function extraActionFields({
+  action,
+  redactText,
+}: {
+  action: ActionInContext['action']
+  redactText: boolean
+}): ExtraActionFields {
+  const fields: ExtraActionFields = {}
   if (typeof action.text === 'string') {
-    fields.text = action.text
+    fields.text = redactText ? '[redacted]' : action.text
   }
   if (typeof action.key === 'string') {
     fields.key = action.key
