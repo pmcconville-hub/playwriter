@@ -508,6 +508,40 @@ describe('CDP Session Tests', () => {
     await page2.close()
   }, 60000)
 
+  it('should reject an explicit stale target instead of returning another target', async () => {
+    const browserContext = getBrowserContext()
+    const serviceWorker = await getExtensionServiceWorker(browserContext)
+
+    await serviceWorker.evaluate(async () => {
+      await globalThis.disconnectEverything()
+    })
+
+    const page = await browserContext.newPage()
+    await page.goto('https://example.com/')
+    await page.bringToFront()
+    await serviceWorker.evaluate(async () => {
+      await globalThis.toggleExtensionForActiveTab()
+    })
+
+    const browser = await chromium.connectOverCDP(getCdpUrl({ port: TEST_PORT }))
+    const connectedPage = browser
+      .contexts()[0]
+      .pages()
+      .find((candidatePage) => {
+        return candidatePage.url() === 'https://example.com/'
+      })
+    expect(connectedPage).toBeDefined()
+
+    const cdpSession = await getCDPSessionForPage({ page: connectedPage! })
+    await expect(cdpSession.send('Target.getTargetInfo', { targetId: 'stale-target-id' })).rejects.toThrow(
+      'Target not found: stale-target-id',
+    )
+
+    await cdpSession.detach()
+    await browser.close()
+    await page.close()
+  }, 60000)
+
   it('should create CDP session for page after navigation', async () => {
     const browserContext = getBrowserContext()
     const serviceWorker = await getExtensionServiceWorker(browserContext)

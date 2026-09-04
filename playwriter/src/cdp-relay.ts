@@ -769,6 +769,7 @@ export async function startPlayWriterCDPRelayServer({
               return { targetInfo: target.targetInfo }
             }
           }
+          throw new Error(`Target not found: ${targetId}`)
         }
 
         if (sessionId) {
@@ -776,8 +777,11 @@ export async function startPlayWriterCDPRelayServer({
           if (target) {
             return { targetInfo: target.targetInfo }
           }
+          throw new Error(`Target session not found: ${sessionId}`)
         }
 
+        // Playwright uses an identity-free request as a synchronization barrier
+        // after Target.setAutoAttach, so it still needs any current root target.
         const firstTarget = Array.from(connectedTargets.values())[0]
         return { targetInfo: firstTarget?.targetInfo }
       }
