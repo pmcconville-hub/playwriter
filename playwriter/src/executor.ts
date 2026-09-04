@@ -43,8 +43,6 @@ import { type GhostCursorClientOptions } from './ghost-cursor.js'
 import { GhostCursorController } from './ghost-cursor-controller.js'
 import { createCloudScope } from './cloud-scope.js'
 import type { CloudAuth } from './cloud-client.js'
-
-
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
@@ -458,6 +456,7 @@ export class PlaywrightExecutor {
   private pageLogCursor: Map<Page, number> = new Map()
   private lastSnapshots: WeakMap<Page, Map<string, string>> = new WeakMap()
   private lastRefToLocator: WeakMap<Page, Map<string, string>> = new WeakMap()
+  private pageDocumentGenerations: WeakMap<Page, number> = new WeakMap()
   private outputEvents: OutputEvent[] = []
   private nextOutputEventId = 0
   private lastDeliveredOutputEventId = 0
@@ -470,6 +469,9 @@ export class PlaywrightExecutor {
   private activeOutputScopes = new Set<OutputScope>()
   private pagesWithListeners = new WeakSet<Page>()
   private suppressPageCloseWarnings = false
+  private operationTail: Promise<void> = Promise.resolve()
+  private disposing = false
+  private disposePromise: Promise<void> | null = null
 
   private scopedFs: ScopedFS
   private sandboxedRequire: NodeRequire
@@ -592,8 +594,17 @@ export class PlaywrightExecutor {
     this.logger.log('Proxy bandwidth acceleration enabled: blocking raster images')
   }
 
-  private clearUserState() {
-    Object.keys(this.userState).forEach((key) => delete this.userState[key])
+  private clearExecutionState() {
+    this.userState = {}
+    this.browserLogs = new Map()
+    this.pageLogCursor = new Map()
+    this.lastSnapshots = new WeakMap()
+    this.lastRefToLocator = new WeakMap()
+    this.pageDocumentGenerations = new WeakMap()
+    this.outputEvents = []
+    this.nextOutputEventId = 0
+    this.lastDeliveredOutputEventId = 0
+    this.activeOutputScopes.clear()
   }
 
   private clearConnectionState() {
@@ -601,6 +612,25 @@ export class PlaywrightExecutor {
     this.browser = null
     this.page = null
     this.context = null
+  }
+
+  private runExclusive<T>({
+    operation,
+    allowDuringDispose = false,
+  }: {
+    operation: () => Promise<T>
+    allowDuringDispose?: boolean
+  }): Promise<T> {
+    if (this.disposing && !allowDuringDispose) {
+      return Promise.reject(new Error('Session is being deleted'))
+    }
+
+    const result = this.operationTail.then(operation, operation)
+    this.operationTail = result.then(
+      () => {},
+      () => {},
+    )
+    return result
   }
 
   enqueueWarning(message: string) {
@@ -693,9 +723,21 @@ export class PlaywrightExecutor {
     this.setupPageConsoleListener(page)
     this.setupNewPageLogging(page)
     this.ghostCursorController.attachToPage({ page })
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame()) {
+        this.invalidateSnapshotState(page)
+      }
+    })
     page.on('close', () => {
+      this.invalidateSnapshotState(page)
       this.ghostCursorController.detachFromPage({ page })
     })
+  }
+
+  private invalidateSnapshotState(page: Page) {
+    this.lastSnapshots.delete(page)
+    this.lastRefToLocator.delete(page)
+    this.pageDocumentGenerations.set(page, (this.pageDocumentGenerations.get(page) || 0) + 1)
   }
 
   private setupPageCloseDetection(page: Page) {
@@ -1048,32 +1090,20 @@ export class PlaywrightExecutor {
       PlaywrightExecutor._headlessExecutors.add(this)
       return { browser, page, context }
     } catch (e) {
-      // Clean up the partially created context so it doesn't leak on the
-      // long-lived shared browser.
       await context.close().catch(() => {})
       throw e
     }
   }
 
-  /** Shared headless browser instance across all headless sessions.
-   *  Uses a launch promise to prevent concurrent first-session races from
-   *  spawning multiple browsers. The disconnect handler is registered once
-   *  at launch time and clears both statics so the next session relaunches. */
   private static _sharedHeadlessBrowser: Browser | null = null
   private static _sharedHeadlessBrowserPromise: Promise<Browser> | null = null
-  /** Active headless executors sharing the browser. Using a Set instead of a
-   *  counter makes tracking idempotent: reset() re-adds the same executor (no-op),
-   *  and concurrent deletes can't double-decrement. When the set empties after
-   *  a session delete, the shared browser is auto-closed. */
   private static _headlessExecutors = new Set<PlaywrightExecutor>()
 
   private static async getOrLaunchHeadlessBrowser(): Promise<Browser> {
-    // Check the cached browser is actually alive (not just non-null after a crash)
     if (PlaywrightExecutor._sharedHeadlessBrowser?.isConnected()) {
       return PlaywrightExecutor._sharedHeadlessBrowser
     }
 
-    // Deduplicate concurrent launches: second caller awaits the first's promise
     if (PlaywrightExecutor._sharedHeadlessBrowserPromise) {
       return PlaywrightExecutor._sharedHeadlessBrowserPromise
     }
@@ -1088,10 +1118,6 @@ export class PlaywrightExecutor {
         executablePath,
       })
 
-      // Single handler registered once per browser lifetime.
-      // Only clears statics if this is still the current shared browser;
-      // prevents an old browser's disconnect from wiping state for a newer one
-      // (race: new session launches while old browser.close() is in progress).
       browser.on('disconnected', () => {
         if (PlaywrightExecutor._sharedHeadlessBrowser !== browser) {
           return
@@ -1102,9 +1128,6 @@ export class PlaywrightExecutor {
       })
 
       PlaywrightExecutor._sharedHeadlessBrowser = browser
-      // Clear the promise now that the browser is cached; future callers
-      // use _sharedHeadlessBrowser directly. Concurrent waiters already
-      // hold a reference to launchPromise so they still resolve correctly.
       PlaywrightExecutor._sharedHeadlessBrowserPromise = null
       return browser
     })()
@@ -1118,9 +1141,6 @@ export class PlaywrightExecutor {
     }
   }
 
-  /** Close the headless context for this session (called on session delete).
-   *  When the last headless executor is removed, the shared browser is also
-   *  closed automatically so the Chrome process doesn't linger. */
   async closeHeadlessContext(): Promise<void> {
     if (!this.isHeadlessMode()) {
       return
@@ -1140,15 +1160,9 @@ export class PlaywrightExecutor {
     }
   }
 
-  /** Close the shared headless browser (called on relay shutdown or when last
-   *  session is deleted). Nulls statics before awaiting close so concurrent
-   *  callers of getOrLaunchHeadlessBrowser() launch a fresh browser instead
-   *  of reusing one that is mid-shutdown. */
   static async closeSharedHeadlessBrowser(): Promise<void> {
     const browser = PlaywrightExecutor._sharedHeadlessBrowser
     if (browser) {
-      // Detach from statics first so new sessions don't reuse a dying browser.
-      // The disconnect handler checks identity, so it becomes a no-op for this browser.
       PlaywrightExecutor._sharedHeadlessBrowser = null
       PlaywrightExecutor._sharedHeadlessBrowserPromise = null
       await browser.close().catch(() => {})
@@ -1156,8 +1170,7 @@ export class PlaywrightExecutor {
   }
 
   private async ensureConnection(): Promise<{ browser: Browser; page: Page }> {
-    // In headless mode, also check the shared browser is still alive.
-    // After a crash, isConnected() returns false and we need to reconnect.
+    // In headless mode, check that this session's browser is still alive.
     const browserAlive = this.isHeadlessMode() ? this.browser?.isConnected() : true
     if (this.isConnected && this.browser && this.page && browserAlive) {
       return { browser: this.browser, page: this.page }
@@ -1184,9 +1197,13 @@ export class PlaywrightExecutor {
 
   /** Used by the action recorder (`playwriter recorder`) to attach
    *  context-level instrumentation. Connects to the browser if needed. */
-  async getBrowserContext(): Promise<BrowserContext> {
-    const { page } = await this.ensureConnection()
-    return this.context || page.context()
+  withBrowserContext<T>({ operation }: { operation: (context: BrowserContext) => Promise<T> }): Promise<T> {
+    return this.runExclusive({
+      operation: async () => {
+        const { page } = await this.ensureConnection()
+        return operation(this.context || page.context())
+      },
+    })
   }
 
   private async getCurrentPage(timeout = 10000): Promise<Page> {
@@ -1216,11 +1233,13 @@ export class PlaywrightExecutor {
   }
 
   async reset(): Promise<{ page: Page; context: BrowserContext }> {
+    return this.runExclusive({ operation: () => this.resetInternal() })
+  }
+
+  private async resetInternal(): Promise<{ page: Page; context: BrowserContext }> {
     this.suppressPageCloseWarnings = true
     try {
       if (this.isHeadlessMode()) {
-        // In headless mode, only close this session's context, not the shared browser.
-        // Other headless sessions share the same browser instance.
         if (this.context) {
           await this.context.close().catch((e) => {
             this.logger.error('Error closing context:', e)
@@ -1236,7 +1255,7 @@ export class PlaywrightExecutor {
     }
 
     this.clearConnectionState()
-    this.clearUserState()
+    this.clearExecutionState()
 
     const { browser, page, context } = await this.connectToBrowser()
 
@@ -1249,6 +1268,10 @@ export class PlaywrightExecutor {
   }
 
   async execute(code: string, timeout = 10000): Promise<ExecuteResult> {
+    return this.runExclusive({ operation: () => this.executeInternal(code, timeout) })
+  }
+
+  private async executeInternal(code: string, timeout: number): Promise<ExecuteResult> {
     const consoleLogs: Array<{ method: string; args: any[] }> = []
     const outputScope = this.beginOutputScope()
 
@@ -1347,6 +1370,7 @@ export class PlaywrightExecutor {
           trackedPageCount: context.pages().length,
         })
         const withPageUrl = (body: string) => `URL: ${resolvedPage.url()}\n${body}`
+        const documentGeneration = this.pageDocumentGenerations.get(resolvedPage) || 0
 
         // Use new in-page implementation via getAriaSnapshot
         const {
@@ -1360,6 +1384,9 @@ export class PlaywrightExecutor {
           interactiveOnly,
         })
         const snapshotStr = rawSnapshot.toWellFormed?.() ?? rawSnapshot
+        if ((this.pageDocumentGenerations.get(resolvedPage) || 0) !== documentGeneration) {
+          throw new Error('Page navigated while the accessibility snapshot was being captured. Try again.')
+        }
 
         const refToLocator = new Map<string, string>()
         for (const entry of refs) {
@@ -1373,7 +1400,8 @@ export class PlaywrightExecutor {
         const shouldCacheSnapshot = !frame
         // Cache keyed by locator selector so full-page and locator-scoped snapshots
         // don't pollute each other's diff baselines
-        const snapshotKey = locator ? `locator:${locator.selector()}` : 'page'
+        const detail = interactiveOnly ? 'interactive' : 'all'
+        const snapshotKey = locator ? `locator:${locator.selector()}:${detail}` : `page:${detail}`
         let pageSnapshots = this.lastSnapshots.get(resolvedPage)
         if (!pageSnapshots) {
           pageSnapshots = new Map()
@@ -1876,15 +1904,16 @@ export class PlaywrightExecutor {
               const cloudScope = createCloudScope({ defaultPage: page, auth: this.cloudAuth })
               return {
                 browsers: cloudScope.browsers,
-                sendCookies: (opts: Parameters<typeof cloudScope.sendCookies>[0]) =>
-                  cloudScope.sendCookies({
+                sendCookies: (opts: Parameters<typeof cloudScope.sendCookies>[0]) => {
+                  return cloudScope.sendCookies({
                     ...opts,
                     from: resolveSandboxPage({
                       page: opts.from,
                       defaultPage: page,
                       trackedPageCount: context.pages().length,
                     }),
-                  }),
+                  })
+                },
               }
             })()
           : undefined,
@@ -1895,10 +1924,11 @@ export class PlaywrightExecutor {
         cancelRecording: recordingApi.cancel,
         createDemoVideo,
         resetPlaywright: async () => {
-          const { page: newPage, context: newContext } = await self.reset()
+          const { page: newPage, context: newContext } = await self.resetInternal()
           vmContextObj.page = newPage
           vmContextObj.context = newContext
           vmContextObj.browser = self.browser
+          vmContextObj.state = self.userState
           return { page: newPage, context: newContext }
         },
         require: this.sandboxedRequire,
@@ -2044,8 +2074,9 @@ export class PlaywrightExecutor {
       return { text: finalText, images, screenshots, isError: false }
     } catch (error: any) {
       const errorStack = error.stack || error.message
-      const isTimeoutError =
-        error instanceof CodeExecutionTimeoutError || error?.name === 'TimeoutError' || error?.name === 'AbortError'
+      const isExecutionTimeout =
+        error instanceof CodeExecutionTimeoutError || error?.code === 'ERR_SCRIPT_EXECUTION_TIMEOUT'
+      const isTimeoutError = isExecutionTimeout || error?.name === 'TimeoutError' || error?.name === 'AbortError'
 
       this.logger.error('Error in execute:', errorStack)
 
@@ -2072,6 +2103,29 @@ export class PlaywrightExecutor {
         isError: true,
       }
     }
+  }
+
+  dispose(): Promise<void> {
+    if (this.disposePromise) {
+      return this.disposePromise
+    }
+
+    this.disposing = true
+    this.disposePromise = this.runExclusive({
+      allowDuringDispose: true,
+      operation: async () => {
+        if (this.isHeadlessMode()) {
+          await this.closeHeadlessContext()
+        } else {
+          await this.browser?.close().catch((error) => {
+            this.logger.error('Error disconnecting deleted session:', error)
+          })
+          this.clearConnectionState()
+        }
+        this.clearExecutionState()
+      },
+    })
+    return this.disposePromise
   }
 
   // When extension is connected but has no pages, auto-create unless PLAYWRITER_AUTO_ENABLE=false disables it.
@@ -2202,8 +2256,24 @@ export class ExecutorManager {
     return executor
   }
 
-  deleteExecutor(sessionId: string): boolean {
-    return this.executors.delete(sessionId)
+  async deleteExecutor(sessionId: string): Promise<boolean> {
+    const executor = this.executors.get(sessionId)
+    if (!executor) {
+      return false
+    }
+    this.executors.delete(sessionId)
+    await executor.dispose()
+    return true
+  }
+
+  async disposeAll(): Promise<void> {
+    const executors = [...this.executors.values()]
+    this.executors.clear()
+    await Promise.all(
+      executors.map((executor) => {
+        return executor.dispose()
+      }),
+    )
   }
 
   getSession(sessionId: string): PlaywrightExecutor | null {

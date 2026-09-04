@@ -4,6 +4,7 @@ import { chromium } from '@xmorse/playwright-core'
 import { getCDPSessionForPage } from './cdp-session.js'
 import { getCdpUrl, LOG_CDP_FILE_PATH } from './utils.js'
 import fs from 'node:fs'
+import path from 'node:path'
 import {
   setupTestContext,
   cleanupTestContext,
@@ -66,6 +67,33 @@ describe('Relay Core Tests', () => {
 
     await new Promise((r) => {
       setTimeout(r, 100)
+    })
+  }
+
+  const createCliSession = async (): Promise<string> => {
+    const response = await fetch(`${SERVER_URL}/cli/session/new`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({}),
+    })
+    const result = (await response.json()) as { id: string }
+    return result.id
+  }
+
+  const executeCli = async ({ sessionId, code, timeout }: { sessionId: string; code: string; timeout?: number }) => {
+    const response = await fetch(`${SERVER_URL}/cli/execute`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ sessionId, code, timeout }),
+    })
+    return (await response.json()) as { text: string; isError: boolean }
+  }
+
+  const deleteCliSession = async (sessionId: string): Promise<void> => {
+    await fetch(`${SERVER_URL}/cli/session/delete`, {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ sessionId }),
     })
   }
 
@@ -899,29 +927,102 @@ describe('Relay Core Tests', () => {
     })
   })
 
+  it('serializes executions within one CLI session', async () => {
+    await ensureConnectedTabForExecute()
+    const sessionId = await createCliSession()
+    const signalPath = path.join(process.cwd(), 'tmp', `execution-started-${sessionId}`)
+    fs.mkdirSync(path.dirname(signalPath), { recursive: true })
+    fs.rmSync(signalPath, { force: true })
+
+    try {
+      const first = executeCli({
+        sessionId,
+        code: `
+          state.order = ['first-start']
+          require('node:fs').writeFileSync(${JSON.stringify(signalPath)}, 'started')
+          await new Promise((resolve) => setTimeout(resolve, 150))
+          state.order.push('first-end')
+        `,
+      })
+      await withTimeout({
+        promise: (async () => {
+          while (!fs.existsSync(signalPath)) {
+            await new Promise<void>((resolve) => {
+              setTimeout(resolve, 10)
+            })
+          }
+        })(),
+        timeoutMs: 2000,
+        errorMessage: 'First session execution did not start',
+      })
+      const second = executeCli({ sessionId, code: `state.order.push('second'); return state.order` })
+
+      const [firstResult, secondResult] = await Promise.all([first, second])
+      expect(firstResult.isError).toBe(false)
+      expect(secondResult).toMatchObject({
+        isError: false,
+        text: expect.stringContaining("[ 'first-start', 'first-end', 'second' ]"),
+      })
+    } finally {
+      fs.rmSync(signalPath, { force: true })
+      await deleteCliSession(sessionId)
+    }
+  })
+
+  it('invalidates snapshot refs and diff state after navigation', async () => {
+    await ensureConnectedTabForExecute()
+    const pageServer = await createSimpleServer({
+      routes: {
+        '/old': '<!doctype html><button>Old page</button>',
+        '/new': '<!doctype html><button>New page</button>',
+      },
+    })
+    const sessionId = await createCliSession()
+
+    try {
+      const first = await executeCli({
+        sessionId,
+        code: `
+        state.page = await context.newPage()
+        await state.page.goto('${pageServer.baseUrl}/old')
+        await snapshot({ page: state.page })
+        state.oldRef = Array.from({ length: 20 }, (_, index) => 'e' + index).find((ref) => {
+          return refToLocator({ ref, page: state.page })?.includes('Old page')
+        })
+        return state.oldRef
+      `,
+      })
+      expect(first.text).toContain('[return value] e')
+      expect(first.isError).toBe(false)
+
+      const second = await executeCli({
+        sessionId,
+        code: `
+        await state.page.goto('${pageServer.baseUrl}/new')
+        const staleLocator = refToLocator({ ref: state.oldRef, page: state.page })
+        const nextSnapshot = await snapshot({ page: state.page })
+        return { staleLocator, nextSnapshot }
+      `,
+      })
+      expect(second).toMatchObject({
+        isError: false,
+        text: expect.stringContaining('staleLocator: null'),
+      })
+      expect(second.text).toContain('New page')
+      expect(second.text).not.toContain('Old page')
+      expect(second.text).not.toContain('snapshot diff')
+    } finally {
+      await executeCli({ sessionId, code: `if (state.page && !state.page.isClosed()) await state.page.close()` })
+      await deleteCliSession(sessionId)
+      await pageServer.close()
+    }
+  })
+
   it('should include uncaught errors from only the CLI session tracked page', async () => {
     const browserContext = getBrowserContext()
     const serviceWorker = await getExtensionServiceWorker(browserContext)
     const pageA = await browserContext.newPage()
     const pageB = await browserContext.newPage()
-
-    const createCliSession = async (): Promise<string> => {
-      const response = await fetch(`${SERVER_URL}/cli/session/new`, {
-        method: 'POST',
-        headers: JSON_HEADERS,
-        body: JSON.stringify({}),
-      })
-      const result = (await response.json()) as { id: string }
-      return result.id
-    }
-    const executeCli = async ({ sessionId, code }: { sessionId: string; code: string }) => {
-      const response = await fetch(`${SERVER_URL}/cli/execute`, {
-        method: 'POST',
-        headers: JSON_HEADERS,
-        body: JSON.stringify({ sessionId, code }),
-      })
-      return (await response.json()) as { text: string; isError: boolean }
-    }
 
     let sessionA = ''
     let sessionB = ''
@@ -973,11 +1074,7 @@ describe('Relay Core Tests', () => {
       await Promise.all([pageA.close(), pageB.close()])
       await Promise.all(
         [sessionA, sessionB].filter(Boolean).map(async (sessionId) => {
-          await fetch(`${SERVER_URL}/cli/session/delete`, {
-            method: 'POST',
-            headers: JSON_HEADERS,
-            body: JSON.stringify({ sessionId }),
-          })
+          await deleteCliSession(sessionId)
         }),
       )
     }

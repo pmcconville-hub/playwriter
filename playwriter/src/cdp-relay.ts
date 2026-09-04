@@ -2383,7 +2383,7 @@ export async function startPlayWriterCDPRelayServer({
       try {
         await executor.reset()
       } catch (error) {
-        manager.deleteExecutor(sessionId)
+        await manager.deleteExecutor(sessionId)
         return c.json({ error: error instanceof Error ? error.message : String(error) }, 500)
       }
       const metadata = executor.getSessionMetadata()
@@ -2536,15 +2536,7 @@ export async function startPlayWriterCDPRelayServer({
       }
 
       const manager = await getExecutorManager()
-      const executor = manager.getSession(sessionId)
-
-      // Close headless context before deleting to prevent context/page leaks
-      // on the shared headless browser. Only affects headless sessions.
-      if (executor) {
-        await executor.closeHeadlessContext()
-      }
-
-      const deleted = manager.deleteExecutor(sessionId)
+      const deleted = await manager.deleteExecutor(sessionId)
 
       if (!deleted) {
         return c.json({ error: `Session ${sessionId} not found` }, 404)
@@ -2722,8 +2714,11 @@ export async function startPlayWriterCDPRelayServer({
       if (!executor) {
         return c.json({ error: `Session ${sessionId} not found. Run 'playwriter session new' first.` }, 404)
       }
-      const context = await executor.getBrowserContext()
-      const recorder = await recordingManager.start({ context, sessionId })
+      const recorder = await executor.withBrowserContext({
+        operation: async (context) => {
+          return recordingManager.start({ context, sessionId })
+        },
+      })
       return c.json({ recordingId: recorder.recordingId, sessionId, file: recorder.filePath })
     } catch (error: any) {
       logger?.error('Record start endpoint error:', error)
@@ -2978,6 +2973,15 @@ export async function startPlayWriterCDPRelayServer({
 
     if (idleSessions.length > 0) {
       for (const [sessionId, tracking] of idleSessions) {
+        const currentTracking = cloudSessionTracking.get(sessionId)
+        const expired = Boolean(currentTracking?.timeoutAt && currentTracking.timeoutAt <= Date.now())
+        if (
+          currentTracking !== tracking ||
+          currentTracking.activeExecutions > 0 ||
+          (!expired && Date.now() - currentTracking.lastActivityAt <= CLOUD_IDLE_TIMEOUT_MS)
+        ) {
+          continue
+        }
         logger?.log(
           pc.yellow(`[Cloud] Stopping idle relay session ${sessionId} (idle > 10 min)`),
         )
@@ -2985,7 +2989,7 @@ export async function startPlayWriterCDPRelayServer({
         // Only stop the VM when this is the last relay session for it.
         const shouldStopVm = !hasOtherCloudReferences(sessionId, tracking.cloudSessionId)
         cloudSessionTracking.delete(sessionId)
-        executorManager?.deleteExecutor(sessionId)
+        await executorManager?.deleteExecutor(sessionId)
         if (shouldStopVm) {
           disconnectCloudVm(tracking)
         }

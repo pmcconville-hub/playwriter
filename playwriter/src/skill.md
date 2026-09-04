@@ -224,6 +224,8 @@ playwriter -s 1 -e '...'
 
 PLAYWRITER_EXEC_TIMEOUT is the default fallback. --timeout overrides it, and MCP clients can set the env var or pass a per-call timeout.
 
+Calls in one session run in order.
+
 **File-based execution:** for complex multi-line code, write a `.js` file and run it with `-f` instead of fighting with bash quoting:
 
 ```bash
@@ -572,7 +574,7 @@ await state.page.keyboard.press('Meta+v') // always verify with screenshot!
 ```
 
 **3. Using stale locators from old snapshots**
-Locators (especially ones with `>> nth=`) can change when the page updates. Always get a fresh snapshot before clicking, then immediately use locators from that output:
+Locators (especially ones with `>> nth=`) can change when the page updates. Main-frame navigation invalidates all refs and diff baselines for that page. Always get a fresh snapshot before clicking, then immediately use locators from that output:
 
 ```js
 await snapshot({ page: state.page, showDiffSinceLastCall: true })
