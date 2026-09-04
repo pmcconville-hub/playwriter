@@ -31,10 +31,10 @@ describe('remote-control', () => {
     ).toEqual([true, false, false])
   })
 
-  test('tunnel ids are unguessable and accepted by the traforo worker', () => {
+  test('tunnel ids are unguessable and accepted by the Playwriter worker', () => {
     const id = generateTunnelId()
     expect(generateTunnelId()).not.toBe(id)
-    // Must match the id charset and length the traforo worker accepts.
+    // Must match the id charset and length the Playwriter worker accepts.
     expect(id).toMatch(/^[a-z0-9-]{1,63}$/)
     expect(id).toMatch(/^[0-9a-f]{32}$/)
   })
@@ -171,7 +171,7 @@ describe('remote-control', () => {
     )
   })
 
-  test('retries the public dial sooner after traforo 4008 than after a drop', () => {
+  test('retries the public dial sooner after offline close 4008 than after a drop', () => {
     expect(
       [
         getRemoteDialRetryMs(TRAFORO_TUNNEL_OFFLINE_CLOSE_CODE),

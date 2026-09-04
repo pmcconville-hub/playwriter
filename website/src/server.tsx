@@ -17,7 +17,10 @@ import { cloudApp } from './cloud-api.ts'
 import { stripeWebhookApp } from './stripe-webhook.ts'
 import { approveDevice, denyDevice, createApiKey, revokeApiKey } from './actions.tsx'
 import { enforceProxyBudgets } from './scheduled.ts'
+import { routeRemoteControlRequest } from './remote-control-tunnel.ts'
 import playwriterSkillMd from '../../skills/playwriter/SKILL.md?raw'
+
+export { RemoteControlTunnel } from './remote-control-tunnel.ts'
 
 const PLAYWRITER_SKILL_DESCRIPTION =
   "Control the user own Chrome browser via Playwriter extension with Playwright code snippets in a stateful local js sandbox. Use this over other Playwright MCPs to automate the browser — it connects to the user's existing Chrome instead of launching a new one. Use this cli for navigating JS-heavy websites (Instagram, Twitter, cookie/login walls, lazy-loaded UIs) instead of webfetch/curl. ALWAYS load this skill before using any playwriter commands"
@@ -361,7 +364,11 @@ declare module 'spiceflow/react' {
 }
 
 export default {
-  async fetch(request: Request): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const remoteControlResponse = await routeRemoteControlRequest({ request, env })
+    if (remoteControlResponse) {
+      return remoteControlResponse
+    }
     return app.handle(request)
   },
   async scheduled(_controller: ScheduledController, _env: Env, ctx: ExecutionContext) {

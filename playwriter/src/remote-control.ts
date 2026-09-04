@@ -1,12 +1,12 @@
 /**
- * Remote control: share a browser tab with a remote agent through a traforo tunnel.
+ * Remote control: share a browser tab through Playwriter's Cloudflare tunnel.
  *
- * The extension acts as a traforo "upstream" client (the thing being exposed).
+ * The extension acts as the "upstream" client (the thing being exposed).
  * A client dials wss://{tunnelId}-tunnel.playwriter.dev/extension. That host is a
- * Cloudflare tunnel worker which forwards the connection to the extension, and the
- * extension treats it as a normal relay connection speaking the exact same extension
- * WS protocol. Every remote-control host is under playwriter.dev, so sharing a tab
- * never sends traffic to a domain the user has not already trusted.
+ * Playwriter-owned Durable Object which forwards the connection to the extension.
+ * The extension treats it as a normal relay connection speaking the exact same
+ * extension WS protocol. Every remote-control host is under playwriter.dev, so
+ * sharing a tab never sends traffic to a domain the user has not already trusted.
  *
  * Agents connect with the tunnel id, not a viewer URL:
  *
@@ -36,9 +36,8 @@ export function shouldDropRemoteTunnelFrame({
 }
 
 // ---------------------------------------------------------------------------
-// Traforo tunnel protocol (JSON over one WebSocket).
-// Mirror of the message types in https://github.com/remorses/traforo src/types.ts.
-// Only the subset the extension upstream client needs.
+// Remote tunnel protocol (JSON over one WebSocket). This is the small Trafóro wire
+// subset retained for extension compatibility; the worker lives in website/src.
 // ---------------------------------------------------------------------------
 
 export type TraforoHttpRequestMessage = {
@@ -92,7 +91,7 @@ export type TraforoDownstreamMessage =
 // URL helpers
 // ---------------------------------------------------------------------------
 
-/** 128 bits of entropy, 32 hex chars. Fits the traforo tunnel id charset (lowercase, <= 63). */
+/** 128 bits of entropy, 32 hex chars. Fits the tunnel host id charset. */
 export function generateTunnelId(): string {
   const bytes = new Uint8Array(16)
   globalThis.crypto.getRandomValues(bytes)
@@ -114,7 +113,7 @@ export function buildRemoteControlUrl({
   return `${baseUrl}${REMOTE_VIEWER_PATH}#${tunnelId}`
 }
 
-/** Origin traforo serves this tunnel from. */
+/** Origin Playwriter serves this tunnel from. */
 export function buildTunnelOrigin({
   tunnelId,
   baseDomain = REMOTE_TUNNEL_BASE_DOMAIN,
@@ -358,7 +357,7 @@ export function getRemoteExtensionMethodRejection(method: string): string | null
   return null
 }
 
-/** Traforo: no upstream connected. Node `ws` still fires `open` (HTTP 101) first. */
+/** No upstream connected. Node `ws` still fires `open` (HTTP 101) first. */
 export const TRAFORO_TUNNEL_OFFLINE_CLOSE_CODE = 4008
 
 /** Matches extension/src/remote-tunnel.ts RECONNECT_DELAY_MS. */

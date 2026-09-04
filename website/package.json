@@ -6,6 +6,7 @@
     "build": "vite build",
     "dev": "sigillo run -- vite --port 8044",
     "typecheck": "tsc",
+    "test": "vitest --run",
     "types": "wrangler types",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:preview": "echo \"D1 pre-migration timestamp: $(date +%s)\" && CI=1 wrangler d1 migrations apply DB --remote --env preview",
@@ -38,9 +39,11 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.1.2",
     "@types/node": "^25.9.5",
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
+    "vitest": "^4.1.11",
     "wrangler": "^4.127.1"
   }
 }
