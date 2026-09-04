@@ -263,8 +263,7 @@ async function ensureRelayServerImpl(options: EnsureRelayServerOptions = {}): Pr
     return
   }
 
-  // Don't restart if server version is higher than our version.
-  // This prevents older clients from killing a newer server.
+  // Do not let an older client replace a newer Playwriter relay.
   if (serverVersion !== null && compareVersions(serverVersion, VERSION) > 0) {
     return
   }
@@ -276,18 +275,14 @@ async function ensureRelayServerImpl(options: EnsureRelayServerOptions = {}): Pr
       )
       await killRelayServer({ port: RELAY_PORT })
     } else {
-      // Server is running but different version, just use it
       return
     }
   } else {
     const listeningPids = await getListeningPidsForPort({ port: RELAY_PORT }).catch(() => [])
     if (listeningPids.length > 0) {
-      // Something is on the port but /version didn't respond. It might be a
-      // relay that's still starting (race with another CLI/MCP instance).
-      // Poll /version briefly before deciding to kill it (issue #75).
+      // A competing relay may have bound the port before /version became ready.
       const foundVersion = await waitForRelayVersion({ port: RELAY_PORT })
       if (foundVersion) {
-        // A relay came up while we waited; use it
         if (foundVersion === VERSION || compareVersions(foundVersion, VERSION) > 0) {
           return
         }
@@ -300,7 +295,7 @@ async function ensureRelayServerImpl(options: EnsureRelayServerOptions = {}): Pr
       } else {
         logger?.log(
           pc.yellow(
-            `Port ${RELAY_PORT} is already in use (pid(s): ${listeningPids.join(', ')}). Attempting to stop the existing process...`,
+            `Port ${RELAY_PORT} is already in use (pid(s): ${listeningPids.join(', ')}). Stopping it so Playwriter can reclaim its relay port...`,
           ),
         )
       }
