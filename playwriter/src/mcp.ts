@@ -26,6 +26,7 @@ const require = createRequire(import.meta.url)
 
 // Single executor instance for MCP (created lazily)
 let executor: PlaywrightExecutor | null = null
+let executorPromise: Promise<PlaywrightExecutor> | null = null
 
 interface RemoteConfig {
   host: string
@@ -133,32 +134,41 @@ async function getOrCreateExecutor(): Promise<PlaywrightExecutor> {
   if (executor) {
     return executor
   }
+  if (executorPromise) {
+    return executorPromise
+  }
 
-  // Direct CDP mode takes priority over relay/remote
-  const directConfig = await getDirectCdpConfig()
-  if (directConfig) {
-    executor = new PlaywrightExecutor({
-      cdpConfig: directConfig,
+  executorPromise = (async () => {
+    // Direct CDP mode takes priority over relay/remote
+    const directConfig = await getDirectCdpConfig()
+    if (directConfig) {
+      return new PlaywrightExecutor({
+        cdpConfig: directConfig,
+        logger: mcpLogger,
+        cwd: process.cwd(),
+      })
+    }
+
+    const remote = getRemoteConfig()
+    if (!remote) {
+      await ensureRelayServerForMcp()
+    }
+
+    // Pass config instead of pre-generated URL so executor can generate unique URLs for each connection
+    const cdpConfig = remote || { port: RELAY_PORT }
+    return new PlaywrightExecutor({
+      cdpConfig,
       logger: mcpLogger,
       cwd: process.cwd(),
     })
+  })()
+
+  try {
+    executor = await executorPromise
     return executor
+  } finally {
+    executorPromise = null
   }
-
-  const remote = getRemoteConfig()
-  if (!remote) {
-    await ensureRelayServerForMcp()
-  }
-
-  // Pass config instead of pre-generated URL so executor can generate unique URLs for each connection
-  const cdpConfig = remote || { port: RELAY_PORT }
-  executor = new PlaywrightExecutor({
-    cdpConfig,
-    logger: mcpLogger,
-    cwd: process.cwd(),
-  })
-
-  return executor
 }
 
 async function checkRemoteServer({ host, port, token }: RemoteConfig): Promise<void> {
