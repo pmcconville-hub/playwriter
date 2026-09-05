@@ -33,8 +33,10 @@ export function getLocalExtensionStatuses(extensions: ExtensionStatus[]): Extens
 
 export async function getRelayServerVersion(port: number = RELAY_PORT): Promise<string | null> {
   try {
+    // 10s: a busy relay (many agents attaching tabs) can miss a 2s /version
+    // probe. null here is treated as "dead" and ensureRelayServer kills it.
     const response = await fetch(`http://127.0.0.1:${port}/version`, {
-      signal: AbortSignal.timeout(2000),
+      signal: AbortSignal.timeout(10_000),
     })
     if (!response.ok) {
       return null
@@ -53,7 +55,7 @@ export async function getRelayServerVersion(port: number = RELAY_PORT): Promise<
  */
 export async function waitForRelayVersion({
   port = RELAY_PORT,
-  timeoutMs = 2000,
+  timeoutMs = 10_000,
   intervalMs = 200,
 }: {
   port?: number
