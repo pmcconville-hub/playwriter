@@ -210,6 +210,39 @@ describe('addPlaywrightClient', () => {
   })
 })
 
+describe('updateClientsTabGroup', () => {
+  test('updates tab group only on clients of the given session', () => {
+    let state = emptyState()
+    state = relayState.addPlaywrightClient(state, {
+      id: 'c1',
+      extensionId: 'ext-1',
+      ws: fakeWs(),
+      sessionId: '1',
+      tabGroup: 'old-name',
+    })
+    state = relayState.addPlaywrightClient(state, {
+      id: 'c2',
+      extensionId: 'ext-1',
+      ws: fakeWs(),
+      sessionId: '2',
+      tabGroup: 'other',
+    })
+    state = relayState.addPlaywrightClient(state, { id: 'c3', extensionId: 'ext-1', ws: fakeWs() })
+
+    const after = relayState.updateClientsTabGroup(state, { sessionId: '1', tabGroup: 'new-name' })
+
+    expect(after.playwrightClients.get('c1')?.tabGroup).toBe('new-name')
+    expect(after.playwrightClients.get('c2')?.tabGroup).toBe('other')
+    expect(after.playwrightClients.get('c3')?.tabGroup).toBeUndefined()
+  })
+
+  test('no-op when nothing matches', () => {
+    const before = relayState.addPlaywrightClient(emptyState(), { id: 'c1', extensionId: null, ws: fakeWs() })
+    const after = relayState.updateClientsTabGroup(before, { sessionId: '9', tabGroup: 'x' })
+    expect(after).toBe(before)
+  })
+})
+
 describe('removePlaywrightClient', () => {
   test('removes client', () => {
     const before = relayState.addPlaywrightClient(emptyState(), { id: 'c1', extensionId: null, ws: fakeWs() })
