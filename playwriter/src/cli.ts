@@ -17,6 +17,7 @@ Buffer.prototype[util.inspect.custom] = function () {
 import { killPortProcess } from './kill-port.js'
 import { canEmitKittyGraphics, emitKittyImage } from './kitty-graphics.js'
 import { VERSION, LOG_FILE_PATH, LOG_CDP_FILE_PATH, parseRelayHost } from './utils.js'
+import { TAB_GROUP_ALL_COLORS, normalizeTabGroupColor } from './protocol.js'
 import {
   ensureRelayServer,
   RELAY_PORT,
@@ -398,9 +399,39 @@ cli
   .option('--custom-proxy <url>', 'Custom proxy for cloud browser (host:port or user:pass@host:port)')
   .option('--timeout <minutes>', 'Cloud browser timeout in minutes (1-240, default 60)')
   .option('--disable-proxy-bandwidth-acceleration', 'Allow loading images, video, and fonts when proxy is enabled (they are blocked by default to save proxy bandwidth)')
+  .option('--tab-group <name>', 'Tab group title for tabs this session creates (default "playwriter"). Lets each session keep its tabs in its own Chrome group')
+  .option('--tab-group-color <color>', 'Tab group color: grey, blue, red, yellow, green, pink, purple, cyan, orange (default derived from the group name)')
   .action(async (options) => {
     if (options.patchright) {
       process.env.PLAYWRITER_PATCHRIGHT = '1'
+    }
+
+    const tabGroup: string | undefined = (() => {
+      if (!options.tabGroup) {
+        return undefined
+      }
+      const normalized = String(options.tabGroup).trim()
+      if (!normalized) {
+        console.error('Error: --tab-group must be a non-empty name')
+        process.exit(1)
+      }
+      return normalized
+    })()
+    const tabGroupColor: string | undefined = (() => {
+      if (!options.tabGroupColor) {
+        return undefined
+      }
+      const normalized = normalizeTabGroupColor(options.tabGroupColor)
+      if (!normalized) {
+        console.error(`Error: --tab-group-color must be one of: ${TAB_GROUP_ALL_COLORS.join(', ')}`)
+        process.exit(1)
+      }
+      return normalized
+    })()
+    const warnTabGroupUnsupported = (mode: string) => {
+      if (tabGroup || tabGroupColor) {
+        console.error(pc.yellow(`Warning: --tab-group/--tab-group-color only apply to extension sessions, ignored for ${mode}.`))
+      }
     }
 
     const isLocal = !options.host && !process.env.PLAYWRITER_HOST
@@ -410,6 +441,7 @@ cli
     // local relay dials the tunnel, so later `playwriter -s N -e ...` calls need
     // no extra flags.
     if (options.remoteControl) {
+      warnTabGroupUnsupported('remote-control sessions')
       await ensureRelayForSessionCreation(isLocal)
       const serverUrl = await getServerUrl(options.host)
       try {
@@ -444,6 +476,7 @@ cli
 
     // --browser headless: launch headless Chrome via chromium.launch(), no extension
     if (options.browser === 'headless') {
+      warnTabGroupUnsupported('headless sessions')
       try {
         await ensureRelayForSessionCreation(isLocal)
         const serverUrl = await getServerUrl(options.host)
@@ -491,6 +524,7 @@ cli
 
     // If --direct with explicit endpoint, resolve it (handles host:port → ws://) then skip discovery
     if (directEndpoint) {
+      warnTabGroupUnsupported('direct CDP sessions')
       let cdpEndpoint: string
       try {
         cdpEndpoint = await resolveDirectInput(directEndpoint)
@@ -509,6 +543,7 @@ cli
 
     // If --direct with no endpoint, discover Chrome instances
     if (options.direct === '') {
+      warnTabGroupUnsupported('direct CDP sessions')
       if (!isLocal) {
         console.error('Error: --direct auto-discovery only works locally.')
         console.error('For remote relay, pass an explicit endpoint reachable from the relay host:')
@@ -672,15 +707,21 @@ cli
         const response = await fetch(`${serverUrl}/cli/session/new`, {
           method: 'POST',
           headers: buildAuthHeaders({ token: options.token, json: true }),
-          body: JSON.stringify({ extensionId, cwd, cloudAuth: getRelayCloudAuth() }),
+          body: JSON.stringify({ extensionId, cwd, cloudAuth: getRelayCloudAuth(), tabGroup, tabGroupColor }),
         })
         if (!response.ok) {
           const text = await response.text()
           console.error(`Error: ${response.status} ${text}`)
           process.exit(1)
         }
-        const result = (await response.json()) as { id: string; extensionId: string | null; warning?: string | null }
+        const result = (await response.json()) as {
+          id: string
+          extensionId: string | null
+          warning?: string | null
+          tabGroup?: string | null
+        }
         printSessionWarning(result)
+        warnIfTabGroupIgnored(tabGroup || tabGroupColor, result)
         printSessionCreated(`Session ${result.id} created. Use with: playwriter -s ${result.id} -e "..."`)
         printCloudTip()
       } catch (error: any) {
@@ -730,6 +771,7 @@ cli
       try {
         const serverUrl = await getServerUrl(options.host)
         if (selected.type === 'cloud') {
+          warnTabGroupUnsupported('cloud sessions')
           // Reuse existing running VM if selected, otherwise create new
           const result = selected.activeCloudSessionId
             ? await attachExistingCloudSession({
@@ -751,6 +793,7 @@ cli
             console.log(pc.dim(`Live view: ${result.liveUrl}`))
           }
         } else if (selected.type === 'direct') {
+          warnTabGroupUnsupported('direct CDP sessions')
           const result = await createDirectSession({ serverUrl, cdpEndpoint: selected.wsUrl!, browser: selected.browser, profiles: selected.profiles, token: options.token })
           printSessionWarning(result)
           printSessionCreated(`Session ${result.id} created (direct CDP). Use with: playwriter -s ${result.id} -e "..."`)
@@ -760,15 +803,22 @@ cli
           const response = await fetch(`${serverUrl}/cli/session/new`, {
             method: 'POST',
             headers: buildAuthHeaders({ token: options.token, json: true }),
-            body: JSON.stringify({ extensionId: selected.extensionId, cwd, cloudAuth: getRelayCloudAuth() }),
+            body: JSON.stringify({
+              extensionId: selected.extensionId,
+              cwd,
+              cloudAuth: getRelayCloudAuth(),
+              tabGroup,
+              tabGroupColor,
+            }),
           })
           if (!response.ok) {
             const text = await response.text()
             console.error(`Error: ${response.status} ${text}`)
             process.exit(1)
           }
-          const result = (await response.json()) as { id: string; warning?: string | null }
+          const result = (await response.json()) as { id: string; warning?: string | null; tabGroup?: string | null }
           printSessionWarning(result)
+          warnIfTabGroupIgnored(tabGroup || tabGroupColor, result)
           printSessionCreated(`Session ${result.id} created. Use with: playwriter -s ${result.id} -e "..."`)
           printCloudTip()
         }
@@ -789,6 +839,15 @@ cli
 async function ensureRelayForSessionCreation(isLocal: boolean): Promise<void> {
   if (isLocal) {
     await ensureRelayServer({ logger: console })
+  }
+}
+
+/** Old relays don't echo tabGroup from /cli/session/new — warn instead of silently ignoring the flag. */
+function warnIfTabGroupIgnored(requested: string | undefined, result: { tabGroup?: string | null }): void {
+  if (requested && result.tabGroup === undefined) {
+    console.error(
+      pc.yellow('Warning: the running relay does not support tab groups. Restart it (kill port 19988) after updating playwriter.'),
+    )
   }
 }
 
@@ -1172,6 +1231,7 @@ cli
       profile: { email: string; id: string } | null
       extensionId: string | null
       cwd: string | null
+      tabGroup?: string | null
     }> = []
 
     try {
@@ -1191,6 +1251,7 @@ cli
           profile: { email: string; id: string } | null
           extensionId: string | null
           cwd: string | null
+          tabGroup?: string | null
         }>
       }
       sessions = result.sessions
@@ -1208,6 +1269,7 @@ cli
     const browserWidth = Math.max(7, ...sessions.map((session) => (session.browser || 'Chrome').length))
     const profileWidth = Math.max(7, ...sessions.map((session) => (session.profile?.email || '').length || 1))
     const extensionWidth = Math.max(2, ...sessions.map((session) => (session.extensionId || '').length || 1))
+    const groupWidth = Math.max(5, ...sessions.map((session) => (session.tabGroup || '').length || 1))
     const cwdWidth = Math.max(3, ...sessions.map((session) => (session.cwd || '').length || 1))
     const stateWidth = Math.max(10, ...sessions.map((session) => session.stateKeys.join(', ').length || 1))
 
@@ -1220,11 +1282,15 @@ cli
         '  ' +
         'EXT'.padEnd(extensionWidth) +
         '  ' +
+        'GROUP'.padEnd(groupWidth) +
+        '  ' +
         'CWD'.padEnd(cwdWidth) +
         '  ' +
         'STATE KEYS',
     )
-    console.log('-'.repeat(idWidth + browserWidth + profileWidth + extensionWidth + cwdWidth + stateWidth + 10))
+    console.log(
+      '-'.repeat(idWidth + browserWidth + profileWidth + extensionWidth + groupWidth + cwdWidth + stateWidth + 12),
+    )
 
     for (const session of sessions) {
       const stateStr = session.stateKeys.length > 0 ? session.stateKeys.join(', ') : '-'
@@ -1238,6 +1304,8 @@ cli
           profileLabel.padEnd(profileWidth) +
           '  ' +
           (session.extensionId || '-').padEnd(extensionWidth) +
+          '  ' +
+          (session.tabGroup || '-').padEnd(groupWidth) +
           '  ' +
           cwdLabel.padEnd(cwdWidth) +
           '  ' +
@@ -1271,6 +1339,84 @@ cli
       }
 
       console.log(`Session ${sessionId} deleted.`)
+    } catch (error: any) {
+      console.error(`Error: ${error.message}`)
+      process.exit(1)
+    }
+  })
+
+cli
+  .command('session update <sessionId>', 'Update a session tab group: rename it (moves its tabs) and/or change its color')
+  .option('--tab-group <name>', 'New tab group title for the session')
+  .option('--tab-group-color <color>', 'New tab group color: grey, blue, red, yellow, green, pink, purple, cyan, orange')
+  .option('--host <host>', 'Remote relay server host')
+  .option('--token <token>', 'Authentication token (or use PLAYWRITER_TOKEN env var)')
+  .action(async (sessionId, options) => {
+    const tabGroup = options.tabGroup ? String(options.tabGroup).trim() : ''
+    const tabGroupColor: string = (() => {
+      if (!options.tabGroupColor) {
+        return ''
+      }
+      const normalized = normalizeTabGroupColor(options.tabGroupColor)
+      if (!normalized) {
+        console.error(`Error: --tab-group-color must be one of: ${TAB_GROUP_ALL_COLORS.join(', ')}`)
+        process.exit(1)
+      }
+      return normalized
+    })()
+    if (!tabGroup && !tabGroupColor) {
+      console.error('Error: pass --tab-group <name> and/or --tab-group-color <color>')
+      process.exit(1)
+    }
+
+    if (!options.host && !process.env.PLAYWRITER_HOST) {
+      await ensureRelayServer({ logger: console })
+    }
+    const serverUrl = await getServerUrl(options.host)
+
+    try {
+      const response = await fetch(`${serverUrl}/cli/session/update`, {
+        method: 'POST',
+        headers: buildAuthHeaders({ token: options.token, json: true }),
+        body: JSON.stringify({
+          sessionId,
+          tabGroup: tabGroup || undefined,
+          tabGroupColor: tabGroupColor || undefined,
+        }),
+      })
+
+      if (!response.ok) {
+        const text = await response.text()
+        const parsed = (() => {
+          try {
+            return JSON.parse(text) as { error?: string }
+          } catch {
+            return null
+          }
+        })()
+        if (response.status === 404 && !parsed?.error) {
+          // Old relays don't have /cli/session/update
+          console.error('Error: the running relay does not support session update. Restart it (kill port 19988) after updating playwriter.')
+          process.exit(1)
+        }
+        console.error(`Error: ${parsed?.error || `${response.status} ${text}`}`)
+        process.exit(1)
+      }
+
+      const result = (await response.json()) as {
+        success: boolean
+        tabGroup: string
+        tabGroupColor?: string
+        movedTabs: number
+        warning?: string
+      }
+      if (result.warning) {
+        console.error(pc.yellow(`Warning: ${result.warning}`))
+      }
+      const colorLabel = result.tabGroupColor ? `, color ${result.tabGroupColor}` : ''
+      console.log(
+        `Session ${sessionId} now uses tab group "${result.tabGroup}"${colorLabel} (${result.movedTabs} tab(s) updated).`,
+      )
     } catch (error: any) {
       console.error(`Error: ${error.message}`)
       process.exit(1)

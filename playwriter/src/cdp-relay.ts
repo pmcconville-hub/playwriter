@@ -17,6 +17,13 @@ import type {
   IsRecordingParams,
   StartStreamParams,
   StopStreamParams,
+  UpdateTabGroupResult,
+} from './protocol.js'
+import {
+  DEFAULT_TAB_GROUP_TITLE,
+  normalizeTabGroupColor,
+  normalizeTabGroupTitle,
+  type TabGroupColor,
 } from './protocol.js'
 import pc from 'picocolors'
 import util from 'node:util'
@@ -549,7 +556,10 @@ export async function startPlayWriterCDPRelayServer({
 
   // Auto-create an initial blank tab when no targets exist. Set
   // PLAYWRITER_AUTO_ENABLE=false to require manually enabled tabs instead.
-  async function maybeAutoCreateInitialTab(extensionId: string): Promise<void> {
+  async function maybeAutoCreateInitialTab(
+    extensionId: string,
+    options?: { tabGroup?: string; tabGroupKey?: string; tabGroupColor?: TabGroupColor },
+  ): Promise<void> {
     if (!shouldAutoEnablePlaywriter()) {
       return
     }
@@ -563,7 +573,15 @@ export async function startPlayWriterCDPRelayServer({
 
     try {
       logger?.log(pc.blue('Auto-creating initial tab for Playwright client'))
-      const result = (await sendToExtension({ extensionId, method: 'createInitialTab', timeout: 10000 })) as {
+      const result = (await sendToExtension({
+        extensionId,
+        method: 'createInitialTab',
+        timeout: 10000,
+        params:
+          options?.tabGroup || options?.tabGroupKey || options?.tabGroupColor
+            ? { tabGroup: options.tabGroup, tabGroupKey: options.tabGroupKey, tabGroupColor: options.tabGroupColor }
+            : undefined,
+      })) as {
         success: boolean
         tabId: number
         sessionId: string
@@ -680,16 +698,23 @@ export async function startPlayWriterCDPRelayServer({
     params,
     sessionId,
     source,
+    clientId,
   }: {
     extensionId: string | null
     method: CDPCommand['method'] | (string & {})
     params: CDPCommand['params']
     sessionId?: CDPCommand['sessionId']
     source?: CDPCommand['source']
+    /** Playwright client that sent this command — used to resolve its session's tab group */
+    clientId?: string
   }) {
     const conn = getExtensionConnection(extensionId)
     const connectedTargets = conn?.connectedTargets || new Map<string, relayState.ConnectedTarget>()
     const resolvedExtensionId = conn?.id || extensionId
+    const client = clientId ? store.getState().playwrightClients.get(clientId) : undefined
+    const clientTabGroup = client?.tabGroup
+    const clientSessionKey = client?.sessionId
+    const clientTabGroupColor = client?.tabGroupColor
     switch (method) {
       case 'Browser.getVersion': {
         return {
@@ -725,7 +750,11 @@ export async function startPlayWriterCDPRelayServer({
           break
         }
         if (conn?.inventoryReady) {
-          await maybeAutoCreateInitialTab(conn.id)
+          await maybeAutoCreateInitialTab(conn.id, {
+            tabGroup: clientTabGroup,
+            tabGroupKey: clientSessionKey,
+            tabGroupColor: clientTabGroupColor,
+          })
         }
         // Forward auto-attach so Chrome emits iframe Target.attachedToTarget events.
         // Playwright relies on these (with parentFrameId) when reconnecting over CDP.
@@ -798,7 +827,14 @@ export async function startPlayWriterCDPRelayServer({
         return await sendToExtension({
           extensionId: resolvedExtensionId,
           method: 'forwardCDPCommand',
-          params: { method, params, source },
+          params: {
+            method,
+            params,
+            source,
+            tabGroup: clientTabGroup,
+            tabGroupKey: clientSessionKey,
+            tabGroupColor: clientTabGroupColor,
+          },
         })
       }
 
@@ -1194,6 +1230,9 @@ export async function startPlayWriterCDPRelayServer({
       const clientId = c.req.param('clientId') || 'default'
       const url = new URL(c.req.url, 'http://localhost')
       const requestedExtensionId = url.searchParams.get('extensionId')
+      const clientSessionId = url.searchParams.get('session') || undefined
+      const clientTabGroup = normalizeTabGroupTitle(url.searchParams.get('tabGroup')) || undefined
+      const clientTabGroupColor = normalizeTabGroupColor(url.searchParams.get('tabGroupColor')) || undefined
       // When extensionId is explicit, resolve directly. Otherwise use fallback which
       // handles single-extension and uniquely-active-extension cases (#52).
       const resolvedExtension = requestedExtensionId
@@ -1225,7 +1264,14 @@ export async function startPlayWriterCDPRelayServer({
 
           // Add client first so it can receive Target.attachedToTarget events
           store.setState((s) => {
-            return relayState.addPlaywrightClient(s, { id: clientId, extensionId: clientExtensionId, ws })
+            return relayState.addPlaywrightClient(s, {
+              id: clientId,
+              extensionId: clientExtensionId,
+              ws,
+              sessionId: clientSessionId,
+              tabGroup: clientTabGroup,
+              tabGroupColor: clientTabGroupColor,
+            })
           })
           const extensionConnection = getExtensionConnection(clientExtensionId)
           const targetCount = extensionConnection?.connectedTargets.size || 0
@@ -1285,6 +1331,7 @@ export async function startPlayWriterCDPRelayServer({
               params,
               sessionId,
               source,
+              clientId,
             })
 
             if (method === 'Target.setAutoAttach' && !sessionId) {
@@ -1624,11 +1671,15 @@ export async function startPlayWriterCDPRelayServer({
 
           if (message.method === 'ready') {
             store.setState((s) => relayState.markExtensionInventoryReady(s, { extensionId: connectionId }))
-            const hasBoundClient = Array.from(store.getState().playwrightClients.values()).some((client) => {
+            const boundClient = Array.from(store.getState().playwrightClients.values()).find((client) => {
               return client.extensionId === connectionId
             })
-            if (hasBoundClient) {
-              await maybeAutoCreateInitialTab(connectionId)
+            if (boundClient) {
+              await maybeAutoCreateInitialTab(connectionId, {
+                tabGroup: boundClient.tabGroup,
+                tabGroupKey: boundClient.sessionId,
+                tabGroupColor: boundClient.tabGroupColor,
+              })
             }
             return
           }
@@ -2368,6 +2419,10 @@ export async function startPlayWriterCDPRelayServer({
       browser?: string
       /** Profile info from discovery */
       profiles?: Array<{ name: string; email: string }>
+      /** Tab group title new tabs of this session join (extension mode only, default 'playwriter') */
+      tabGroup?: string
+      /** Explicit tab group color (extension mode only, default derived from the title) */
+      tabGroupColor?: string
       /** Cloud API credentials for local-to-cloud execution helpers */
       cloudAuth?: CloudAuth
       /** Cloud session tracking metadata (set by CLI when connecting to a cloud browser) */
@@ -2521,10 +2576,20 @@ export async function startPlayWriterCDPRelayServer({
         404,
       )
     }
+    const tabGroup = body.tabGroup !== undefined ? normalizeTabGroupTitle(body.tabGroup) : null
+    if (body.tabGroup !== undefined && !tabGroup) {
+      return c.json({ error: 'tabGroup must be a non-empty string' }, 400)
+    }
+    const tabGroupColor = body.tabGroupColor !== undefined ? normalizeTabGroupColor(body.tabGroupColor) : null
+    if (body.tabGroupColor !== undefined && !tabGroupColor) {
+      return c.json({ error: 'tabGroupColor must be one of: grey, blue, red, yellow, green, pink, purple, cyan, orange' }, 400)
+    }
     const manager = await getExecutorManager()
     const executor = manager.getExecutor({
       sessionId,
       cwd: cwd || undefined,
+      tabGroup: tabGroup || undefined,
+      tabGroupColor: tabGroupColor || undefined,
       sessionMetadata: {
         extensionId: conn.stableKey,
         browser: conn.info.browser || null,
@@ -2541,7 +2606,101 @@ export async function startPlayWriterCDPRelayServer({
       browser: metadata.browser,
       profile: metadata.profile,
       warning: cwdWarning,
+      // Echoed so the CLI can detect relays that don't support tab groups
+      tabGroup: executor.getTabGroup(),
+      tabGroupColor: executor.getTabGroupColor(),
     })
+  })
+
+  // Update a session's tab group name and/or color. Renames move the session's
+  // existing tabs to the new name; color changes recolor the group (including
+  // the default 'playwriter' group when the session still uses it).
+  app.post('/cli/session/update', async (c) => {
+    try {
+      const body: { sessionId: string | number; tabGroup?: string; tabGroupColor?: string } = await c.req.json()
+      const sessionId = normalizeSessionId(body.sessionId)
+      if (!sessionId) {
+        return c.json({ error: 'sessionId is required' }, 400)
+      }
+      const tabGroup = body.tabGroup !== undefined ? normalizeTabGroupTitle(body.tabGroup) : null
+      if (body.tabGroup !== undefined && !tabGroup) {
+        return c.json({ error: 'tabGroup must be a non-empty string' }, 400)
+      }
+      const tabGroupColor = body.tabGroupColor !== undefined ? normalizeTabGroupColor(body.tabGroupColor) : null
+      if (body.tabGroupColor !== undefined && !tabGroupColor) {
+        return c.json({ error: 'tabGroupColor must be one of: grey, blue, red, yellow, green, pink, purple, cyan, orange' }, 400)
+      }
+      if (!tabGroup && !tabGroupColor) {
+        return c.json({ error: 'Pass tabGroup and/or tabGroupColor' }, 400)
+      }
+
+      const manager = await getExecutorManager()
+      const executor = manager.getSession(sessionId)
+      if (!executor) {
+        return c.json({ error: `Session ${sessionId} not found. Run 'playwriter session new' first.` }, 404)
+      }
+      const extensionId = executor.getSessionMetadata().extensionId
+      if (!extensionId) {
+        return c.json({ error: 'Tab groups only apply to extension sessions.' }, 400)
+      }
+
+      const previousTabGroup = executor.getTabGroup() || DEFAULT_TAB_GROUP_TITLE
+      const nextTabGroup = tabGroup || previousTabGroup
+      executor.setTabGroupConfig({
+        tabGroup: tabGroup || undefined,
+        tabGroupColor: tabGroupColor || undefined,
+      })
+      // Update live /cdp clients of this session so tabs created without a
+      // reconnect already use the new group name/color.
+      store.setState((s) =>
+        relayState.updateClientsTabGroup(s, {
+          sessionId,
+          tabGroup: tabGroup || undefined,
+          tabGroupColor: tabGroupColor || undefined,
+        }),
+      )
+
+      if (previousTabGroup === nextTabGroup && !tabGroupColor) {
+        return c.json({ success: true, tabGroup: nextTabGroup, movedTabs: 0 })
+      }
+
+      // Ask the extension to move/recolor the session's existing tabs. The
+      // session id is the ownership key: a default-group rename must only move
+      // tabs this session created, never manually toggled tabs or other
+      // sessions' tabs. Old extensions don't know the method and reply `{id}`
+      // with no result — treat anything but an explicit success as "too old"
+      // and warn (future tabs still get the new name/color once the extension
+      // updates).
+      let movedTabs = 0
+      let warning: string | undefined
+      try {
+        const result = (await sendToExtension({
+          extensionId,
+          method: 'updateTabGroup',
+          params: {
+            from: previousTabGroup,
+            to: nextTabGroup,
+            key: sessionId,
+            color: tabGroupColor || undefined,
+          },
+          timeout: 10000,
+        })) as UpdateTabGroupResult | undefined
+        if (result?.success === true) {
+          movedTabs = result.movedTabs || 0
+        } else {
+          warning = `Your Playwriter extension is too old to update existing tabs. New tabs will still use the new group settings.`
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        warning = `Extension could not update the tab group (update the Playwriter extension?): ${message}. New tabs will still use the new group settings.`
+        logger?.log(pc.yellow(`[session ${sessionId}] ${warning}`))
+      }
+
+      return c.json({ success: true, tabGroup: nextTabGroup, tabGroupColor: tabGroupColor || undefined, movedTabs, warning })
+    } catch (error: any) {
+      logger?.error('Update session endpoint error:', error)
+      return c.json({ error: error.message }, 500)
+    }
   })
 
   app.get('/cli/session/:id', async (c) => {
