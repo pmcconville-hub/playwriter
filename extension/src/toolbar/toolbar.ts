@@ -212,7 +212,6 @@ export function initPlaywriterToolbar(): void {
       outline: none;
       white-space: nowrap;
       font-family: inherit;
-      min-width: 152px;
     }
     .record-btn:hover {
       background: rgba(255,255,255,0.08);
