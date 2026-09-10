@@ -77,6 +77,56 @@ if (pages.length === 0) throw new Error('No myapp.com page found')
 state.targetPage = pages[0]
 ```
 
+## Tab groups per session
+
+Tabs a session creates are grouped in a Chrome **tab group** named `playwriter` by default. Give each session its own group name so its tabs stay visually separate.
+
+```bash
+# Tabs created by this session join a group named "agent smith"
+playwriter session new --tab-group "agent smith"
+
+# Pick the group color yourself (any Chrome color)
+playwriter session new --tab-group "agent smith" --tab-group-color blue
+
+# Rename the group later — moves the session's existing tabs
+playwriter session update 1 --tab-group "research"
+
+# Change only the color — also works on the default playwriter group
+playwriter session update 1 --tab-group-color red
+```
+
+**Park work on another screen.** Give the session its own group, then right-click the group and choose **Move group to new window**. New tabs from that session follow the group, even if the window is minimized:
+
+```bash
+playwriter session new --tab-group "background scrape" --tab-group-color grey
+```
+
+**Split concurrent agents.** Each agent should use its own `--tab-group`. That keeps many open tabs readable instead of one mixed strip:
+
+```bash
+playwriter session new --tab-group "agent A" --tab-group-color blue
+playwriter session new --tab-group "agent B" --tab-group-color pink
+```
+
+**Collapse groups you don't care about.** Click the group name in Chrome to collapse it. Use a clear name so leftover work takes less space without closing the tabs:
+
+```bash
+playwriter session new --tab-group "done, ignore" --tab-group-color grey
+```
+
+Renaming a session that still uses the default `playwriter` group only moves tabs **that session created**. Manually enabled tabs and other sessions' tabs stay in the default group. Renaming a custom group moves everything in it, including tabs you dragged in.
+
+Without `--tab-group-color`, each custom group gets a deterministic color derived from its name (the default `playwriter` group stays green). The flag accepts every Chrome group color: `grey`, `blue`, `red`, `yellow`, `green`, `pink`, `purple`, `cyan`, `orange`. `playwriter session list` shows the group per session in the `GROUP` column.
+
+Tab groups are **cosmetic**:
+
+- Dragging a tab between playwriter groups is fine — the connection is kept and the tab simply adopts the new group.
+- Dragging a tab out of all playwriter groups disconnects it (same as before).
+- Dragging an unrelated tab into any playwriter group connects it.
+- Moving a whole group to another window (Chrome's "Move group to new window") keeps the tabs connected.
+
+Only extension sessions support tab groups. Headless, direct CDP, and cloud sessions have no browser UI to group.
+
 ## Session management
 
 ```bash

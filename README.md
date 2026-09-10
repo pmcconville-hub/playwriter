@@ -54,7 +54,9 @@ playwriter browser start /path/to/browser-binary
 
 # Session management
 playwriter session new              # creates stateful sandbox, outputs id (e.g. 1)
-playwriter session list             # show sessions + state keys
+playwriter session new --tab-group "agent A" --tab-group-color blue
+playwriter session update 1 --tab-group "research"
+playwriter session list             # show sessions + state keys + group
 playwriter session reset <id>       # fix connection issues
 
 # Execute (always use -s)
@@ -68,6 +70,29 @@ Create your own page to avoid interference from other agents:
 ```bash
 playwriter -s 1 -e 'state.myPage = await context.newPage(); await state.myPage.goto("https://example.com")'
 ```
+
+### Tab groups
+
+Tabs a session creates join a Chrome **tab group** named `playwriter` by default. Give each session its own name so the user can tell agents apart, collapse noise, or park work on another screen.
+
+```bash
+# Park a long scrape in its own group. The user can Move group to new window
+# (or another screen). New tabs from this session follow that group.
+playwriter session new --tab-group "background scrape" --tab-group-color grey
+
+# Split concurrent agents so many open tabs stay readable
+playwriter session new --tab-group "agent A" --tab-group-color blue
+playwriter session new --tab-group "agent B" --tab-group-color pink
+
+# Name a group the user can collapse when they don't care about it
+playwriter session new --tab-group "done, ignore" --tab-group-color grey
+
+# Rename or recolor later
+playwriter session update 1 --tab-group "research"
+playwriter session update 1 --tab-group-color red
+```
+
+`--tab-group-color` accepts: `grey`, `blue`, `red`, `yellow`, `green`, `pink`, `purple`, `cyan`, `orange`. Without it, color is derived from the name. The default `playwriter` group stays green.
 
 Multiline:
 
