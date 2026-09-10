@@ -16,6 +16,7 @@ import vm from 'node:vm'
 import * as acorn from 'acorn'
 import { createSmartDiff } from './diff-utils.js'
 import { getCdpUrl, parseRelayHost, shouldAutoEnablePlaywriter, sleep } from './utils.js'
+import type { TabGroupColor } from './protocol.js'
 import { isRemoteExtensionKey } from './relay-state.js'
 import { REMOTE_EXTENSION_NOT_CONNECTED_ERROR } from './remote-control.js'
 import { getExtensionOutdatedWarning } from './relay-client.js'
@@ -375,6 +376,12 @@ export interface CdpConfig {
   /** Launch a headless Chrome via chromium.launch() instead of connecting to an existing one.
    *  Uses direct Playwright browser management, no extension or relay CDP routing needed. */
   headless?: boolean
+  /** CLI session id — sent as ?session= on the /cdp URL so the relay can map the client to its session */
+  sessionId?: string
+  /** Tab group title new tabs of this session join (extension mode only, default 'playwriter') */
+  tabGroup?: string
+  /** Explicit tab group color (extension mode only, default derived from the title hash) */
+  tabGroupColor?: TabGroupColor
 }
 
 export interface SessionMetadata {
@@ -390,6 +397,10 @@ export interface SessionInfo {
   browser: string | null
   profile: { email: string; id: string } | null
   cwd: string | null
+  /** Custom tab group title, null when using the default 'playwriter' group */
+  tabGroup: string | null
+  /** Explicit tab group color, null when derived from the title hash */
+  tabGroupColor: TabGroupColor | null
 }
 
 export interface CloudSessionInfo {
@@ -2198,6 +2209,27 @@ export class PlaywrightExecutor {
       browser: this.sessionMetadata.browser,
       profile: this.sessionMetadata.profile,
       cwd: this.sessionCwd,
+      tabGroup: this.cdpConfig.tabGroup || null,
+      tabGroupColor: this.cdpConfig.tabGroupColor || null,
+    }
+  }
+
+  getTabGroup(): string | null {
+    return this.cdpConfig.tabGroup || null
+  }
+
+  getTabGroupColor(): TabGroupColor | null {
+    return this.cdpConfig.tabGroupColor || null
+  }
+
+  /** Change the tab group future connections/tabs of this session use.
+   *  Existing relay clients are updated separately via updateClientsTabGroup.
+   *  Absent fields keep their current value. */
+  setTabGroupConfig({ tabGroup, tabGroupColor }: { tabGroup?: string; tabGroupColor?: TabGroupColor }): void {
+    this.cdpConfig = {
+      ...this.cdpConfig,
+      tabGroup: tabGroup ?? this.cdpConfig.tabGroup,
+      tabGroupColor: tabGroupColor ?? this.cdpConfig.tabGroupColor,
     }
   }
 }
@@ -2221,6 +2253,10 @@ export class ExecutorManager {
     sessionMetadata?: SessionMetadata
     /** Override cdpConfig for this session (e.g. direct CDP connection) */
     cdpConfig?: CdpConfig
+    /** Tab group title new tabs of this session join (extension mode only) */
+    tabGroup?: string
+    /** Explicit tab group color (extension mode only) */
+    tabGroupColor?: TabGroupColor
     /** Cloud session info (set when connecting to a Browser Use VM) */
     cloudSession?: CloudSessionInfo
     /** Expose local-to-cloud cookie transfer in the execution scope */
@@ -2236,7 +2272,12 @@ export class ExecutorManager {
         if (options.cdpConfig) {
           return options.cdpConfig
         }
-        const baseConfig = typeof this.cdpConfig === 'function' ? this.cdpConfig(sessionId) : this.cdpConfig
+        const baseConfig: CdpConfig = {
+          ...(typeof this.cdpConfig === 'function' ? this.cdpConfig(sessionId) : this.cdpConfig),
+          sessionId,
+          tabGroup: options.tabGroup || undefined,
+          tabGroupColor: options.tabGroupColor || undefined,
+        }
         if (sessionMetadata?.extensionId) {
           return { ...baseConfig, extensionId: sessionMetadata.extensionId }
         }

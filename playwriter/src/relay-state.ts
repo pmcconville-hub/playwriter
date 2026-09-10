@@ -12,7 +12,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { WSContext } from 'hono/ws'
 import type { Protocol } from './cdp-types.js'
-import { INVENTORY_READY_CAPABILITY } from './protocol.js'
+import { INVENTORY_READY_CAPABILITY, type TabGroupColor } from './protocol.js'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -70,6 +70,12 @@ export type PlaywrightClient = {
   id: string
   extensionId: string | null
   ws: WSContext
+  /** CLI session id this client belongs to (from the ?session= query param) */
+  sessionId?: string
+  /** Tab group title for tabs this client creates (from the ?tabGroup= query param) */
+  tabGroup?: string
+  /** Explicit tab group color (from the ?tabGroupColor= query param) */
+  tabGroupColor?: TabGroupColor
 }
 
 export type RelayState = {
@@ -223,10 +229,50 @@ export function removeExtension(state: RelayState, { extensionId }: { extensionI
 /** Add a playwright client (state + ws handle co-located). */
 export function addPlaywrightClient(
   state: RelayState,
-  { id, extensionId, ws }: { id: string; extensionId: string | null; ws: WSContext },
+  {
+    id,
+    extensionId,
+    ws,
+    sessionId,
+    tabGroup,
+    tabGroupColor,
+  }: {
+    id: string
+    extensionId: string | null
+    ws: WSContext
+    sessionId?: string
+    tabGroup?: string
+    tabGroupColor?: TabGroupColor
+  },
 ): RelayState {
   const newClients = new Map(state.playwrightClients)
-  newClients.set(id, { id, extensionId, ws })
+  newClients.set(id, { id, extensionId, ws, sessionId, tabGroup, tabGroupColor })
+  return { ...state, playwrightClients: newClients }
+}
+
+/** Update the tab group title/color on all clients belonging to a CLI session.
+ *  Absent fields keep their current value. */
+export function updateClientsTabGroup(
+  state: RelayState,
+  { sessionId, tabGroup, tabGroupColor }: { sessionId: string; tabGroup?: string; tabGroupColor?: TabGroupColor },
+): RelayState {
+  let updated = false
+  const newClients = new Map(state.playwrightClients)
+  for (const [clientId, client] of newClients) {
+    if (client.sessionId !== sessionId) {
+      continue
+    }
+    const nextTabGroup = tabGroup ?? client.tabGroup
+    const nextColor = tabGroupColor ?? client.tabGroupColor
+    if (client.tabGroup === nextTabGroup && client.tabGroupColor === nextColor) {
+      continue
+    }
+    newClients.set(clientId, { ...client, tabGroup: nextTabGroup, tabGroupColor: nextColor })
+    updated = true
+  }
+  if (!updated) {
+    return state
+  }
   return { ...state, playwrightClients: newClients }
 }
 

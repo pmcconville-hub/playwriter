@@ -144,6 +144,8 @@ describe('ExecutorManager.listSessions', () => {
           browser: 'Chrome',
           profile: { email: 'test@example.com', id: 'profile-1' },
           cwd: sessionDir,
+          tabGroup: null,
+          tabGroupColor: null,
         },
       ])
     } finally {

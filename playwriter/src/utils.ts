@@ -36,11 +36,20 @@ export function getCdpUrl({
   host = '127.0.0.1',
   token,
   extensionId,
+  sessionId,
+  tabGroup,
+  tabGroupColor,
 }: {
   port?: number
   host?: string
   token?: string
   extensionId?: string | null
+  /** CLI session id, sent as ?session= so the relay can map this client to its session */
+  sessionId?: string
+  /** Tab group title for tabs this client creates (default 'playwriter'). Old relays ignore it. */
+  tabGroup?: string
+  /** Explicit tab group color chosen with --tab-group-color. Old relays ignore it. */
+  tabGroupColor?: string
 } = {}) {
   const id = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}`
   const params = new URLSearchParams()
@@ -49,6 +58,15 @@ export function getCdpUrl({
   }
   if (extensionId) {
     params.set('extensionId', extensionId)
+  }
+  if (sessionId) {
+    params.set('session', sessionId)
+  }
+  if (tabGroup) {
+    params.set('tabGroup', tabGroup)
+  }
+  if (tabGroupColor) {
+    params.set('tabGroupColor', tabGroupColor)
   }
   const queryString = params.toString()
   const suffix = queryString ? `?${queryString}` : ''
