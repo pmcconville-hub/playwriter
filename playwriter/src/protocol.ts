@@ -4,6 +4,14 @@ export const VERSION = 1
 
 export const INVENTORY_READY_CAPABILITY = 'inventory-ready-v1'
 
+// Browser WebSocket.close() only allows 1000 or 3000-4999. 1011 throws InvalidAccessError.
+export const EXTENSION_INVENTORY_TIMEOUT_CLOSE = 4005
+export const EXTENSION_INVENTORY_FAILED_CLOSE = 4006
+
+export function isBrowserAllowedWebSocketCloseCode(code: number): boolean {
+  return code === 1000 || (code >= 3000 && code <= 4999)
+}
+
 type ForwardCDPCommand = {
   [K in keyof ProtocolMapping.Commands]: {
     id: number

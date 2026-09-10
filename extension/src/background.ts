@@ -13,7 +13,11 @@ import type { ExtensionState, ConnectionState, TabState, TabInfo } from './types
 import { initPlaywriterToolbar } from './toolbar/toolbar'
 import type { CDPEvent, Protocol } from 'playwriter/src/cdp-types'
 import type { ExtensionCommandMessage, ExtensionResponseMessage } from 'playwriter/src/protocol'
-import { INVENTORY_READY_CAPABILITY } from 'playwriter/src/protocol'
+import {
+  EXTENSION_INVENTORY_FAILED_CLOSE,
+  EXTENSION_INVENTORY_TIMEOUT_CLOSE,
+  INVENTORY_READY_CAPABILITY,
+} from 'playwriter/src/protocol'
 import { handleGhostBrowserCommand, type GhostBrowserCommandParams } from 'playwriter/src/ghost-browser'
 import { RemoteTunnel } from './remote-tunnel'
 import {
@@ -492,7 +496,7 @@ class ConnectionManager {
         clearTimeout(openTimeout)
         this.ws = socket
         handshakeTimeout = setTimeout(() => {
-          socket.close(1011, 'Target inventory timeout')
+          socket.close(EXTENSION_INVENTORY_TIMEOUT_CLOSE, 'Target inventory timeout')
           rejectConnection(new Error('Target inventory timeout'))
         }, 15_000)
         void completeLocalRelayHandshake(socket).then(
@@ -506,7 +510,7 @@ class ConnectionManager {
             resolve()
           },
           (error) => {
-            socket.close(1011, 'Target inventory failed')
+            socket.close(EXTENSION_INVENTORY_FAILED_CLOSE, 'Target inventory failed')
             rejectConnection(new Error('Could not announce extension target inventory', { cause: error }))
           },
         )
