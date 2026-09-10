@@ -5,14 +5,14 @@
 Add custom tab group names per session. Tabs created by a session join a Chrome tab group named after the session's `--tab-group` (default `playwriter`), so multiple agents sharing one browser keep their tabs visually separate. Collapse a group you don't care about or park it in a minimized window.
 
 ```bash
-# Tabs created by this session join a group named "agent smith"
-playwriter session new --tab-group "agent smith"
+# Tabs created by this session join a group named "docs"
+playwriter session new --tab-group docs
 
 # Pick the group color yourself (grey, blue, red, yellow, green, pink, purple, cyan, orange)
-playwriter session new --tab-group "agent smith" --tab-group-color blue
+playwriter session new --tab-group docs --tab-group-color blue
 
 # Rename the group later — moves the session's existing tabs
-playwriter session update 1 --tab-group "research"
+playwriter session update 1 --tab-group research
 
 # Change only the color — also recolors the default playwriter group
 playwriter session update 1 --tab-group-color red
@@ -20,6 +20,7 @@ playwriter session update 1 --tab-group-color red
 
 Details:
 
+- Use the shortest clear single-word group name with no spaces, such as `docs`, `shop`, `test`, or `scrape`.
 - Without `--tab-group-color`, each custom group gets a deterministic color from its name; the default `playwriter` group stays green.
 - `session update` accepts `--tab-group` and/or `--tab-group-color`: rename, recolor, or both in one call.
 - Recoloring the default group lasts while that session still has tabs in it. When those tabs close, the group goes back to green.

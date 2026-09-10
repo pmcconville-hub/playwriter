@@ -46,44 +46,14 @@ playwriter session reset <sessionId>
 
 ### Tab groups
 
-Tabs a session creates join a Chrome **tab group** named `playwriter` (green) by default. Give each session its own name so its tabs stay visually separate. The user can then collapse a group, or park it in another window or screen.
+Use the shortest clear **single-word** group name with no spaces, such as `docs`, `shop`, `test`, or `scrape`. The default is `playwriter`.
 
 ```bash
-playwriter session new --tab-group "agent smith"
-playwriter session new --tab-group "agent smith" --tab-group-color blue
+playwriter session new --tab-group docs
+playwriter session new --tab-group scrape --tab-group-color grey
 ```
 
-`--tab-group-color` accepts every Chrome group color: `grey, blue, red, yellow, green, pink, purple, cyan, orange`. Without it the color is derived from the group name.
-
-Rename or recolor later. Renaming from the default `playwriter` group only moves tabs this session created. A color-only update also recolors the default group when the session still uses it:
-
-```bash
-playwriter session update <sessionId> --tab-group "research"
-playwriter session update <sessionId> --tab-group-color red
-playwriter session update <sessionId> --tab-group "research" --tab-group-color red
-```
-
-Tab groups are **cosmetic**. Dragging a tab between playwriter groups keeps the connection. Dragging a tab out of all playwriter groups disconnects it. Only extension sessions support tab groups (not headless/direct/cloud).
-
-**Park agent work in another window.** Give the session its own group, then the user can right-click the group and choose **Move group to new window**. New tabs from that session follow the group, even if the window is minimized or on another screen:
-
-```bash
-playwriter session new --tab-group "background scrape" --tab-group-color grey
-playwriter -s 1 -e 'state.page = await context.newPage(); await state.page.goto("https://example.com")'
-```
-
-**Split concurrent agents into separate groups.** Each agent should create its own session with a distinct `--tab-group`. That keeps many open tabs readable instead of one mixed strip:
-
-```bash
-playwriter session new --tab-group "agent A" --tab-group-color blue
-playwriter session new --tab-group "agent B" --tab-group-color pink
-```
-
-**Collapse groups you don't care about.** Chrome lets the user click the group name to collapse it. Use a clear name so the user can collapse noise without closing the tabs:
-
-```bash
-playwriter session new --tab-group "done, ignore" --tab-group-color grey
-```
+Colors: `grey, blue, red, yellow, green, pink, purple, cyan, orange`; otherwise color is derived from the name. Chrome can collapse or move groups. Dragging a tab between Playwriter groups keeps it connected; dragging it out disconnects it. Extension sessions only.
 
 ### Remote access (control browser from another machine)
 

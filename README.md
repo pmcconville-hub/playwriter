@@ -54,8 +54,8 @@ playwriter browser start /path/to/browser-binary
 
 # Session management
 playwriter session new              # creates stateful sandbox, outputs id (e.g. 1)
-playwriter session new --tab-group "agent A" --tab-group-color blue
-playwriter session update 1 --tab-group "research"
+playwriter session new --tab-group agent1 --tab-group-color blue
+playwriter session update 1 --tab-group research
 playwriter session list             # show sessions + state keys + group
 playwriter session reset <id>       # fix connection issues
 
@@ -73,22 +73,22 @@ playwriter -s 1 -e 'state.myPage = await context.newPage(); await state.myPage.g
 
 ### Tab groups
 
-Tabs a session creates join a Chrome **tab group** named `playwriter` by default. Give each session its own name so the user can tell agents apart, collapse noise, or park work on another screen.
+Tabs a session creates join a Chrome **tab group** named `playwriter` by default. Use the shortest clear single-word name with no spaces, such as `docs`, `shop`, `test`, or `scrape`.
 
 ```bash
 # Park a long scrape in its own group. The user can Move group to new window
 # (or another screen). New tabs from this session follow that group.
-playwriter session new --tab-group "background scrape" --tab-group-color grey
+playwriter session new --tab-group scrape --tab-group-color grey
 
 # Split concurrent agents so many open tabs stay readable
-playwriter session new --tab-group "agent A" --tab-group-color blue
-playwriter session new --tab-group "agent B" --tab-group-color pink
+playwriter session new --tab-group agent1 --tab-group-color blue
+playwriter session new --tab-group agent2 --tab-group-color pink
 
 # Name a group the user can collapse when they don't care about it
-playwriter session new --tab-group "done, ignore" --tab-group-color grey
+playwriter session new --tab-group done --tab-group-color grey
 
 # Rename or recolor later
-playwriter session update 1 --tab-group "research"
+playwriter session update 1 --tab-group research
 playwriter session update 1 --tab-group-color red
 ```
 

@@ -7,6 +7,8 @@ the extension uses chrome.debugger to manage the user browser
 read ./README.md for an overview of how this extension and mcp work
 read playwriter/src/skill.md to understand the MCP docs (source of truth)
 
+keep playwriter/src/skill.md token-efficient. Keep tab-group instructions brief, use the shortest clear single-word names with no spaces, and do not document `playwriter session update` there.
+
 ## backward compatibility
 
 breaking changes to the WS protocol MUST never be made. publishing the extension code will never be instant, which means the extension must keep working with newer versions of the MCP and WS relay server.
