@@ -212,9 +212,13 @@ to `get-stream@9+` unless the vendored unzip code is rewritten or replaced.
 `playwriter --help` to stderr. `extension-connection.test.ts > reconnect after
 disconnecting everything` also fails on clean HEAD (verified via worktree).
 `relay-core.test.ts > shadcn-ui snapshot` flakes when ui.shadcn.com loads
-slower than the 10s exec timeout. `relay-session.test.ts > list scripts with
-Debugger class` flakes intermittently (passes on retry).
-Neither is a regression signal for unrelated changes.
+slower than the 10s exec timeout. `relay-core.test.ts > download events for
+Browser and Page domains` fails on clean HEAD too (verified via worktree, Apr
+2026): hasBrowserDownloadWillBegin/Progress come back false. `relay-session.test.ts
+> list scripts with Debugger class` flakes intermittently (passes on retry).
+Neither is a regression signal for unrelated changes. Careful: `pnpm test`
+passes `-u`, so these failing snapshot tests get rewritten with wrong values —
+always review the test-file git diff after a full run.
 
 ## Toolbar runs in ISOLATED world, never MAIN (Apr 2026)
 
