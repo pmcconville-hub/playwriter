@@ -1602,7 +1602,10 @@ function onDebuggerEvent(source: chrome.debugger.DebuggerSession, method: string
     void chrome.debugger.sendCommand(source, 'Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => {})
   }
 
-  if (method !== 'Page.screencastFrame') {
+  // Skip debug logs for high-frequency events. Vite HMR and heavy pages emit
+  // thousands of Network/lifecycle events; logging each one over the relay
+  // WS starves screenshot and Target.createTarget (extension CPU spike).
+  if (method !== 'Page.screencastFrame' && method !== 'Page.lifecycleEvent' && !method.startsWith('Network.')) {
     logger.debug('Forwarding CDP event:', method, 'from tab:', source.tabId)
   }
 
