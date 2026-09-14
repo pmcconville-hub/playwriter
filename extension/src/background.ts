@@ -108,6 +108,35 @@ async function sendCommandWithTimeout(
   }
 }
 
+// Resolve to `fallback` if `promise` does not settle within `timeoutMs`, or rejects.
+// Chrome 153 can leave chrome.storage / chrome.identity / navigator.userAgentData calls
+// pending forever during profile startup; identity must never block the relay connect.
+// The late result of the original promise is intentionally ignored. See issue #40.
+export function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    let settled = false
+    const timeoutId = setTimeout(() => {
+      if (settled) return
+      settled = true
+      resolve(fallback)
+    }, timeoutMs)
+    promise.then(
+      (value) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeoutId)
+        resolve(value)
+      },
+      () => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeoutId)
+        resolve(fallback)
+      },
+    )
+  })
+}
+
 type NavigatorWithUaData = Navigator & {
   userAgentData?: {
     brands: Array<{ brand: string; version: string }>
@@ -154,17 +183,18 @@ function browserNameFromBrands(brands: Array<{ brand: string; version: string }>
 }
 
 async function detectBrowserName(): Promise<string> {
-  if ((chrome as unknown as { ghostPublicAPI?: unknown }).ghostPublicAPI) {
+  if ((chrome as { ghostPublicAPI?: unknown }).ghostPublicAPI) {
     return 'Ghost'
   }
 
   const navigatorWithUaData = navigator as NavigatorWithUaData
   const brands = navigatorWithUaData.userAgentData?.brands
-  const highEntropyValues = await navigatorWithUaData.userAgentData?.getHighEntropyValues?.([
-    'fullVersionList',
-  ]).catch(() => {
-    return null
-  })
+  const highEntropyPromise = navigatorWithUaData.userAgentData?.getHighEntropyValues?.(['fullVersionList'])
+  // Keep the high-entropy lookup (it distinguishes Brave/Edge for the stable identity key),
+  // but bound it so a hung call cannot stall the relay connection.
+  const highEntropyValues = highEntropyPromise
+    ? await withTimeout(highEntropyPromise, 2000, null)
+    : null
   const fullVersionList = highEntropyValues?.fullVersionList || []
 
   const highEntropyName = browserNameFromBrands(fullVersionList)
@@ -230,26 +260,20 @@ async function getExtensionIdentity(): Promise<ExtensionIdentity> {
 
   identityPromise = (async () => {
     const browser = await detectBrowserName()
-    const installId = await getInstallId().catch(() => {
-      // Storage can be unavailable briefly during startup. Fall back to the runtime scope so
-      // we still avoid the coarse browser-only key that causes cross-browser relay takeovers.
-      return tabSessionScope
-    })
-    try {
-      const info = await chrome.identity.getProfileUserInfo({ accountStatus: 'ANY' })
-      return {
-        browser,
-        email: info.email || '',
-        id: info.id || '',
-        installId,
-      }
-    } catch {
-      return {
-        browser,
-        email: '',
-        id: '',
-        installId,
-      }
+    // Storage can be unavailable or hang during startup. Fall back to the per-worker
+    // runtime scope so we still avoid the coarse browser-only key that causes
+    // cross-browser relay takeovers, and never block the connection on storage.
+    const installId = await withTimeout(getInstallId(), 2000, tabSessionScope)
+    const info = await withTimeout(
+      chrome.identity.getProfileUserInfo({ accountStatus: 'ANY' }),
+      2000,
+      { email: '', id: '' } as chrome.identity.ProfileUserInfo,
+    )
+    return {
+      browser,
+      email: info.email || '',
+      id: info.id || '',
+      installId,
     }
   })()
 
@@ -2545,9 +2569,18 @@ async function resetDebugger(): Promise<void> {
   let targets = await chrome.debugger.getTargets()
   targets = targets.filter((x) => x.tabId && x.attached)
   logger.log(`found ${targets.length} existing debugger targets. detaching them before background script starts`)
-  for (const target of targets) {
-    await chrome.debugger.detach({ tabId: target.tabId })
-  }
+  // Bound and isolate each detach: Chrome 153 can leave a detach stuck in
+  // DETACH_STALLED_IN_STOPPING, and a single stalled target must not block the
+  // whole startup chain (remote-tab restore + tab-group sync). See issue #40.
+  await Promise.all(
+    targets.map(async (target) => {
+      try {
+        await withTimeout(chrome.debugger.detach({ tabId: target.tabId }), 3000, undefined)
+      } catch (error) {
+        logger.debug('resetDebugger detach failed/stalled for tab:', target.tabId, (error as Error).message)
+      }
+    }),
+  )
 }
 
 // Our extension IDs - allow attaching to our own extension pages for debugging
