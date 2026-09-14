@@ -367,6 +367,11 @@ function decodeRecordingChunk(value: string): Uint8Array {
 class ConnectionManager {
   ws: WebSocket | null = null
   private connectionPromise: Promise<void> | null = null
+  // Monotonic id bumped on every connect(). The global timeout in ensureConnection()
+  // does NOT cancel a losing connect(), so a stale socket's late onopen could otherwise
+  // clobber `this.ws` of a newer attempt. Every socket callback checks this id and goes
+  // inert if it belongs to a superseded attempt. Fixes the connect/disconnect loop (#40).
+  private currentAttemptId = 0
   preserveTabsOnDetach = false
 
   async ensureConnection(): Promise<void> {
@@ -404,6 +409,7 @@ class ConnectionManager {
   }
 
   private async connect(): Promise<void> {
+    const attemptId = ++this.currentAttemptId
     logger.debug(`Waiting for server at http://${RELAY_HOST}:${RELAY_PORT}...`)
 
     // Retry for up to 5 seconds with 1s intervals, then give up (maintain loop will retry later)
@@ -491,13 +497,21 @@ class ConnectionManager {
             ? new Error('Extension Already In Use')
             : new Error(`WebSocket closed: ${event.reason || event.code}`)
         rejectConnection(error)
-        if (this.ws === socket) {
+        if (this.ws === socket && attemptId === this.currentAttemptId) {
           this.handleClose(event.reason, event.code)
         }
       }
 
       socket.onopen = () => {
         if (settled) return
+        // A superseded attempt (its global timeout already fired and a newer connect()
+        // started) must not install its socket as the live connection. Close and go inert.
+        if (attemptId !== this.currentAttemptId) {
+          try {
+            socket.close()
+          } catch {}
+          return
+        }
         clearTimeout(openTimeout)
         this.ws = socket
         handshakeTimeout = setTimeout(() => {
@@ -507,6 +521,12 @@ class ConnectionManager {
         void completeLocalRelayHandshake(socket).then(
           () => {
             if (settled) return
+            if (attemptId !== this.currentAttemptId) {
+              try {
+                socket.close()
+              } catch {}
+              return
+            }
             settled = true
             logger.debug('WebSocket connected')
             if (handshakeTimeout) {
