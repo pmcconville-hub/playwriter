@@ -111,6 +111,7 @@ describe('Security Tests', () => {
     // 1. Valid chrome-extension origin -> Should succeed
     // Use a valid extension ID from ALLOWED_EXTENSION_IDS in cdp-relay.ts
     await expect(tryConnectExtension('chrome-extension://jfeammnjpkecdekppnclgkkffahnhfhe')).resolves.not.toThrow()
+    await expect(tryConnectExtension('chrome-extension://laceiahnielojmkjcfpcjhjnnmjobckf')).resolves.not.toThrow()
 
     // 2. Invalid origin (e.g., http://evil.com) -> Should fail
     await expect(tryConnectExtension('http://evil.com')).rejects.toThrow(/Unexpected response: (400|401|403)/)

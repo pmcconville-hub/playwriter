@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 export const EXTENSION_IDS = [
   'jfeammnjpkecdekppnclgkkffahnhfhe', // Production (Chrome Web Store)
   'pebbngnfojnignonigcnkdilknapkgid', // Dev extension (stable ID from manifest key)
+  'laceiahnielojmkjcfpcjhjnnmjobckf', // Ghost Browser
 ]
 
 /**
