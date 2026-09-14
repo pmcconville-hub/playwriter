@@ -671,7 +671,10 @@ describe('Relay Core Tests', () => {
       url: 'https://ui.shadcn.com/',
       expectedContent: ['shadcn'],
       waitForCode: js`
-        await state.page.locator('text=shadcn/ui').first().waitFor({ timeout: 10000 });
+        await state.page.getByRole('link', { name: 'Get Started' }).first().waitFor({ timeout: 10000 });
+        // shadcn.com is a Next.js SPA that keeps navigating/hydrating after load;
+        // wait for the network to settle so snapshot() is not captured mid-navigation.
+        await state.page.waitForLoadState('networkidle');
       `,
     },
   ]
@@ -694,6 +697,9 @@ describe('Relay Core Tests', () => {
       const interactiveResult = await client.callTool({
         name: 'execute',
         arguments: {
+          // goto + waitFor each allow up to 10s; the default 10s exec window is
+          // too tight for slow external sites, so widen it for this one call.
+          timeout: 40000,
           code: js`
               // External pages can expose a partial AX tree right after domcontentloaded,
               // so wait for stable page-specific content before snapshotting.

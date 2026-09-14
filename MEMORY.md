@@ -227,8 +227,14 @@ to `get-stream@9+` unless the vendored unzip code is rewritten or replaced.
 `cli-help.test.ts > unknown command` fails on main: goke no longer prints
 `playwriter --help` to stderr. `extension-connection.test.ts > reconnect after
 disconnecting everything` also fails on clean HEAD (verified via worktree).
-`relay-core.test.ts > shadcn-ui snapshot` flakes when ui.shadcn.com loads
-slower than the 10s exec timeout. `relay-core.test.ts > download events for
+`relay-core.test.ts > shadcn-ui snapshot` used to always fail its interactive
+waitFor: the `text=shadcn/ui` locator is gone from the site, so the snapshot
+recorded the timeout error and `toContain('shadcn')` only passed on the error
+call log. Fixed by waiting on the hero `Get Started` link, then `waitForLoadState
+('networkidle')` so the Next.js SPA stops navigating before both snapshots, and
+widening that one exec call to 40s. Passes 3/3 in isolation; other external-site
+tests can still flake under full-suite load.
+`relay-core.test.ts > download events for
 Browser and Page domains` fails on clean HEAD too (verified via worktree, Apr
 2026): hasBrowserDownloadWillBegin/Progress come back false. `relay-session.test.ts
 > list scripts with Debugger class` flakes intermittently (passes on retry).
