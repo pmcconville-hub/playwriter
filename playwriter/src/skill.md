@@ -137,7 +137,7 @@ When a user shares a tab with you, they send a secret **id** (created by clickin
 Connect with:
 
 ```bash
-playwriter session new --remote-control <id>
+playwriter session new --remote <id>
 # prints a session id; use it normally afterwards, no extra flags needed
 playwriter -s 1 -e "console.log(await page.title())"
 ```

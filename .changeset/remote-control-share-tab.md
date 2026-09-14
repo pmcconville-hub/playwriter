@@ -8,7 +8,7 @@ Click the new light-blue **Remote control** cloud button in the Playwriter toolb
 
 ```bash
 # quote the URL: an unquoted # starts a shell comment and drops the id
-playwriter session new --remote-control 'https://playwriter.dev/remote-control#xxx'
+playwriter session new --remote 'https://playwriter.dev/remote-control#xxx'
 playwriter -s 1 -e "console.log(await page.title())"
 ```
 

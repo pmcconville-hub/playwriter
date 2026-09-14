@@ -10,7 +10,7 @@
  *
  * Agents connect with the tunnel id, not a viewer URL:
  *
- *     playwriter session new --remote-control {tunnelId}
+ *     playwriter session new --remote {tunnelId}
  *
  * The viewer page still exists (hash carries the id) but is not advertised: playback
  * is too slow. parseRemoteControlUrl accepts a bare id or a leftover viewer/tunnel URL.
@@ -180,7 +180,7 @@ export function parseRemoteControlUrl(url: string): { wsUrl: string; httpUrl: st
 
   if (parsed.pathname.replace(/\/$/, '') === REMOTE_VIEWER_PATH && !parsed.hash) {
     throw new Error(
-      `Remote control id is missing. Pass the id from the copied prompt, for example:\n  playwriter session new --remote-control your-id`,
+      `Remote control id is missing. Pass the id from the copied prompt, for example:\n  playwriter session new --remote your-id`,
     )
   }
 
@@ -393,7 +393,7 @@ export function buildRemoteControlPrompt({ id }: { id: string }): string {
   return dedent`
     Connect to my shared Chrome tab:
 
-    npx -y playwriter@latest session new --remote-control ${id}
+    npx -y playwriter@latest session new --remote ${id}
 
     Then use the printed session id. Read https://playwriter.dev/SKILL.md. NEVER share this id.
   `

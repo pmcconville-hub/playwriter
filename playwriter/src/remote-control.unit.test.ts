@@ -91,7 +91,7 @@ describe('remote-control', () => {
       parseRemoteControlUrl('https://playwriter.dev/remote-control'),
     ).toThrowErrorMatchingInlineSnapshot(`
       [Error: Remote control id is missing. Pass the id from the copied prompt, for example:
-        playwriter session new --remote-control your-id]
+        playwriter session new --remote your-id]
     `)
     expect(extractViewerTunnelId('https://playwriter.dev/remote-control#BAD_ID')).toBe(null)
     expect(extractViewerTunnelId('https://playwriter.dev/other#abc123')).toBe(null)
@@ -195,7 +195,7 @@ describe('remote-control', () => {
     expect(prompt).toMatchInlineSnapshot(`
       "Connect to my shared Chrome tab:
 
-      npx -y playwriter@latest session new --remote-control abc123
+      npx -y playwriter@latest session new --remote abc123
 
       Then use the printed session id. Read https://playwriter.dev/SKILL.md. NEVER share this id."
     `)

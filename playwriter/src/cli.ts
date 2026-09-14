@@ -394,7 +394,7 @@ cli
   .option('--browser <key>', 'Browser key when multiple browsers are available. Special values: "headless" (launch headless Chrome, no extension), "cloud" (cloud browser with stealth/proxies)')
   .option('--patchright', 'Use @playwriter/patchright-core for stealth mode (bypasses bot detection)')
   .option('--direct [endpoint]', 'Use direct CDP connection without the extension. Enable debugging first at chrome://inspect/#remote-debugging or launch Chrome with --remote-debugging-port=9222. Auto-discovers instances or accepts an explicit ws:// endpoint')
-    .option('--remote-control <id>', 'Connect to a browser tab another user shared via the extension `Remote control` button')
+  .option('--remote <id>', 'Connect to a browser tab another user shared via the extension `Remote control` button')
   .option('--proxy <region>', 'Enable residential proxy for cloud browser (e.g. us, de, jp). Disabled by default. Use for anti-detection or geo-targeting.')
   .option('--custom-proxy <url>', 'Custom proxy for cloud browser (host:port or user:pass@host:port)')
   .option('--timeout <minutes>', 'Cloud browser timeout in minutes (1-240, default 60)')
@@ -436,11 +436,11 @@ cli
 
     const isLocal = !options.host && !process.env.PLAYWRITER_HOST
 
-    // --remote-control: bind the session to a tab another user shared via the
+    // --remote: bind the session to a tab another user shared via the
     // extension Remote control button. Pass the id from the copied prompt. The
     // local relay dials the tunnel, so later `playwriter -s N -e ...` calls need
     // no extra flags.
-    if (options.remoteControl) {
+    if (options.remote) {
       warnTabGroupUnsupported('remote-control sessions')
       await ensureRelayForSessionCreation(isLocal)
       const serverUrl = await getServerUrl(options.host)
@@ -448,7 +448,7 @@ cli
         const response = await fetch(`${serverUrl}/cli/session/new`, {
           method: 'POST',
           headers: buildAuthHeaders({ token: options.token, json: true }),
-          body: JSON.stringify({ remoteControlUrl: options.remoteControl, cwd: process.cwd() }),
+          body: JSON.stringify({ remoteControlUrl: options.remote, cwd: process.cwd() }),
         })
         if (!response.ok) {
           const text = await response.text()
