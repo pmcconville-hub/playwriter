@@ -1,5 +1,21 @@
 # Memory
 
+## getTargets().attached ≠ our own attachment (Jul 2026)
+
+`chrome.debugger.getTargets()` `attached` is true if ANY debugger client is on
+the target, including the downstream Playwright CDP client via `connectOverCDP`.
+After our own `chrome.debugger.detach({tabId})` it stays true (verified 600ms).
+So it cannot tell whether OUR extension's debugger is still attached. Do not use
+it to decide spurious-vs-genuine `target_closed` in `onDebuggerDetach` (issue #40).
+
+## target_closed transparent re-attach loses Playwright session state (Jul 2026)
+
+On a genuinely dropped debugger session, silently re-attaching with the same
+synthetic sessionId (no new `Target.attachedToTarget`) leaves Playwright's
+per-session `Runtime.enable` dead, so `page.evaluate` fails "Execution context
+was destroyed" forever. Transparent reuse only works if the session was never
+really dropped. #40's spurious detach needs a verified live repro, not this.
+
 ## Loopback ≠ trusted under tunnel agents (Apr 2026)
 
 Tunnel agents (traforo, ngrok, cloudflared) run as local processes that
