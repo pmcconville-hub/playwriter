@@ -7,3 +7,5 @@ Remote-control tunnels now use a path-based URL instead of a subdomain. The tunn
 ```sh
 playwriter session new --remote <id>   # unchanged, now dials the path-based tunnel
 ```
+
+The relay keys remote dials by the full WebSocket URL, so several shared ids on the path form stay distinct tunnels.

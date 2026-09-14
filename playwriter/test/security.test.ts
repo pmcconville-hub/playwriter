@@ -1,9 +1,10 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { startPlayWriterCDPRelayServer } from '../src/cdp-relay.js'
-import { WebSocket } from 'ws'
+import { WebSocket, WebSocketServer } from 'ws'
 import { createFileLogger } from '../src/create-logger.js'
 import { killPortProcess } from '../src/kill-port.js'
 import { createMCPClient } from '../src/mcp-client.js'
+import os from 'node:os'
 
 const TEST_PORT = 19999
 
@@ -400,5 +401,80 @@ describe('Security Tests', () => {
       body: JSON.stringify({ level: 'log', args: ['test'] }),
     })
     expect(mcpLog.status).toBe(200)
+  })
+})
+
+// Path-form tunnels share one host (wss://host/tunnel/{id}/extension), so the
+// relay must key remote dials by the full wsUrl. Keying by httpUrl would make
+// every path-form id collide into one dial, binding a second shared tab to the
+// first tunnel and replacing its stableKey connection.
+describe('Remote control dial isolation', () => {
+  const FAKE_TUNNEL_PORT = 19871
+  let server: any = null
+
+  afterEach(async () => {
+    if (server) {
+      server.close()
+      server = null
+    }
+    await killProcessOnPort(TEST_PORT)
+    await killProcessOnPort(FAKE_TUNNEL_PORT)
+  })
+
+  it('dials a distinct tunnel per remote id, even when ids share one host', async () => {
+    const dialedPaths: string[] = []
+    const fakeTunnel = new WebSocketServer({ port: FAKE_TUNNEL_PORT, host: '127.0.0.1' })
+    fakeTunnel.on('connection', (socket, req) => {
+      const pathname = new URL(req.url || '/', 'ws://x').pathname
+      dialedPaths.push(pathname)
+      // /tunnel/{id}/extension → speak the extension protocol for that id
+      const tunnelId = pathname.match(/^\/tunnel\/([a-z0-9-]+)\//)?.[1] || 'unknown'
+      const sessionId = `pw-fake-${tunnelId}-1`
+      socket.send(JSON.stringify({ method: 'hello', params: { browser: 'fake', version: '1', remote: true } }))
+      socket.send(
+        JSON.stringify({
+          method: 'forwardCDPEvent',
+          params: {
+            method: 'Target.attachedToTarget',
+            params: {
+              sessionId,
+              targetInfo: {
+                targetId: `target-${tunnelId}`,
+                url: 'https://example.com',
+                type: 'page',
+                attached: true,
+              },
+            },
+          },
+        }),
+      )
+    })
+
+    server = await startPlayWriterCDPRelayServer({ port: TEST_PORT })
+
+    const createSession = async (tunnelId: string) => {
+      const response = await fetch(`http://127.0.0.1:${TEST_PORT}/cli/session/new`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          remoteControlUrl: `ws://127.0.0.1:${FAKE_TUNNEL_PORT}/tunnel/${tunnelId}/extension`,
+          cwd: os.tmpdir(),
+        }),
+      })
+      const body = (await response.json()) as { id?: string; error?: string }
+      expect(body.error, JSON.stringify(body)).toBeUndefined()
+      expect(response.status).toBe(200)
+      return body.id!
+    }
+
+    const first = await createSession('aaa111')
+    const second = await createSession('bbb222')
+
+    expect(first).not.toBe(second)
+    // Both ids must get their own dial. The regression here was a single dial
+    // for 'https://playwriter.dev' shared by every path-form id.
+    expect(dialedPaths).toEqual(['/tunnel/aaa111/extension', '/tunnel/bbb222/extension'])
+
+    fakeTunnel.close()
   })
 })

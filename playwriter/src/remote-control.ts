@@ -154,13 +154,14 @@ export function extractViewerTunnelId(url: string): string | null {
  * Normalize a tunnel id or leftover remote-control URL to the /extension
  * WebSocket URL a client must dial.
  *
- * Accepted inputs:
- *   {tunnelId}                                          current (what the prompt copies)
- *   leftover viewer or tunnel-host URLs from older prompts
- *
- * The tunnel host form keeps using the host verbatim, so older and self-hosted
- * tunnel domains still work; a bare id or viewer form derives a host from the id.
- */
+  * Accepted inputs:
+  *   {tunnelId}                                          current (what the prompt copies)
+  *   wss://playwriter.dev/tunnel/{id}/extension          path-form tunnel URL
+  *   leftover viewer or tunnel-host URLs from older prompts
+  *
+  * The tunnel host form keeps using the host verbatim, so older and self-hosted
+  * tunnel domains still work; a bare id or viewer form derives a host from the id.
+  */
 export function parseRemoteControlUrl(url: string): { wsUrl: string; httpUrl: string; host: string } {
   const trimmed = url.trim()
   const resolved = /^[a-z0-9-]{1,63}$/.test(trimmed)
@@ -186,12 +187,13 @@ export function parseRemoteControlUrl(url: string): { wsUrl: string; httpUrl: st
 
   const viewerTunnelId = extractViewerTunnelId(resolved)
   if (viewerTunnelId) {
-    const origin = buildTunnelOrigin({})
-    return {
-      wsUrl: `wss://${new URL(origin).host}/tunnel/${viewerTunnelId}/extension`,
-      httpUrl: origin,
-      host: new URL(origin).host,
-    }
+    return resolvePathFormTunnel(viewerTunnelId)
+  }
+
+  // A pasted path-form tunnel URL round-trips instead of losing the id.
+  const pathMatch = parsed.pathname.match(/^\/tunnel\/([a-z0-9-]{1,63})\/(?:upstream|extension)\/?$/)
+  if (pathMatch) {
+    return resolvePathFormTunnel(pathMatch[1], { host: parsed.host, isSecure })
   }
 
   const wsProtocol = isSecure ? 'wss:' : 'ws:'
@@ -200,6 +202,20 @@ export function parseRemoteControlUrl(url: string): { wsUrl: string; httpUrl: st
     wsUrl: `${wsProtocol}//${parsed.host}/extension`,
     httpUrl: `${httpProtocol}//${parsed.host}`,
     host: parsed.host,
+  }
+}
+
+/** Path-form resolution: the id travels in the URL path, never in DNS or TLS SNI. */
+function resolvePathFormTunnel(
+  tunnelId: string,
+  { host = REMOTE_TUNNEL_BASE_DOMAIN, isSecure = true }: { host?: string; isSecure?: boolean } = {},
+): { wsUrl: string; httpUrl: string; host: string } {
+  const wsProtocol = isSecure ? 'wss:' : 'ws:'
+  const httpProtocol = isSecure ? 'https:' : 'http:'
+  return {
+    wsUrl: `${wsProtocol}//${host}/tunnel/${tunnelId}/extension`,
+    httpUrl: `${httpProtocol}//${host}/tunnel/${tunnelId}`,
+    host,
   }
 }
 

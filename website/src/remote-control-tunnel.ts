@@ -30,19 +30,23 @@ export async function routeRemoteControlRequest({
 }): Promise<Response | null> {
   const url = new URL(request.url)
   // Preferred form: tunnel id in the path, so it never appears in DNS or TLS SNI.
-  const pathTunnelId = extractPathTunnelId(url.pathname)
+  // Anything that is not exactly /tunnel/{id}/upstream or /tunnel/{id}/extension
+  // must not be treated as a tunnel.
+  const pathMatch = url.pathname.match(/^\/tunnel\/([a-z0-9-]{1,63})\/(upstream|extension)$/)
   // Legacy form: {tunnelId}-tunnel.playwriter.dev subdomain. Kept so older
   // extension versions keep reconnecting after deploy.
-  const tunnelId = pathTunnelId || extractTunnelId(url.hostname)
+  const tunnelId = pathMatch?.[1] || extractTunnelId(url.hostname)
   if (!tunnelId) {
     return null
   }
+  const isPathForm = pathMatch !== null
+  const isUpstream = pathMatch?.[2] === 'upstream' || (!isPathForm && url.pathname === '/traforo-upstream')
 
-  const isUpstream = url.pathname.endsWith('/traforo-upstream') || url.pathname.endsWith('/upstream')
   if (request.headers.get('Upgrade') !== 'websocket') {
     return new Response('Playwriter remote control tunnel', { status: 200 })
   }
-  if (!isUpstream && url.pathname.replace(/\/$/, '') !== '/extension' && !pathTunnelId) {
+  // /tunnel/* is reserved for tunnels; non-WS traffic there never reaches the site app.
+  if (!isPathForm && !isUpstream && url.pathname.replace(/\/$/, '') !== '/extension') {
     return new Response('Not Found', { status: 404 })
   }
 
@@ -57,19 +61,13 @@ export async function routeRemoteControlRequest({
   }
 
   const id = env.REMOTE_CONTROL_TUNNEL.idFromName(tunnelId)
-  if (pathTunnelId) {
+  if (isPathForm) {
     // Normalize to the DO's internal paths so the DO stays form-agnostic.
     const rewritten = new URL(request.url)
     rewritten.pathname = isUpstream ? '/traforo-upstream' : '/extension'
     return env.REMOTE_CONTROL_TUNNEL.get(id).fetch(new Request(rewritten, request))
   }
   return env.REMOTE_CONTROL_TUNNEL.get(id).fetch(request)
-}
-
-/** Tunnel id in the path form: /tunnel/{id}/upstream or /tunnel/{id}/extension. */
-function extractPathTunnelId(pathname: string): string | null {
-  const match = pathname.match(/^\/tunnel\/([a-z0-9-]{1,63})(?:\/|$)/)
-  return match?.[1] || null
 }
 
 function extractTunnelId(hostname: string): string | null {

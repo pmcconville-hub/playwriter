@@ -51,14 +51,14 @@ describe('remote-control', () => {
     expect(parseRemoteControlUrl('abc123')).toMatchInlineSnapshot(`
       {
         "host": "playwriter.dev",
-        "httpUrl": "https://playwriter.dev",
+        "httpUrl": "https://playwriter.dev/tunnel/abc123",
         "wsUrl": "wss://playwriter.dev/tunnel/abc123/extension",
       }
     `)
     expect(parseRemoteControlUrl(buildRemoteControlUrl({ tunnelId: 'abc123' }))).toMatchInlineSnapshot(`
       {
         "host": "playwriter.dev",
-        "httpUrl": "https://playwriter.dev",
+        "httpUrl": "https://playwriter.dev/tunnel/abc123",
         "wsUrl": "wss://playwriter.dev/tunnel/abc123/extension",
       }
     `)
@@ -66,6 +66,14 @@ describe('remote-control', () => {
       `"wss://playwriter.dev/tunnel/abc123/upstream"`,
     )
     expect(buildTunnelOrigin({})).toMatchInlineSnapshot(`"https://playwriter.dev"`)
+    // a pasted path-form URL round-trips to the same dial target
+    expect(parseRemoteControlUrl('wss://playwriter.dev/tunnel/abc123/extension')).toMatchInlineSnapshot(`
+      {
+        "host": "playwriter.dev",
+        "httpUrl": "https://playwriter.dev/tunnel/abc123",
+        "wsUrl": "wss://playwriter.dev/tunnel/abc123/extension",
+      }
+    `)
   })
 
   // Remote-control hosts moved to playwriter.dev, but links minted by an older

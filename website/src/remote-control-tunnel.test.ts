@@ -164,19 +164,42 @@ describe('remote control tunnel', () => {
       throw new Error('Expected the downstream request to be routed')
     }
     const downstream = requireWebSocket(downstreamResponse)
-    const openMessage = JSON.parse(await openMessagePromise) as { type: string; path: string }
+    const openMessage = JSON.parse(await openMessagePromise) as { connId: string }
     expect(openMessage).toMatchObject({ type: 'ws_open', path: '/extension' })
-    upstream.send(JSON.stringify({ type: 'ws_opened', connId: openMessage.connId as string }))
+    upstream.send(JSON.stringify({ type: 'ws_opened', connId: openMessage.connId }))
 
-    // path-based and subdomain-based ids land in the same DO namespace
-    expect(await routeRemoteControlRequest({
-      request: new Request(`https://playwriter.dev/tunnel/${tunnelId}/extension`, {
-        headers: { Upgrade: 'websocket' },
-      }),
-      env,
-    })).toBeDefined()
+    // A second downstream on the subdomain form must reach the SAME upstream:
+    // both forms resolve the same id to the same DO.
+    const secondOpenPromise = waitForMessage(upstream)
+    const secondDownstream = await openRoutedTunnelSocket({ tunnelId, path: '/extension' })
+    const secondOpen = JSON.parse(await secondOpenPromise) as { connId: string }
+    expect(secondOpen.connId).not.toBe(openMessage.connId)
+    upstream.send(JSON.stringify({ type: 'ws_opened', connId: secondOpen.connId }))
+
+    // the frame flows through the same upstream, back to the same downstream
+    const secondFramePromise = waitForMessage(secondDownstream)
+    secondDownstream.send('{"id":9,"method":"ping"}')
+    const frame = JSON.parse(await waitForMessage(upstream)) as { connId: string }
+    expect(frame.connId).toBe(secondOpen.connId)
+    upstream.send(
+      JSON.stringify({ type: 'ws_frame', connId: secondOpen.connId, data: '{"id":9,"result":"pong"}', binary: false }),
+    )
+    expect(await secondFramePromise).toBe('{"id":9,"result":"pong"}')
 
     upstream.close(1000, 'done')
+  })
+
+  test('tunnel paths that are not exactly /tunnel/{id}/upstream or /extension are not tunnels', async () => {
+    for (const badPath of ['/tunnel/abc123', '/tunnel/abc123/typo', '/tunnel/abc123/a/b', '/tunnel/abc123/extension/extra']) {
+      // null = fall through to the normal site app, which 404s unknown pages
+      const response = await routeRemoteControlRequest({
+        request: new Request(`https://playwriter.dev${badPath}`, {
+          headers: { Upgrade: 'websocket' },
+        }),
+        env,
+      })
+      expect(response, badPath).toBeNull()
+    }
   })
 
   test('rejects a second upstream and drops downstreams when sharing stops', async () => {

@@ -2147,8 +2147,10 @@ export async function startPlayWriterCDPRelayServer({
   }
 
   async function connectRemoteExtension({ url }: { url: string }): Promise<relayState.ExtensionEntry> {
-    const { wsUrl, httpUrl } = parseRemoteControlUrl(url)
-    const urlKey = httpUrl
+    const { wsUrl } = parseRemoteControlUrl(url)
+    // Key by wsUrl, not httpUrl: path-form tunnels share one host, so the id must
+    // be part of the key to keep two shared tabs dialing two distinct tunnels.
+    const urlKey = wsUrl
     const stableKey = `remote:${crypto.createHash('sha256').update(urlKey).digest('hex')}`
 
     let dial = remoteDials.get(urlKey)
@@ -2538,9 +2540,9 @@ export async function startPlayWriterCDPRelayServer({
       } catch (error) {
         return c.json({ error: error instanceof Error ? error.message : String(error) }, 502)
       }
-      const { httpUrl } = parseRemoteControlUrl(body.remoteControlUrl)
-      remoteDials.get(httpUrl)?.sessionIds.add(sessionId)
-      sessionRemoteUrlKeys.set(sessionId, httpUrl)
+      const { wsUrl } = parseRemoteControlUrl(body.remoteControlUrl)
+      remoteDials.get(wsUrl)?.sessionIds.add(sessionId)
+      sessionRemoteUrlKeys.set(sessionId, wsUrl)
 
       const manager = await getExecutorManager()
       const executor = manager.getExecutor({
