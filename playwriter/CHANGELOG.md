@@ -1,5 +1,91 @@
 # Changelog
 
+## 0.6.0
+
+1. **Remote control — share one tab of your browser with a remote agent or person, no local install needed.**
+
+   Click the light-blue **Remote control** cloud button in the Playwriter toolbar and confirm the disclosure. The extension opens a secret tunnel (128-bit random id) and copies a ready-to-paste agent prompt to your clipboard. A remote agent connects from any machine with just the share id:
+
+   ```bash
+   playwriter session new --remote abc123
+   playwriter -s 1 -e "console.log(await page.title())"
+   ```
+
+   **The same share is also a live view.** Open `https://playwriter.dev/remote-control#<id>` in any browser to watch the tab streamed frame by frame, with a URL bar and a **Take control** button for clicking, scrolling, and typing. So you can share a tab with a person, not only an agent, and neither side needs an install.
+
+   ```text
+   Your Chrome tab ──► extension tunnel upstream ──► wss://{id}-tunnel.playwriter.dev/extension
+                                                          │
+                                        ┌─────────────────┴─────────────────┐
+                                        ▼                                    ▼
+                              agent relay (--remote)                 live viewer page
+   ```
+
+   Scope and safety:
+   - Every host lives under **playwriter.dev**, and shares run on Playwriter's own Durable Objects, isolated from unrelated tunnel traffic.
+   - The recipient gets broad CDP access and must be fully trusted. `context.newPage()` / `Target.createTarget` are rejected with a helpful error asking for another shared tab instead.
+   - Whole-profile cookie APIs (`Network.getAllCookies`, `Storage.getCookies`, `Storage.setCookies`) and destructive clears are blocked; URL/domain-targeted cookie commands remain available.
+   - Only a real click starts a share: the button lives in Chrome's isolated world and the prompt is copied by an offscreen document, so page scripts cannot start it or read the link.
+   - Clicking the button again revokes the link instantly. The link survives service-worker restarts but dies when the browser closes, and a debugger detach or tab close also revokes it.
+   - Screencast frames are relayed in memory only, never stored; credentials are redacted from logs. The stream drops stale frames past a 2 MiB buffer and asks Chrome for a 960px JPEG at quality 50 every third frame.
+   - The tunnel handshake sends only the browser name and Playwriter version, never your email, Google account id, or install id.
+   - While a tab is shared, **Remote ON** is a dropdown with **Copy remote URL**, **Copy agent prompt**, **Copy id**, and **Stop sharing**.
+
+2. **Per-session tab groups** — tabs created by a session join a Chrome tab group named after the session's `--tab-group` (default `playwriter`), so multiple agents sharing one browser keep their tabs visually separate.
+
+   ```bash
+   # tabs created by this session join a group named "docs"
+   playwriter session new --tab-group docs --tab-group-color blue
+
+   # rename or recolor later (moves the session's existing tabs)
+   playwriter session update 1 --tab-group research
+   ```
+
+   Colors: `grey, blue, red, yellow, green, pink, purple, cyan, orange`. Without a color, each custom group gets a deterministic color from its name; the default `playwriter` group stays green. `session list` shows the group in a new `GROUP` column. Dragging a tab between playwriter groups keeps the connection; moving a whole group to another window no longer disconnects its tabs. Popups and child tabs inherit the opener's group. Only extension sessions support tab groups; the flag warns and is ignored for headless, direct CDP, cloud, and remote-control sessions. Old extensions safely ignore the group name.
+
+3. **`cloud` helper in CLI execution sessions** — list active cloud browsers and send the current page's cookies into one without printing or saving cookie values:
+
+   ```js
+   const browsers = await cloud.browsers.list()
+   await cloud.sendCookies({ from: state.page, to: browsers[0] })
+   ```
+
+   Pass `from` to use another page or `urls` when a login spans more than one HTTP origin.
+
+4. **Toolbar moved into Chrome's isolated extension world** — websites can no longer trigger **Record Skill** or **Remote control**. Previously the toolbar ran in the page's own JavaScript world and any script could post a forged `window.postMessage` to start a recording or open a tunnel. The toolbar now calls `chrome.runtime.sendMessage()` directly, privileged buttons require a real user gesture from the top frame, prompts and pinned-element commands are copied by an offscreen document, and the host uses `all:initial` and refuses clicks when a page hides, covers, or moves it. The toolbar looks exactly the same.
+
+5. **Relay metadata and MCP logs now require the configured relay token** — browser metadata such as profile details, tab titles, and tab URLs is no longer returned without the token.
+
+6. **Secrets redacted from action recordings** — URL credentials, credential-like query parameters, structured network fields, and all form fill values are redacted. Response bodies with unsafe bounds are omitted instead of loaded into memory.
+
+7. **Screen recordings stream to disk** — recording chunks are written directly to a temporary file instead of retained in memory. Failed or disconnected captures remove partial output, capture cancels if the WebSocket send buffer grows too large, and recording stop waits for the final encoded chunk.
+
+8. **Record Skill toolbar button reliability** — the button now shows **Starting…** while the recorder attaches, keeps a stable width, stays clickable during start (a click then stops the recording), shows an error toast on failed start, and no longer starts extra recordings on repeated clicks. The start cue is a short lock-on sweep that resolves to a clear tone.
+
+9. **Quieter, faster CDP handling on chatty sites** — the extension no longer sends a debug log for every Network and page-lifecycle CDP event. On Vite HMR pages those arrive thousands of times per second and used to starve real commands, so `page.screenshot()` and `context.newPage()` timed out and CPU spiked. Events are still forwarded to Playwright. Related to #96.
+
+10. **`session new` no longer kills a busy but healthy relay** — the `/version` probe (and `waitForRelayVersion`) now waits up to 10 seconds. A relay busy attaching many tabs used to miss the old 2 second probe, look dead, and get killed, wiping every in-memory session.
+
+11. **Reconnect no longer wipes attached tabs** — inventory handshake failures now close with browser-safe codes `4005`/`4006` instead of `1011` (which Chrome rejects with `InvalidAccessError`), and a stale ungroup event after reconnect no longer detaches tabs already back in the Playwriter group.
+
+12. **Snapshot correctness** — snapshot references and diff baselines are invalidated after main-frame navigation so old document locators cannot be reused on a new page, and role locators now resolve accessible names changed by CSS text transforms.
+
+13. **Fail closed on stale CDP routing** — a CDP client requesting a stale target or session now gets an error instead of an unrelated attached tab.
+
+14. **Serialized session operations** — commands from one session run in order, and reset/deletion wait for active work.
+
+15. **Stable error codes when no extension is connected** — session creation now returns structured error codes when it cannot find a connected extension. Closes #121.
+
+16. **`listScripts()` waits for parsed scripts** — the debugger waits for `Debugger.scriptParsed` after `Debugger.enable`, so `listScripts()` no longer returns an empty list on an already-loaded page.
+
+17. **Ghost Browser support** — the Playwriter extension installed by Ghost Browser can connect to the local relay.
+
+18. **Better CLI hints** — unknown commands print `Run "playwriter --help"` on stderr, and `session new` prints a reminder to run `playwriter skill`.
+
+19. **Toolbar polish** — toasts match the toolbar's dark surface and appear where you look, the drop shadow is no longer clipped to a gray rectangle, trailing button spacing is fixed, and controls sit at a balanced size. Tooltips hide while a Remote control dialog or menu is open.
+
+20. **Updated vulnerable dependencies** — runtime dependencies moved to patched releases and vulnerable HTML formatting dependencies were removed while preserving readable clean-HTML output.
+
 ## 0.5.0
 
 1. **Skill Recorder** — record a workflow once in your real Chrome and let an agent turn it into a reusable skill. Click **Record Skill** on the in-page toolbar, or run:
