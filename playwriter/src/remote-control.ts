@@ -152,17 +152,18 @@ export function extractViewerTunnelId(url: string): string | null {
 
 /**
  * Normalize a tunnel id or leftover remote-control URL to the /extension
- * WebSocket URL a client must dial.
+ * WebSocket URL a client must dial. The returned wsUrl is unique per tunnel id
+ * in every accepted input form, so relays can key dials by it.
  *
-  * Accepted inputs:
-  *   {tunnelId}                                          current (what the prompt copies)
-  *   wss://playwriter.dev/tunnel/{id}/extension          path-form tunnel URL
-  *   leftover viewer or tunnel-host URLs from older prompts
-  *
-  * The tunnel host form keeps using the host verbatim, so older and self-hosted
-  * tunnel domains still work; a bare id or viewer form derives a host from the id.
-  */
-export function parseRemoteControlUrl(url: string): { wsUrl: string; httpUrl: string; host: string } {
+ * Accepted inputs:
+ *   {tunnelId}                                          current (what the prompt copies)
+ *   wss://playwriter.dev/tunnel/{id}/extension          path-form tunnel URL
+ *   leftover viewer or tunnel-host URLs from older prompts
+ *
+ * The tunnel host form keeps using the host verbatim, so older and self-hosted
+ * tunnel domains still work; a bare id or viewer form derives a host from the id.
+ */
+export function parseRemoteControlUrl(url: string): { wsUrl: string; host: string } {
   const trimmed = url.trim()
   const resolved = /^[a-z0-9-]{1,63}$/.test(trimmed)
     ? buildRemoteControlUrl({ tunnelId: trimmed })
@@ -197,10 +198,8 @@ export function parseRemoteControlUrl(url: string): { wsUrl: string; httpUrl: st
   }
 
   const wsProtocol = isSecure ? 'wss:' : 'ws:'
-  const httpProtocol = isSecure ? 'https:' : 'http:'
   return {
     wsUrl: `${wsProtocol}//${parsed.host}/extension`,
-    httpUrl: `${httpProtocol}//${parsed.host}`,
     host: parsed.host,
   }
 }
@@ -209,12 +208,10 @@ export function parseRemoteControlUrl(url: string): { wsUrl: string; httpUrl: st
 function resolvePathFormTunnel(
   tunnelId: string,
   { host = REMOTE_TUNNEL_BASE_DOMAIN, isSecure = true }: { host?: string; isSecure?: boolean } = {},
-): { wsUrl: string; httpUrl: string; host: string } {
+): { wsUrl: string; host: string } {
   const wsProtocol = isSecure ? 'wss:' : 'ws:'
-  const httpProtocol = isSecure ? 'https:' : 'http:'
   return {
     wsUrl: `${wsProtocol}//${host}/tunnel/${tunnelId}/extension`,
-    httpUrl: `${httpProtocol}//${host}/tunnel/${tunnelId}`,
     host,
   }
 }

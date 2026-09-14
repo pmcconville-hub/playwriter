@@ -51,14 +51,12 @@ describe('remote-control', () => {
     expect(parseRemoteControlUrl('abc123')).toMatchInlineSnapshot(`
       {
         "host": "playwriter.dev",
-        "httpUrl": "https://playwriter.dev/tunnel/abc123",
         "wsUrl": "wss://playwriter.dev/tunnel/abc123/extension",
       }
     `)
     expect(parseRemoteControlUrl(buildRemoteControlUrl({ tunnelId: 'abc123' }))).toMatchInlineSnapshot(`
       {
         "host": "playwriter.dev",
-        "httpUrl": "https://playwriter.dev/tunnel/abc123",
         "wsUrl": "wss://playwriter.dev/tunnel/abc123/extension",
       }
     `)
@@ -70,7 +68,6 @@ describe('remote-control', () => {
     expect(parseRemoteControlUrl('wss://playwriter.dev/tunnel/abc123/extension')).toMatchInlineSnapshot(`
       {
         "host": "playwriter.dev",
-        "httpUrl": "https://playwriter.dev/tunnel/abc123",
         "wsUrl": "wss://playwriter.dev/tunnel/abc123/extension",
       }
     `)
@@ -82,7 +79,6 @@ describe('remote-control', () => {
     expect(parseRemoteControlUrl('https://abc123-tunnel.traforo.dev')).toMatchInlineSnapshot(`
       {
         "host": "abc123-tunnel.traforo.dev",
-        "httpUrl": "https://abc123-tunnel.traforo.dev",
         "wsUrl": "wss://abc123-tunnel.traforo.dev/extension",
       }
     `)
