@@ -2,11 +2,12 @@
  * Remote control: share a browser tab through Playwriter's Cloudflare tunnel.
  *
  * The extension acts as the "upstream" client (the thing being exposed).
- * A client dials wss://{tunnelId}-tunnel.playwriter.dev/extension. That host is a
+ * A client dials wss://playwriter.dev/tunnel/{tunnelId}/extension. That is a
  * Playwriter-owned Durable Object which forwards the connection to the extension.
  * The extension treats it as a normal relay connection speaking the exact same
- * extension WS protocol. Every remote-control host is under playwriter.dev, so
- * sharing a tab never sends traffic to a domain the user has not already trusted.
+ * extension WS protocol. The tunnel id lives in the URL path, so it is covered
+ * by TLS and never leaks through DNS queries or TLS SNI the way a subdomain
+ * would.
  *
  * Agents connect with the tunnel id, not a viewer URL:
  *
@@ -115,13 +116,12 @@ export function buildRemoteControlUrl({
 
 /** Origin Playwriter serves this tunnel from. */
 export function buildTunnelOrigin({
-  tunnelId,
   baseDomain = REMOTE_TUNNEL_BASE_DOMAIN,
 }: {
-  tunnelId: string
+  tunnelId?: string
   baseDomain?: string
 }): string {
-  return `https://${tunnelId}-tunnel.${baseDomain}`
+  return `https://${baseDomain}`
 }
 
 /** WebSocket URL the extension dials to register itself as the tunnel upstream. */
@@ -132,7 +132,7 @@ export function buildRemoteUpstreamWsUrl({
   tunnelId: string
   baseDomain?: string
 }): string {
-  return `wss://${tunnelId}-tunnel.${baseDomain}/traforo-upstream?_tunnelId=${encodeURIComponent(tunnelId)}`
+  return `wss://${baseDomain}/tunnel/${encodeURIComponent(tunnelId)}/upstream`
 }
 
 /** Tunnel id carried in the hash of a viewer link, or null for any other URL. */
@@ -186,9 +186,9 @@ export function parseRemoteControlUrl(url: string): { wsUrl: string; httpUrl: st
 
   const viewerTunnelId = extractViewerTunnelId(resolved)
   if (viewerTunnelId) {
-    const origin = buildTunnelOrigin({ tunnelId: viewerTunnelId })
+    const origin = buildTunnelOrigin({})
     return {
-      wsUrl: `${origin.replace(/^https/, 'wss')}/extension`,
+      wsUrl: `wss://${new URL(origin).host}/tunnel/${viewerTunnelId}/extension`,
       httpUrl: origin,
       host: new URL(origin).host,
     }

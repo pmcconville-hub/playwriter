@@ -28,16 +28,21 @@ export async function routeRemoteControlRequest({
   request: Request
   env: Env
 }): Promise<Response | null> {
-  const tunnelId = extractTunnelId(new URL(request.url).hostname)
+  const url = new URL(request.url)
+  // Preferred form: tunnel id in the path, so it never appears in DNS or TLS SNI.
+  const pathTunnelId = extractPathTunnelId(url.pathname)
+  // Legacy form: {tunnelId}-tunnel.playwriter.dev subdomain. Kept so older
+  // extension versions keep reconnecting after deploy.
+  const tunnelId = pathTunnelId || extractTunnelId(url.hostname)
   if (!tunnelId) {
     return null
   }
 
-  const url = new URL(request.url)
+  const isUpstream = url.pathname.endsWith('/traforo-upstream') || url.pathname.endsWith('/upstream')
   if (request.headers.get('Upgrade') !== 'websocket') {
     return new Response('Playwriter remote control tunnel', { status: 200 })
   }
-  if (url.pathname !== '/traforo-upstream' && url.pathname !== '/extension') {
+  if (!isUpstream && url.pathname.replace(/\/$/, '') !== '/extension' && !pathTunnelId) {
     return new Response('Not Found', { status: 404 })
   }
 
@@ -52,7 +57,19 @@ export async function routeRemoteControlRequest({
   }
 
   const id = env.REMOTE_CONTROL_TUNNEL.idFromName(tunnelId)
+  if (pathTunnelId) {
+    // Normalize to the DO's internal paths so the DO stays form-agnostic.
+    const rewritten = new URL(request.url)
+    rewritten.pathname = isUpstream ? '/traforo-upstream' : '/extension'
+    return env.REMOTE_CONTROL_TUNNEL.get(id).fetch(new Request(rewritten, request))
+  }
   return env.REMOTE_CONTROL_TUNNEL.get(id).fetch(request)
+}
+
+/** Tunnel id in the path form: /tunnel/{id}/upstream or /tunnel/{id}/extension. */
+function extractPathTunnelId(pathname: string): string | null {
+  const match = pathname.match(/^\/tunnel\/([a-z0-9-]{1,63})(?:\/|$)/)
+  return match?.[1] || null
 }
 
 function extractTunnelId(hostname: string): string | null {
@@ -78,17 +95,13 @@ export class RemoteControlTunnel extends DurableObject<Env> {
 
     const path = new URL(request.url).pathname
     // Keep this legacy path so deployed extension versions reconnect after cutover.
-    if (path === '/traforo-upstream') {
+    if (path === '/traforo-upstream' || path === '/upstream') {
       return this.openUpstream()
     }
-    if (path !== '/extension') {
-      return new Response('Not Found', { status: 404 })
+    if (path.replace(/\/$/, '') === '/extension') {
+      return this.openDownstreamAndContact(request)
     }
-
-    if (!this.getUpstream()) {
-      await this.waitForUpstream()
-    }
-    return this.openDownstream(request.headers)
+    return new Response('Not Found', { status: 404 })
   }
 
   webSocketMessage(socket: WebSocket, message: string | ArrayBuffer): void {
@@ -152,6 +165,13 @@ export class RemoteControlTunnel extends DurableObject<Env> {
 
   webSocketError(socket: WebSocket): void {
     closeSocket({ socket, code: CLOSE_INTERNAL_ERROR, reason: 'WebSocket error' })
+  }
+
+  private async openDownstreamAndContact(request: Request): Promise<Response> {
+    if (!this.getUpstream()) {
+      await this.waitForUpstream()
+    }
+    return this.openDownstream(request.headers)
   }
 
   private openUpstream(): Response {

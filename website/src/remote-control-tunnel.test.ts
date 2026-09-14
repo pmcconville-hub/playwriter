@@ -137,6 +137,48 @@ describe('remote control tunnel', () => {
     upstream.close(1000, 'done')
   })
 
+  // Path-based tunneling keeps the id out of DNS/SNI: the same playwriter.dev
+  // worker serves /tunnel/{id}/upstream and /tunnel/{id}/extension.
+  test('routes path-based tunnel urls on the main domain', async () => {
+    const tunnelId = crypto.randomUUID()
+    const upstreamResponse = await routeRemoteControlRequest({
+      request: new Request(`https://playwriter.dev/tunnel/${tunnelId}/upstream`, {
+        headers: { Upgrade: 'websocket' },
+      }),
+      env,
+    })
+    if (!upstreamResponse) {
+      throw new Error('Expected the upstream request to be routed')
+    }
+    const upstream = requireWebSocket(upstreamResponse)
+    expect(JSON.parse(await waitForMessage(upstream))).toEqual({ type: 'upstream_accepted' })
+
+    const openMessagePromise = waitForMessage(upstream)
+    const downstreamResponse = await routeRemoteControlRequest({
+      request: new Request(`https://playwriter.dev/tunnel/${tunnelId}/extension`, {
+        headers: { Upgrade: 'websocket' },
+      }),
+      env,
+    })
+    if (!downstreamResponse) {
+      throw new Error('Expected the downstream request to be routed')
+    }
+    const downstream = requireWebSocket(downstreamResponse)
+    const openMessage = JSON.parse(await openMessagePromise) as { type: string; path: string }
+    expect(openMessage).toMatchObject({ type: 'ws_open', path: '/extension' })
+    upstream.send(JSON.stringify({ type: 'ws_opened', connId: openMessage.connId as string }))
+
+    // path-based and subdomain-based ids land in the same DO namespace
+    expect(await routeRemoteControlRequest({
+      request: new Request(`https://playwriter.dev/tunnel/${tunnelId}/extension`, {
+        headers: { Upgrade: 'websocket' },
+      }),
+      env,
+    })).toBeDefined()
+
+    upstream.close(1000, 'done')
+  })
+
   test('rejects a second upstream and drops downstreams when sharing stops', async () => {
     const id = env.REMOTE_CONTROL_TUNNEL.idFromName(crypto.randomUUID())
     const stub = env.REMOTE_CONTROL_TUNNEL.get(id)

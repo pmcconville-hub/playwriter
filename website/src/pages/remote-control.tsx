@@ -64,7 +64,7 @@ export default function RemoteControlPage() {
     }
   }, [])
 
-  const wsUrl = tunnelId === undefined ? undefined : tunnelId ? `${buildTunnelOrigin({ tunnelId }).replace(/^https/, 'wss')}/extension` : null
+  const wsUrl = tunnelId === undefined ? undefined : tunnelId ? `${buildTunnelOrigin({}).replace(/^https/, 'wss')}/tunnel/${tunnelId}/extension` : null
 
   return (
     <div className="flex h-dvh w-screen flex-col overflow-hidden overscroll-none bg-neutral-950">

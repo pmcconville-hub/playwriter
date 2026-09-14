@@ -50,20 +50,22 @@ describe('remote-control', () => {
   test('resolves a viewer link to the tunnel websocket', () => {
     expect(parseRemoteControlUrl('abc123')).toMatchInlineSnapshot(`
       {
-        "host": "abc123-tunnel.playwriter.dev",
-        "httpUrl": "https://abc123-tunnel.playwriter.dev",
-        "wsUrl": "wss://abc123-tunnel.playwriter.dev/extension",
+        "host": "playwriter.dev",
+        "httpUrl": "https://playwriter.dev",
+        "wsUrl": "wss://playwriter.dev/tunnel/abc123/extension",
       }
     `)
     expect(parseRemoteControlUrl(buildRemoteControlUrl({ tunnelId: 'abc123' }))).toMatchInlineSnapshot(`
       {
-        "host": "abc123-tunnel.playwriter.dev",
-        "httpUrl": "https://abc123-tunnel.playwriter.dev",
-        "wsUrl": "wss://abc123-tunnel.playwriter.dev/extension",
+        "host": "playwriter.dev",
+        "httpUrl": "https://playwriter.dev",
+        "wsUrl": "wss://playwriter.dev/tunnel/abc123/extension",
       }
     `)
-    expect(buildRemoteUpstreamWsUrl({ tunnelId: 'abc123' })).toMatchInlineSnapshot(`"wss://abc123-tunnel.playwriter.dev/traforo-upstream?_tunnelId=abc123"`)
-    expect(buildTunnelOrigin({ tunnelId: 'abc123' })).toMatchInlineSnapshot(`"https://abc123-tunnel.playwriter.dev"`)
+    expect(buildRemoteUpstreamWsUrl({ tunnelId: 'abc123' })).toMatchInlineSnapshot(
+      `"wss://playwriter.dev/tunnel/abc123/upstream"`,
+    )
+    expect(buildTunnelOrigin({})).toMatchInlineSnapshot(`"https://playwriter.dev"`)
   })
 
   // Remote-control hosts moved to playwriter.dev, but links minted by an older

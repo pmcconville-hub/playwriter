@@ -1,7 +1,8 @@
 // Tunnel upstream client running inside the extension service worker.
-// Exposes the extension WS protocol at wss://{tunnelId}-tunnel.playwriter.dev/extension
+// Exposes the extension WS protocol at wss://playwriter.dev/tunnel/{tunnelId}/extension
 // so a remote playwriter relay, or the playwriter.dev viewer page, can dial the tab
-// without any local playwriter install.
+// without any local playwriter install. The id stays in the URL path so DNS and
+// TLS SNI never see it.
 // See playwriter/src/remote-control.ts for the shared protocol types and guards.
 
 import {
@@ -22,7 +23,7 @@ export type TunnelConnectionHandlers = {
 
 export type RemoteTunnelOptions = {
   tunnelId: string
-  /** Domain the tunnel subdomain lives under, e.g. playwriter.dev */
+  /** Host serving the /tunnel/{id} paths, e.g. playwriter.dev */
   baseDomain: string
   logger: { debug(...args: unknown[]): void; error(...args: unknown[]): void }
   /**

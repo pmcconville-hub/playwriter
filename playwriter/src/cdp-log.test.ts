@@ -147,6 +147,7 @@ describe('CDP log privacy', () => {
         params: {
           url: `https://playwriter.dev/remote-control#${secret}`,
           tunnel: `wss://${secret}-tunnel.playwriter.dev/extension`,
+          pathTunnel: `wss://playwriter.dev/tunnel/${secret}/extension`,
         },
       },
     })

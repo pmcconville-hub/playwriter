@@ -1563,7 +1563,7 @@ export async function startPlayWriterCDPRelayServer({
 
   // Shared handlers for extension connections. Used by the inbound /extension
   // WebSocket route and by outbound dials to remote-control tunnels: the relay
-  // dials wss://{id}-tunnel.traforo.dev/extension and the extension answers with
+  // dials wss://playwriter.dev/tunnel/{id}/extension and the extension answers with
   // the exact same protocol — only the dial direction inverts.
   type ExtensionSocketHandlers = {
     onOpen(ws: relayState.ExtensionSocket): void

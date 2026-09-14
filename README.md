@@ -263,7 +263,7 @@ Let a remote agent (Devin, a cloud bot, a friend's CLI agent) drive **one tab of
 3. The agent runs `playwriter session new --remote <id>` on its machine
 4. Open **Remote ON** and click **Stop sharing** anytime to **revoke**. The URL dies instantly.
 
-Opening that same link in **any browser** shows a live, clickable view of the tab, so you can share with a person instead of an agent. The viewer page receives no tunnel id in its initial HTTP request because the id starts in the URL fragment. Its JavaScript then uses the id to connect to the tunnel hostname.
+Opening that same link in **any browser** shows a live, clickable view of the tab, so you can share with a person instead of an agent. The viewer page receives no tunnel id in its initial HTTP request because the id starts in the URL fragment. Its JavaScript then uses the id to connect to the tunnel path (`/tunnel/{id}/extension`), keeping the id out of DNS and TLS SNI.
 
 ```
 YOUR MACHINE (extension only)                        AGENT MACHINE (any box with npx)
@@ -274,6 +274,8 @@ YOUR MACHINE (extension only)                        AGENT MACHINE (any box with
 ```
 
 The shared tab is the **starting control surface**, not a security sandbox. Remote CDP access is powerful, so share the link only with a person or agent you fully trust. A short denylist blocks new-tab creation, explicit whole-profile cookie APIs, and obvious destructive clears, but it does not make a malicious recipient safe. The URL contains 128 bits of randomness and is never reusable after revocation.
+
+Scope enforcement is **best effort**, not a sandbox. The shared tab can navigate to other pages in your browser (including extension pages), and CDP evaluation there can reach other tabs and profile data. Expect that anyone you give a remote URL to can access more than the one shared tab.
 
 Use case: you are logged into a website and want an agent to do work in your authenticated session without giving it your password.
 

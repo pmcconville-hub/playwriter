@@ -114,7 +114,7 @@ run a separate command interpreter outside `chrome.debugger`.
 
 The normal connection is `ws://localhost:19988/extension`. After a user confirms
 Remote control, the extension also opens
-`wss://{id}-tunnel.playwriter.dev/traforo-upstream` for that selected tab.
+`wss://playwriter.dev/tunnel/{id}/upstream` for that selected tab.
 
 ## Data Handling and Privacy
 

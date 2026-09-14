@@ -3,11 +3,24 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-// Playwriter extension IDs - used for validation and Chrome flag commands
+// Playwriter extension IDs - used for validation and Chrome flag commands.
+//
+// An extension ID is always sha256(SOME_STRING) -> first 16 bytes -> each hex
+// nibble mapped 0-f to a-p. Only SOME_STRING differs by how it is loaded:
+//   - signed CRX / Web Store: SOME_STRING = the developer public key bytes
+//   - unpacked folder with no manifest "key": SOME_STRING = the absolute folder path
+// Production ships no "key" in manifest.json (see extension/vite.config.mts), so an
+// unpacked production build gets a path-derived ID instead of the store ID.
 export const EXTENSION_IDS = [
+  // hash of the developer public key baked into the Web Store listing
   'jfeammnjpkecdekppnclgkkffahnhfhe', // Production (Chrome Web Store)
+  // hash of the public key injected into dev/test builds (stable across machines)
   'pebbngnfojnignonigcnkdilknapkgid', // Dev extension (stable ID from manifest key)
-  'laceiahnielojmkjcfpcjhjnnmjobckf', // Ghost Browser
+  // NOT a Ghost Browser identity: this is sha256 of the unpacked folder path
+  // "/Users/morse/Downloads/jfeammnjpkecdekppnclgkkffahnhfhe" on one Mac. Because
+  // the production manifest has no "key", loading it unpacked derived the ID from
+  // that path, not from any key. It only matches that exact path on that machine.
+  'laceiahnielojmkjcfpcjhjnnmjobckf', // Unpacked-from-Downloads path hash (machine-specific)
 ]
 
 /**
@@ -84,6 +97,7 @@ export function redactRemoteControlSecrets(value: string): string {
     .replace(/(playwriter\.dev\/remote-control#)[a-z0-9-]{1,63}/gi, '$1[redacted]')
     .replace(/[a-z0-9-]{1,63}(?=-tunnel\.)/gi, '[redacted]')
     .replace(/(_tunnelId=)[a-z0-9-]{1,63}/gi, '$1[redacted]')
+    .replace(/(\/tunnel\/)[a-z0-9-]{1,63}/gi, '$1[redacted]')
 }
 
 // Use ~/.playwriter for logs so each OS user gets their own dir (avoids permission errors on shared machines, see #44)
