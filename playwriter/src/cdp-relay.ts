@@ -2149,8 +2149,8 @@ export async function startPlayWriterCDPRelayServer({
 
   async function connectRemoteExtension({ url }: { url: string }): Promise<relayState.ExtensionEntry> {
     const { wsUrl } = parseRemoteControlUrl(url)
-    // Key by wsUrl, not httpUrl: path-form tunnels share one host, so the id must
-    // be part of the key to keep two shared tabs dialing two distinct tunnels.
+    // Key by the dialed wsUrl: it is unique per tunnel id in every accepted input
+    // form, so two shared tabs on one host never collapse into one dial.
     const urlKey = wsUrl
     const stableKey = `remote:${crypto.createHash('sha256').update(urlKey).digest('hex')}`
 
