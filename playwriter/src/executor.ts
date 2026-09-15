@@ -378,9 +378,9 @@ export interface CdpConfig {
   headless?: boolean
   /** CLI session id — sent as ?session= on the /cdp URL so the relay can map the client to its session */
   sessionId?: string
-  /** Tab group title new tabs of this session join (extension mode only, default 'playwriter') */
+  /** Tab group title for this session (extension and remote-control modes) */
   tabGroup?: string
-  /** Explicit tab group color (extension mode only, default derived from the title hash) */
+  /** Explicit tab group color (extension and remote-control modes) */
   tabGroupColor?: TabGroupColor
 }
 
@@ -397,7 +397,7 @@ export interface SessionInfo {
   browser: string | null
   profile: { email: string; id: string } | null
   cwd: string | null
-  /** Custom tab group title, null when using the default 'playwriter' group */
+  /** Explicit tab group title, null when the mode supplies its default */
   tabGroup: string | null
   /** Explicit tab group color, null when derived from the title hash */
   tabGroupColor: TabGroupColor | null

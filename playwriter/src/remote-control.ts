@@ -367,9 +367,6 @@ export function getRemoteExtensionMethodRejection(method: string): string | null
   if (method === 'ghost-browser') {
     return 'Ghost Browser APIs are not available on shared remote-control tabs.'
   }
-  if (method === 'updateTabGroup') {
-    return 'Tab groups cannot be changed from shared remote-control tabs.'
-  }
   return null
 }
 

@@ -14,13 +14,14 @@ export function isBrowserAllowedWebSocketCloseCode(code: number): boolean {
 
 // ============================================================================
 // Tab groups. Each CLI session can have a custom tab group title (default
-// 'playwriter'). The title travels with Target.createTarget / createInitialTab
-// messages; the extension stores it per tab and derives Chrome group
-// membership from it. Pure planning helpers live here so they are testable
-// from the playwriter package.
+// 'playwriter', or 'remote' for remote-control sessions). The title travels
+// with Target.createTarget / createInitialTab messages; the extension stores it
+// per tab and derives Chrome group membership from it. Pure planning helpers
+// live here so they are testable from the playwriter package.
 // ============================================================================
 
 export const DEFAULT_TAB_GROUP_TITLE = 'playwriter'
+export const REMOTE_TAB_GROUP_TITLE = 'remote'
 
 /** Normalize a user-provided tab group title. Returns null when unusable. */
 export function normalizeTabGroupTitle(title: unknown): string | null {
@@ -91,6 +92,31 @@ export function shouldDisconnectAfterTabGroupChange(options: {
     return false
   }
   return !managedGroupIds.includes(currentGroupId)
+}
+
+export function shouldUpdateTabGroupForTab({
+  currentTitle,
+  currentKey,
+  from,
+  key,
+  remoteScoped = false,
+}: {
+  currentTitle: string
+  currentKey?: string
+  from: string
+  key?: string
+  remoteScoped?: boolean
+}): boolean {
+  if (remoteScoped) {
+    return true
+  }
+  if (currentTitle !== from) {
+    return false
+  }
+  if (from !== DEFAULT_TAB_GROUP_TITLE) {
+    return true
+  }
+  return Boolean(key && currentKey === key)
 }
 
 export type TabGroupSyncInput = {

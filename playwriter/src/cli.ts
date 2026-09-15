@@ -399,7 +399,7 @@ cli
   .option('--custom-proxy <url>', 'Custom proxy for cloud browser (host:port or user:pass@host:port)')
   .option('--timeout <minutes>', 'Cloud browser timeout in minutes (1-240, default 60)')
   .option('--disable-proxy-bandwidth-acceleration', 'Allow loading images, video, and fonts when proxy is enabled (they are blocked by default to save proxy bandwidth)')
-  .option('--tab-group <name>', 'Tab group title for tabs this session creates (default "playwriter"). Lets each session keep its tabs in its own Chrome group')
+  .option('--tab-group <name>', 'Tab group title for this session (default "playwriter", or "remote" with --remote)')
   .option('--tab-group-color <color>', 'Tab group color: grey, blue, red, yellow, green, pink, purple, cyan, orange (default derived from the group name)')
   .action(async (options) => {
     if (options.patchright) {
@@ -441,14 +441,18 @@ cli
     // local relay dials the tunnel, so later `playwriter -s N -e ...` calls need
     // no extra flags.
     if (options.remote) {
-      warnTabGroupUnsupported('remote-control sessions')
       await ensureRelayForSessionCreation(isLocal)
       const serverUrl = await getServerUrl(options.host)
       try {
         const response = await fetch(`${serverUrl}/cli/session/new`, {
           method: 'POST',
           headers: buildAuthHeaders({ token: options.token, json: true }),
-          body: JSON.stringify({ remoteControlUrl: options.remote, cwd: process.cwd() }),
+          body: JSON.stringify({
+            remoteControlUrl: options.remote,
+            cwd: process.cwd(),
+            tabGroup,
+            tabGroupColor,
+          }),
         })
         if (!response.ok) {
           const text = await response.text()
@@ -462,8 +466,14 @@ cli
           console.error(`Error: ${parsed?.error || `${response.status} ${text}`}`)
           process.exit(1)
         }
-        const result = (await response.json()) as { id: string; browser?: string | null; warning?: string | null }
+        const result = (await response.json()) as {
+          id: string
+          browser?: string | null
+          warning?: string | null
+          tabGroup?: string | null
+        }
         printSessionWarning(result)
+        warnIfTabGroupIgnored(tabGroup || tabGroupColor, result)
         printSessionCreated(`Session ${result.id} created (remote browser tab). Use with: playwriter -s ${result.id} -e "..."`)
         console.log(pc.dim('The shared tab is the starting control surface. Remote control is not a security sandbox.'))
         console.log(pc.dim('The user can revoke access anytime with Stop sharing on the Remote ON dropdown.'))

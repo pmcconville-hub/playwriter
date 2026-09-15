@@ -46,14 +46,14 @@ playwriter session reset <sessionId>
 
 ### Tab groups
 
-Use the shortest clear **single-word** group name with no spaces, such as `docs`, `shop`, `test`, or `scrape`. The default is `playwriter`.
+Use the shortest clear **single-word** group name with no spaces, such as `docs`, `shop`, `test`, or `scrape`. Local sessions default to `playwriter`; remote-control sessions default to `remote`.
 
 ```bash
 playwriter session new --tab-group docs
 playwriter session new --tab-group scrape --tab-group-color grey
 ```
 
-Colors: `grey, blue, red, yellow, green, pink, purple, cyan, orange`; otherwise color is derived from the name. Chrome can collapse or move groups. Dragging a tab between Playwriter groups keeps it connected; dragging it out disconnects it. Extension sessions only.
+Colors: `grey, blue, red, yellow, green, pink, purple, cyan, orange`; otherwise color is derived from the name. Chrome can collapse or move groups. Dragging a tab between Playwriter groups keeps it connected; dragging it out disconnects it. Local and remote-control extension sessions only.
 
 ### Remote access (control browser from another machine)
 
@@ -141,6 +141,8 @@ playwriter session new --remote <id>
 # prints a session id; use it normally afterwards, no extra flags needed
 playwriter -s 1 -e "console.log(await page.title())"
 ```
+
+The shared tab joins the `remote` tab group. Set another title with `--tab-group <name>`.
 
 Rules for remote-control sessions:
 

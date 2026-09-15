@@ -23,6 +23,7 @@ import {
   computeTabGroupSyncPlan,
   normalizeTabGroupTitle,
   shouldDisconnectAfterTabGroupChange,
+  shouldUpdateTabGroupForTab,
   type CreateInitialTabParams,
   type UpdateTabGroupResult,
 } from 'playwriter/src/protocol'
@@ -1001,6 +1002,8 @@ async function dispatchRelayMessage(message: any, sink: RelayMessageSink): Promi
   // to serialize with sync.
   //
   // Ownership rules (group titles are NOT identities):
+  // - Remote updates apply only to tabs in that tunnel's scope, regardless of
+  //   their current title or owning local session.
   // - Renaming FROM the shared default group only moves tabs created by the
   //   requesting session (`key`), never manually toggled or other sessions' tabs.
   // - Renaming a custom group moves everything currently titled `from` (that is
@@ -1028,20 +1031,25 @@ async function dispatchRelayMessage(message: any, sink: RelayMessageSink): Promi
 
           const fromIsDefault = from === DEFAULT_TAB_GROUP_TITLE
           const isRename = to !== from
+          const remoteScopedTabIds = sink.remoteScope?.tabIds
           let movedTabs = 0
           store.setState((state) => {
             const newTabs = new Map(state.tabs)
             for (const [tabId, info] of newTabs) {
-              if ((info.groupTitle || DEFAULT_TAB_GROUP_TITLE) !== from) {
+              if (remoteScopedTabIds && !remoteScopedTabIds.has(tabId)) {
                 continue
               }
-              // Only the requesting session's tabs leave the shared default
-              // group. Color-only default updates also stick to keyed tabs so
-              // the explicit color has an owner tab to live on.
-              if (fromIsDefault && (!key || info.groupKey !== key)) {
+              const remoteScoped = remoteScopedTabIds?.has(tabId) === true
+              if (!shouldUpdateTabGroupForTab({
+                currentTitle: info.groupTitle || DEFAULT_TAB_GROUP_TITLE,
+                currentKey: info.groupKey,
+                from,
+                key,
+                remoteScoped,
+              })) {
                 continue
               }
-              const changedTitle = isRename && info.groupTitle !== to
+              const changedTitle = (isRename || remoteScoped) && info.groupTitle !== to
               const changedColor = color !== undefined && info.groupColor !== color
               if (!changedTitle && !changedColor) {
                 continue
@@ -1061,7 +1069,7 @@ async function dispatchRelayMessage(message: any, sink: RelayMessageSink): Promi
           // change above) then consolidates duplicates if a group named `to`
           // already existed. Default-group updates skip this: sync moves the
           // session's tabs out (rename) or recolors the group (color-only).
-          if (!fromIsDefault) {
+          if (!fromIsDefault && !remoteScopedTabIds) {
             const managedTitles = await getManagedTabGroupTitles()
             if (managedTitles.has(from)) {
               const persisted = await loadManagedTabGroups()

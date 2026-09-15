@@ -21,6 +21,7 @@ import type {
 } from './protocol.js'
 import {
   DEFAULT_TAB_GROUP_TITLE,
+  REMOTE_TAB_GROUP_TITLE,
   normalizeTabGroupColor,
   normalizeTabGroupTitle,
   type TabGroupColor,
@@ -2421,9 +2422,9 @@ export async function startPlayWriterCDPRelayServer({
       browser?: string
       /** Profile info from discovery */
       profiles?: Array<{ name: string; email: string }>
-      /** Tab group title new tabs of this session join (extension mode only, default 'playwriter') */
+      /** Tab group title for extension or remote-control sessions */
       tabGroup?: string
-      /** Explicit tab group color (extension mode only, default derived from the title) */
+      /** Explicit tab group color for extension or remote-control sessions */
       tabGroupColor?: string
       /** Cloud API credentials for local-to-cloud execution helpers */
       cloudAuth?: CloudAuth
@@ -2534,6 +2535,14 @@ export async function startPlayWriterCDPRelayServer({
     // Remote control mode: dial the tunnel for an id shared by another user's extension
     // and bind the session to that remote extension connection.
     if (body.remoteControlUrl) {
+      const tabGroup = body.tabGroup !== undefined ? normalizeTabGroupTitle(body.tabGroup) : REMOTE_TAB_GROUP_TITLE
+      if (!tabGroup) {
+        return c.json({ error: 'tabGroup must be a non-empty string' }, 400)
+      }
+      const tabGroupColor = body.tabGroupColor !== undefined ? normalizeTabGroupColor(body.tabGroupColor) : null
+      if (body.tabGroupColor !== undefined && !tabGroupColor) {
+        return c.json({ error: 'tabGroupColor must be one of: grey, blue, red, yellow, green, pink, purple, cyan, orange' }, 400)
+      }
       let remoteEntry: relayState.ExtensionEntry
       try {
         remoteEntry = await connectRemoteExtension({ url: body.remoteControlUrl })
@@ -2548,6 +2557,8 @@ export async function startPlayWriterCDPRelayServer({
       const executor = manager.getExecutor({
         sessionId,
         cwd: cwd || undefined,
+        tabGroup,
+        tabGroupColor: tabGroupColor || undefined,
         sessionMetadata: {
           extensionId: remoteEntry.stableKey,
           browser: remoteEntry.info.browser || 'Remote browser',
@@ -2555,13 +2566,38 @@ export async function startPlayWriterCDPRelayServer({
         },
       })
       const metadata = executor.getSessionMetadata()
+      const tabGroupWarning: string | undefined = await (async () => {
+        try {
+          const result = (await sendToExtension({
+            extensionId: remoteEntry.stableKey,
+            method: 'updateTabGroup',
+            params: {
+              from: DEFAULT_TAB_GROUP_TITLE,
+              to: tabGroup,
+              key: sessionId,
+              color: tabGroupColor || undefined,
+            },
+            timeout: 10000,
+          })) as UpdateTabGroupResult | undefined
+          if (result?.success !== true) {
+            return 'The remote Playwriter extension is too old to update the shared tab group.'
+          }
+          return undefined
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return `The remote extension could not update the shared tab group: ${message}`
+        }
+      })()
+      const warning = [cwdWarning, tabGroupWarning].filter(Boolean).join(' ') || undefined
       return c.json({
         id: sessionId,
         mode: 'remote' as const,
         extensionId: metadata.extensionId,
         browser: metadata.browser,
         profile: metadata.profile,
-        warning: cwdWarning,
+        warning,
+        tabGroup,
+        tabGroupColor,
       })
     }
 

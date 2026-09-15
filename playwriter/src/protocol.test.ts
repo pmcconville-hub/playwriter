@@ -8,6 +8,7 @@ import {
   normalizeTabGroupColor,
   normalizeTabGroupTitle,
   shouldDisconnectAfterTabGroupChange,
+  shouldUpdateTabGroupForTab,
 } from './protocol.js'
 
 describe('browser websocket close codes', () => {
@@ -105,6 +106,17 @@ describe('normalizeTabGroupColor', () => {
       normalizeTabGroupColor(null),
       normalizeTabGroupColor(123),
     ]).toEqual(['blue', 'orange', 'green', null, null, null, null, null])
+  })
+})
+
+describe('shouldUpdateTabGroupForTab', () => {
+  test('remote updates stay scoped while local default-group updates stay session-owned', () => {
+    expect([
+      shouldUpdateTabGroupForTab({ currentTitle: 'research', from: 'remote', remoteScoped: true }),
+      shouldUpdateTabGroupForTab({ currentTitle: 'playwriter', currentKey: '1', from: 'playwriter', key: '1' }),
+      shouldUpdateTabGroupForTab({ currentTitle: 'playwriter', currentKey: '2', from: 'playwriter', key: '1' }),
+      shouldUpdateTabGroupForTab({ currentTitle: 'research', from: 'research' }),
+    ]).toEqual([true, true, false, true])
   })
 })
 

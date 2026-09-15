@@ -73,7 +73,7 @@ playwriter -s 1 -e 'state.myPage = await context.newPage(); await state.myPage.g
 
 ### Tab groups
 
-Tabs a session creates join a Chrome **tab group** named `playwriter` by default. Use the shortest clear single-word name with no spaces, such as `docs`, `shop`, `test`, or `scrape`.
+Local extension sessions use a Chrome **tab group** named `playwriter` by default. Remote-control sessions move the shared tab into `remote`. Use the shortest clear single-word name with no spaces, such as `docs`, `shop`, `test`, or `scrape`.
 
 ```bash
 # Park a long scrape in its own group. The user can Move group to new window
@@ -90,9 +90,13 @@ playwriter session new --tab-group done --tab-group-color grey
 # Rename or recolor later
 playwriter session update 1 --tab-group research
 playwriter session update 1 --tab-group-color red
+
+# Remote tabs support the same title and color options
+playwriter session new --remote <id> --tab-group support
+playwriter session update 1 --tab-group review --tab-group-color cyan
 ```
 
-`--tab-group-color` accepts: `grey`, `blue`, `red`, `yellow`, `green`, `pink`, `purple`, `cyan`, `orange`. Without it, color is derived from the name. The default `playwriter` group stays green.
+`--tab-group-color` accepts: `grey`, `blue`, `red`, `yellow`, `green`, `pink`, `purple`, `cyan`, `orange`. Without it, color is derived from the name. The default local `playwriter` group stays green.
 
 Multiline:
 
