@@ -68,6 +68,7 @@
               "docs/vs-playwright-mcp",
               "docs/vs-playwright-cli",
               "docs/vs-browser-mcp",
+              "docs/vs-agent-browser",
               "docs/vs-claude-extension"
             ]
           },

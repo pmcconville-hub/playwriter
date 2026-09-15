@@ -176,68 +176,80 @@ Color-coded: yellow=links, orange=buttons, coral=inputs, pink=checkboxes, peach=
 
 ### vs Playwright MCP
 
-|               | Playwright MCP    | Playwriter                        |
-| ------------- | ----------------- | --------------------------------- |
-| Browser       | Spawns new Chrome | **Uses your Chrome**              |
-| Extensions    | None              | Your existing ones                |
-| Login state   | Fresh             | Already logged in                 |
-| Bot detection | Always detected   | Can bypass (disconnect extension) |
-| Collaboration | Separate window   | Same browser as user              |
+|               | Playwriter                        | Playwright MCP                       |
+| ------------- | --------------------------------- | ------------------------------------ |
+| Browser       | **Uses your Chrome**              | Separate managed profile by default  |
+| Extensions    | Your existing ones                | None by default                      |
+| Login state   | Already logged in                 | Persistent, but a separate profile   |
+| Attach to your Chrome | Core design               | `--extension` mode                   |
+| Bot handling  | Real browser (disconnect to solve) | Managed automation profile          |
+| Native video / raw CDP | Yes                      | Trace-based / not exposed            |
 
 > **Note:** Playwriter video recording is **100x more efficient than Playwright video recording**, which sends **base64 images for every frame**.
 
-|                 | Playwright CLI      | Playwriter                    |
-| --------------- | ------------------- | ----------------------------- |
-| Browser         | Spawns new browser  | **Uses your Chrome**          |
-| Login state     | Fresh               | Already logged in             |
-| Extensions      | None                | Your existing ones            |
-| Captchas        | Always blocked      | Bypass (disconnect extension) |
-| Collaboration   | Separate window     | Same browser as user          |
-| Capabilities    | Limited command set | Anything Playwright can do    |
-| Raw CDP access  | No                  | Yes                           |
-| Video recording | File-based tracing  | Native tab capture (30–60fps) |
+|                 | Playwriter                    | Playwright CLI                     |
+| --------------- | ----------------------------- | ---------------------------------- |
+| Browser         | **Uses your Chrome**          | New browser by default             |
+| Login state     | Already logged in             | Persistent profile, separate       |
+| Extensions      | Your existing ones            | None by default                    |
+| Captchas        | Disconnect extension to solve | Managed automation profile         |
+| Programmable JS | `execute` with persistent state | `run-code` (no cross-call state) |
+| Raw CDP access  | First-class                   | Not exposed                        |
+| Native video    | `chrome.tabCapture` (30–60fps) | Trace / screencast based          |
 
 ### vs BrowserMCP
 
-|               | BrowserMCP          | Playwriter               |
-| ------------- | ------------------- | ------------------------ |
-| Tools         | 12+ dedicated tools | 1 `execute` tool         |
-| API           | Limited actions     | Full Playwright          |
-| Context usage | High (tool schemas) | Low                      |
-| LLM knowledge | Must learn tools    | Already knows Playwright |
+|               | Playwriter               | BrowserMCP          |
+| ------------- | ------------------------ | ------------------- |
+| Tools         | **1 `execute` tool**     | 12+ dedicated tools |
+| API           | Full Playwright          | Limited actions     |
+| Context usage | Low                      | High (tool schemas) |
+| LLM knowledge | Already knows Playwright | Must learn tools    |
+
+### vs agent-browser
+
+|                    | Playwriter                     | agent-browser                    |
+| ------------------ | ------------------------------ | -------------------------------- |
+| Browser            | **Uses your Chrome**           | Fresh Chrome for Testing         |
+| API surface        | 1 `execute` + full Playwright  | 50+ CLI commands, one per action |
+| Actions per turn   | Real JS (loops, conditions)    | `batch` of command strings       |
+| Reusable logic     | Import a `.js` function         | Re-run bash sequences            |
+| Skill recorder     | Yes                            | No                               |
+| Cloud browsers     | Built-in stealth + proxy       | Plugin only                      |
+| Remote control tab | Yes (Devin, cloud bots)        | No                               |
 
 ### vs Antigravity (Jetski)
 
-|          | Jetski                       | Playwriter       |
-| -------- | ---------------------------- | ---------------- |
-| Tools    | 17+ tools                    | 1 tool           |
-| Subagent | Spawns for each browser task | Direct execution |
-| Latency  | High (agent overhead)        | Low              |
+|          | Playwriter       | Jetski                       |
+| -------- | ---------------- | ---------------------------- |
+| Tools    | **1 tool**       | 17+ tools                    |
+| Subagent | Direct execution | Spawns for each browser task |
+| Latency  | Low              | High (agent overhead)        |
 
 ### vs Claude Browser Extension
 
-|                      | Claude Extension     | Playwriter              |
-| -------------------- | -------------------- | ----------------------- |
-| Agent support        | Claude only          | Any MCP client          |
-| Windows WSL          | No                   | Yes                     |
-| Context method       | Screenshots (100KB+) | A11y snapshots (5-20KB) |
-| Playwright API       | No                   | Full                    |
-| Debugger/breakpoints | No                   | Yes                     |
-| Live code editing    | No                   | Yes                     |
-| Network interception | Limited              | Full                    |
-| Raw CDP access       | No                   | Yes                     |
+|                      | Playwriter              | Claude Extension     |
+| -------------------- | ----------------------- | -------------------- |
+| Agent support        | **Any MCP client**      | Claude only          |
+| Windows WSL          | Yes                     | No                   |
+| Context method       | A11y snapshots (5-20KB) | Screenshots (100KB+) |
+| Playwright API       | Full                    | No                   |
+| Debugger/breakpoints | Yes                     | No                   |
+| Live code editing    | Yes                     | No                   |
+| Network interception | Full                    | Limited              |
+| Raw CDP access       | Yes                     | No                   |
 
 ### vs Built-in Chrome CDP (`--remote-debugging-port`)
 
-|                       | Built-in CDP                          | Playwriter                   |
-| --------------------- | ------------------------------------- | ---------------------------- |
-| Setup                 | Restart Chrome with special flags     | Click extension icon         |
-| Confirmation dialog   | Shows automation infobar agents can't dismiss | No blocking dialog   |
-| Autonomous agents     | Interrupted by debug banners          | Fully autonomous             |
-| User disruption       | Banners appear mid-workflow           | Silent — no interruption     |
-| Existing session      | Must relaunch Chrome (lose state)     | Uses your running browser    |
+|                       | Playwriter                   | Built-in CDP                                       |
+| --------------------- | ---------------------------- | -------------------------------------------------- |
+| Setup                 | **Click extension icon**     | Relaunch Chrome with special flags                 |
+| Your real profile     | Yes                          | Blocked on default profile since Chrome 136        |
+| Permission prompt     | None                         | "Allow remote debugging?" dialog agents can't click|
+| Autonomous agents     | Fully autonomous             | Blocked by dialog / throwaway profile              |
+| Existing session      | Uses your running browser    | Must relaunch Chrome (lose state)                  |
 
-> Chrome's `--remote-debugging-port` flag shows a persistent "controlled by automated software" banner that agents cannot dismiss. It pops up in the middle of your workflow whenever you're using the browser. Playwriter runs silently — agents work autonomously without any confirmation dialogs, so you're never interrupted.
+> Chrome's `--remote-debugging-port` is ignored on your default profile since **Chrome 136**, so you must use a throwaway `--user-data-dir` with none of your logins. Connecting an external CDP client also shows an "Allow remote debugging?" dialog an agent cannot click. Playwriter uses an in-Chrome extension instead: no dialog, no flags, your real profile.
 
 ## Architecture
 
