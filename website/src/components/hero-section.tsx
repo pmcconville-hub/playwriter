@@ -1,11 +1,10 @@
 /**
- * Full-bleed hero sections for the Playwriter landing and cloud browsers pages.
- * Breaks out of the Above column constraint via w-screen + negative margin
- * (same pattern as sigillo's hero-section.tsx).
+ * Hero sections for the Playwriter landing and cloud browsers pages.
  *
- * HeroSection: main landing page (Chrome Extension + GitHub CTAs)
- * CloudHeroSection: cloud browsers page (Login with Google CTA)
- * Both share the same VideoBackgroundShader background and star rating badge.
+ * HeroSection / CloudHeroSection: stay within the Above column (page width)
+ * via w-full, same as gpuix's hero-section.tsx.
+ * ChangelogHeroSection: still breaks out full-bleed via w-screen + negative margin.
+ * All share the same VideoBackgroundShader background and star rating badge.
  */
 'use client'
 
@@ -110,10 +109,10 @@ function HeroBackground({ dotColor = 'rgba(255, 106, 0, 0.7)' }: { dotColor?: st
       <VideoBackgroundShader
         src='/assets/hero-bg.mp4'
         className='absolute inset-0 w-full h-full'
+        dotStyle='ascii'
         dotColor={dotColor}
-        dotSize={6}
-        minDotSize={1}
-        dotMargin={1}
+        dotSize={10}
+        chars=' .:-~=playwriter'
         animSpeed={3}
         gamma={0.8}
         enableMask={false}
@@ -146,7 +145,7 @@ export function HeroSection() {
   }, [])
 
   return (
-    <div className='relative mt-4 lg:mt-8 mb-6 lg:mb-10 w-screen ml-[calc(-50vw+50%)] flex flex-col items-center overflow-hidden'>
+    <div className='relative mt-4 lg:mt-8 mb-6 lg:mb-10 w-full flex flex-col items-center overflow-hidden'>
       <HeroBackground />
 
       {/* Foreground content */}
@@ -227,7 +226,7 @@ export function CloudHeroSection() {
   }, [])
 
   return (
-    <div className='relative mt-4 lg:mt-8 mb-6 lg:mb-10 w-screen ml-[calc(-50vw+50%)] flex flex-col items-center overflow-hidden'>
+    <div className='relative mt-4 lg:mt-8 mb-6 lg:mb-10 w-full flex flex-col items-center overflow-hidden'>
       <HeroBackground dotColor='rgba(255, 50, 50, 0.7)' />
 
       {/* Foreground content */}
