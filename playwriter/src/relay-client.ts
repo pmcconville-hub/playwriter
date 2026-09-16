@@ -338,3 +338,54 @@ async function ensureRelayServerImpl(options: EnsureRelayServerOptions = {}): Pr
   const waitedMs = Date.now() - startTime
   throw new Error(`Failed to start CDP relay server within ${waitedMs}ms. Check logs at: ${LOG_FILE_PATH}`)
 }
+
+export type CreatedRelaySession = {
+  id: string
+  tabGroup?: string | null
+  tabGroupColor?: string | null
+}
+
+export async function createRelaySession({
+  port = RELAY_PORT,
+  tabGroup,
+  tabGroupColor,
+}: {
+  port?: number
+  tabGroup?: string
+  tabGroupColor?: string
+} = {}): Promise<CreatedRelaySession> {
+  const response = await fetch(`http://127.0.0.1:${port}/cli/session/new`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tabGroup, tabGroupColor }),
+  })
+  const result = (await response.json()) as CreatedRelaySession & { error?: string }
+  if (!response.ok) {
+    throw new Error(result.error || `Playwriter session create failed with HTTP ${response.status}`)
+  }
+  if (!result.id) {
+    throw new Error('Playwriter session create returned no id')
+  }
+  return result
+}
+
+export async function deleteRelaySession({
+  port = RELAY_PORT,
+  sessionId,
+}: {
+  port?: number
+  sessionId: string
+}): Promise<void> {
+  const response = await fetch(`http://127.0.0.1:${port}/cli/session/delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId }),
+  })
+  if (response.status === 404) {
+    return
+  }
+  if (!response.ok) {
+    const result = (await response.json().catch(() => ({}))) as { error?: string }
+    throw new Error(result.error || `Playwriter session delete failed with HTTP ${response.status}`)
+  }
+}

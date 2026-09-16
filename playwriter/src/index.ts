@@ -1,5 +1,7 @@
 export * from './cdp-relay.js'
 export * from './utils.js'
+export { createRelaySession, deleteRelaySession, ensureRelayServer } from './relay-client.js'
+export type { CreatedRelaySession } from './relay-client.js'
 export { getCDPSessionForPage, PlaywrightCDPSessionAdapter } from './cdp-session.js'
 export type { ICDPSession } from './cdp-session.js'
 export { Editor } from './editor.js'
