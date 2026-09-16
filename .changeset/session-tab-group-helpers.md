@@ -2,21 +2,18 @@
 'playwriter': patch
 ---
 
-Add Node helpers to create and delete Playwriter sessions with a tab group.
+Add `connectViaExtension()` so Node programs can open a Playwriter session, connect over CDP, and close it without posting `/cli/session/new` themselves.
 
 ```ts
-import { createRelaySession, deleteRelaySession, getCdpUrl } from 'playwriter'
+import { connectViaExtension } from 'playwriter'
 
-const session = await createRelaySession({
+const connection = await connectViaExtension({
   tabGroup: 'email-check',
   tabGroupColor: 'grey',
 })
-const browser = await chromium.connectOverCDP(
-  getCdpUrl({
-    sessionId: session.id,
-    tabGroup: 'email-check',
-    tabGroupColor: 'grey',
-  }),
-)
-await deleteRelaySession({ sessionId: session.id })
+const page = await connection.browser.contexts()[0].newPage()
+await page.goto('https://example.com')
+await connection.close()
 ```
+
+`tabGroupColor` is typed as Chrome's tab group colors. `close()` closes leftover pages, disconnects CDP, and deletes the session.

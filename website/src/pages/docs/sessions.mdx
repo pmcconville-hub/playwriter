@@ -127,6 +127,26 @@ Tab groups are **cosmetic**:
 
 Only extension sessions support tab groups. Headless, direct CDP, and cloud sessions have no browser UI to group.
 
+## Node API
+
+Use `connectViaExtension()` from the `playwriter` package. It starts the relay if needed, waits for the Chrome extension, creates a session, and connects over CDP.
+
+```ts
+import { connectViaExtension } from 'playwriter'
+
+const connection = await connectViaExtension({
+  tabGroup: 'email-check',
+  tabGroupColor: 'grey',
+})
+const page = await connection.browser.contexts()[0].newPage()
+await page.goto('https://example.com')
+await connection.close()
+```
+
+`tabGroupColor` is typed as Chrome's tab group colors: `grey`, `blue`, `red`, `yellow`, `green`, `pink`, `purple`, `cyan`, `orange`. `close()` closes leftover pages, disconnects CDP, and deletes the session.
+
+Do not POST `/cli/session/new` yourself. Do not call `chromium.connectOverCDP(getCdpUrl(...))` unless you already have a session from the CLI.
+
 ## Session management
 
 ```bash

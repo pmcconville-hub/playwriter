@@ -55,6 +55,8 @@ playwriter session new --tab-group scrape --tab-group-color grey
 
 Colors: `grey, blue, red, yellow, green, pink, purple, cyan, orange`; otherwise color is derived from the name. Chrome can collapse or move groups. Dragging a tab between Playwriter groups keeps it connected; dragging it out disconnects it. Local and remote-control extension sessions only.
 
+Node programs: `import { connectViaExtension } from 'playwriter'`. Pass `tabGroup` and `tabGroupColor`, then `await connection.close()`. Do not POST `/cli/session/new` yourself.
+
 ### Remote access (control browser from another machine)
 
 Playwriter can control a Chrome browser running on a different machine over the internet. The host machine runs `playwriter serve` with a [traforo](https://traforo.dev) tunnel, and the remote machine connects through the tunnel URL.

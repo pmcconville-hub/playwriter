@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { TabGroupColor } from './protocol.js'
 
 // Playwriter extension IDs - used for validation and Chrome flag commands.
 //
@@ -63,7 +64,7 @@ export function getCdpUrl({
   /** Tab group title for tabs this client creates (default 'playwriter'). Old relays ignore it. */
   tabGroup?: string
   /** Explicit tab group color chosen with --tab-group-color. Old relays ignore it. */
-  tabGroupColor?: string
+  tabGroupColor?: TabGroupColor
 } = {}) {
   const id = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}`
   const params = new URLSearchParams()

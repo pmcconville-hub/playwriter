@@ -8,8 +8,10 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pc from 'picocolors'
 import { getListeningPidsForPort, killPortProcess } from './kill-port.js'
-import { VERSION, sleep, LOG_FILE_PATH } from './utils.js'
+import { VERSION, getCdpUrl, sleep, LOG_FILE_PATH } from './utils.js'
 import { isRemoteExtensionKey } from './relay-state.js'
+import { getChromium, type Browser } from './playwright-import.js'
+import type { TabGroupColor } from './protocol.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -342,7 +344,13 @@ async function ensureRelayServerImpl(options: EnsureRelayServerOptions = {}): Pr
 export type CreatedRelaySession = {
   id: string
   tabGroup?: string | null
-  tabGroupColor?: string | null
+  tabGroupColor?: TabGroupColor | null
+}
+
+export type PlaywriterBrowserConnection = {
+  browser: Browser
+  sessionId: string
+  close(): Promise<void>
 }
 
 export async function createRelaySession({
@@ -352,7 +360,7 @@ export async function createRelaySession({
 }: {
   port?: number
   tabGroup?: string
-  tabGroupColor?: string
+  tabGroupColor?: TabGroupColor
 } = {}): Promise<CreatedRelaySession> {
   const response = await fetch(`http://127.0.0.1:${port}/cli/session/new`, {
     method: 'POST',
@@ -387,5 +395,53 @@ export async function deleteRelaySession({
   if (!response.ok) {
     const result = (await response.json().catch(() => ({}))) as { error?: string }
     throw new Error(result.error || `Playwriter session delete failed with HTTP ${response.status}`)
+  }
+}
+
+export async function connectViaExtension({
+  port = RELAY_PORT,
+  tabGroup,
+  tabGroupColor,
+  logger,
+}: {
+  port?: number
+  tabGroup?: string
+  tabGroupColor?: TabGroupColor
+  logger?: { log: (...args: any[]) => void }
+} = {}): Promise<PlaywriterBrowserConnection> {
+  await ensureRelayServer({ logger })
+  const extensions = await waitForConnectedExtensions({ port, logger })
+  if (extensions.length === 0) {
+    throw new Error('Playwriter is not connected. Enable the Playwriter extension in Chrome and try again.')
+  }
+
+  const session = await createRelaySession({ port, tabGroup, tabGroupColor })
+  const chromium = await getChromium()
+  const browser = await chromium
+    .connectOverCDP(
+      getCdpUrl({
+        port,
+        sessionId: session.id,
+        tabGroup,
+        tabGroupColor,
+      }),
+    )
+    .catch(async (cause) => {
+      await deleteRelaySession({ port, sessionId: session.id }).catch(() => undefined)
+      throw cause
+    })
+
+  return {
+    browser,
+    sessionId: session.id,
+    async close() {
+      const leftoverPages = browser
+        .contexts()
+        .flatMap((browserContext) => browserContext.pages())
+        .filter((page) => !page.isClosed())
+      await Promise.all(leftoverPages.map((page) => page.close().catch(() => undefined)))
+      await browser.close().catch(() => undefined)
+      await deleteRelaySession({ port, sessionId: session.id })
+    },
   }
 }

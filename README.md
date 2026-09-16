@@ -98,6 +98,22 @@ playwriter session update 1 --tab-group review --tab-group-color cyan
 
 `--tab-group-color` accepts: `grey`, `blue`, `red`, `yellow`, `green`, `pink`, `purple`, `cyan`, `orange`. Without it, color is derived from the name. The default local `playwriter` group stays green.
 
+Node programs should use `connectViaExtension()` instead of posting `/cli/session/new` themselves:
+
+```ts
+import { connectViaExtension } from 'playwriter'
+
+const connection = await connectViaExtension({
+  tabGroup: 'email-check',
+  tabGroupColor: 'grey',
+})
+const page = await connection.browser.contexts()[0].newPage()
+await page.goto('https://example.com')
+await connection.close()
+```
+
+`tabGroupColor` is typed as Chrome's tab group colors. `close()` closes leftover pages, disconnects CDP, and deletes the session.
+
 Multiline:
 
 ```bash
