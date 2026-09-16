@@ -16,7 +16,11 @@
     "light": "#FF9500",
     "dark": "#FF9500"
   },
-  "knownPaths": ["/README", "/api/*", "/login", "/dashboard", "/device", "/privacy"],
+  "knownPaths": ["/api/*", "/login", "/dashboard", "/device", "/privacy"],
+  "redirects": [
+    { "source": "/changelog/intro", "destination": "https://github.com/remorses/playwriter/releases", "permanent": true },
+    { "source": "/changelog", "destination": "https://github.com/remorses/playwriter/releases", "permanent": true }
+  ],
   "decorativeLines": "none",
   "layout": {
     "mode": "compact"
@@ -97,6 +101,11 @@
           "icon": "github",
           "href": "https://github.com/remorses/playwriter",
           "placement": "tabs"
+        },
+        {
+          "anchor": "Changelog",
+          "icon": "lucide:newspaper",
+          "href": "https://github.com/remorses/playwriter/releases"
         }
       ]
     }
@@ -104,7 +113,7 @@
   "navbar": {
     "primary": {
       "label": "Cloud Login",
-      "href": "/dashboard"
+      "href": "/login"
     }
   },
   "footer": {
@@ -112,8 +121,8 @@
       {
         "header": "platform",
         "items": [
-          { "label": "Rent Cloud Browsers", "href": "/dashboard" },
-          { "label": "Changelog", "href": "/changelog/intro" },
+          { "label": "Rent Cloud Browsers", "href": "/login" },
+          { "label": "Changelog", "href": "https://github.com/remorses/playwriter/releases" },
           { "label": "Privacy", "href": "/privacy" },
           { "label": "GitHub", "href": "https://github.com/remorses/playwriter" },
           {

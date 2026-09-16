@@ -248,7 +248,7 @@ export function CloudHeroSection() {
         {/* CTA button */}
         <div className='flex gap-2.5 flex-wrap justify-center'>
           <a
-            href='/dashboard'
+            href='/login'
             className='inline-flex items-center gap-2 rounded-md bg-white text-black backdrop-blur-sm h-9 px-4 text-sm font-medium no-underline hover:opacity-90 transition-opacity cursor-pointer'
           >
             <GoogleIcon size={16} />

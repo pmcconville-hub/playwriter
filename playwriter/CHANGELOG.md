@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.7.0
+
+1. **Remote-control tunnels use path-based URLs** — the share id now travels as `wss://playwriter.dev/tunnel/{id}/extension` (upstream dials `wss://playwriter.dev/tunnel/{id}/upstream`), so it no longer leaks through DNS queries or TLS SNI. Subdomain URLs (`{id}-tunnel.playwriter.dev`) still work so older extensions keep connecting.
+
+   ```sh
+   playwriter session new --remote <id>   # unchanged, now dials the path-based tunnel
+   ```
+
+   The relay keys remote dials by the full WebSocket URL, so several shared ids on the path form stay distinct tunnels.
+
+2. **Tab groups on remote-control sessions** — shared tabs join a `remote` group by default, and remote agents can set the group title and color when they connect or later with `session update`.
+
+   ```sh
+   playwriter session new --remote <id> --tab-group support
+   playwriter session update 1 --tab-group review --tab-group-color cyan
+   ```
+
+3. **`connectViaExtension()` Node API** — open a Playwriter session, connect over CDP, and close it without posting `/cli/session/new` yourself.
+
+   ```ts
+   import { connectViaExtension } from 'playwriter'
+
+   const connection = await connectViaExtension({
+     tabGroup: 'email-check',
+     tabGroupColor: 'grey',
+   })
+   const page = await connection.browser.contexts()[0].newPage()
+   await page.goto('https://example.com')
+   await connection.close()
+   ```
+
+   `tabGroupColor` is typed as Chrome's tab group colors. `close()` closes leftover pages, disconnects CDP, and deletes the session.
+
+4. **vs agent-browser comparison page** — new docs page and refreshed comparison tables with Playwriter as the first column. Covers why one programmable `execute` tool in your real Chrome beats a fixed command-per-action CLI.
+
+5. **Fewer extension connect/disconnect loops and startup hangs on Chrome 153.** A late `connect()` can no longer install its WebSocket over a newer attempt. `chrome.storage.local`, `chrome.identity.getProfileUserInfo`, and the high-entropy User-Agent lookup time out after 2s. Debugger detach during startup is bounded so one stuck target cannot stall the restart chain. Related to #40.
+
+6. **Website** — “Get Chrome Extension” CTA, page-width heroes with an ASCII video background, sidebar Changelog link to GitHub releases, `/changelog` redirects, public nav to `/login`, and a `screenshot-2x.png` homepage image so Cloudflare no longer 307s `@` in the filename.
+
 ## 0.6.0
 
 1. **Remote control — share one tab of your browser with a remote agent or person, no local install needed.**

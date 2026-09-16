@@ -1,6 +1,6 @@
 # MCP Setup
 
-> **Note:** CLI is the recommended way to use Playwriter. See [README.md](./README.md) for CLI usage.
+> **Note:** CLI is the recommended way to use Playwriter. See [quick start](./website/src/pages/docs/quick-start.mdx) for CLI usage.
 
 Add to your MCP client settings:
 

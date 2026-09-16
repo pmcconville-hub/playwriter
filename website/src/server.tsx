@@ -75,6 +75,14 @@ async function createGoogleSignInRedirect(request: Pick<Request, 'headers'>, cal
 
 export const app = new Spiceflow()
 
+  .use(({ request }, next) => {
+    const url = new URL(request.url)
+    if (!url.hostname.startsWith('www.')) return next()
+    url.hostname = url.hostname.slice('www.'.length)
+    url.protocol = 'https:'
+    throw redirect(url.toString(), { status: 301 })
+  })
+
   // Auth middleware: intercept /api/auth/* and forward to better-auth
   .use(async ({ request }, next) => {
     if (request.parsedUrl.pathname.startsWith('/api/auth')) {
@@ -151,6 +159,10 @@ export const app = new Spiceflow()
 
     return (
       <div className="mx-auto max-w-3xl px-6 py-10 min-h-screen flex flex-col">
+        <Head>
+          <Head.Title>Dashboard</Head.Title>
+          <Head.Meta name="robots" content="noindex" />
+        </Head>
         <div className="flex items-center justify-between mb-8">
           <PlaywriterLogo imageClassName="h-8" />
           <div className="flex items-center gap-4">

@@ -19,6 +19,7 @@
   ],
   "routes": [
     { "pattern": "playwriter.dev/*", "zone_name": "playwriter.dev" },
+    { "pattern": "www.playwriter.dev", "custom_domain": true, "zone_name": "playwriter.dev" },
     { "pattern": "*-tunnel.playwriter.dev/*", "zone_name": "playwriter.dev" }
   ],
   "durable_objects": {
