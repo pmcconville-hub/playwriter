@@ -19,8 +19,9 @@ playwriter skill
 ```
 
 Or fetch https://playwriter.dev/SKILL.md (same content). Always use the **playwriter**
-CLI after that (`playwriter -s <id> -e '...'`). Context variables (`page`, `context`,
-`snapshot`, …) only exist inside that sandbox.
+CLI after that (`playwriter -s <id> -e '...'`). Context variables (`context`,
+`state`, `snapshot`, …) only exist inside that sandbox. There is no `page` global:
+store the tab you work on in `state.page`.
 
 ## While the user records
 
@@ -71,7 +72,8 @@ playwriter recorder events | jq 'select(.type == "download" or .type == "console
 ```
 
 Event types: `recording-started`, `action` (`.code` is locator code such as
-`await page.getByRole('button', { name: 'Submit' }).click()`), `signal`,
+`await page.getByRole('button', { name: 'Submit' }).click()`, where `page` is the
+tab the event came from), `signal`,
 `navigation`, `page-opened`, `page-closed`, `network` (mutating xhr/fetch only,
 with sanitized, bounded body data; **WebSockets are not captured**), `download`,
 `console`, `page-error`, `recording-stopped` (includes `framesDir` and
@@ -102,11 +104,13 @@ open the image file directly.
 
 ## Prototype against the live page
 
-Do not trust recorded locators blindly. Use the same playwriter session:
+Do not trust recorded locators blindly. Use the same playwriter session. First
+pick the tab the user recorded in (last match = most recently opened):
 
 ```bash
-playwriter -s <session> -e 'console.log(await snapshot({ page }))'
-playwriter -s <session> -e 'await page.getByRole("button", { name: "Submit" }).click()'
+playwriter -s <session> -e 'state.page = context.pages().findLast((p) => p.url().includes("directory.example.com"))'
+playwriter -s <session> -e 'console.log(await snapshot({ page: state.page }))'
+playwriter -s <session> -e 'await state.page.getByRole("button", { name: "Submit" }).click()'
 ```
 
 Loop: snapshot → run one recorded action → snapshot again. Drop actions the user
@@ -147,21 +151,21 @@ Preconditions: the user is already signed in. Playwriter drives their browser.
 1. Open the submit page
 
 ```bash
-playwriter -s 1 -e 'await page.goto("https://directory.example.com/submit")'
+playwriter -s 1 -e 'state.page = await context.newPage(); await state.page.goto("https://directory.example.com/submit")'
 ```
 
 2. Fill the product name (parameter), then the website URL
 
 ```bash
-playwriter -s 1 -e 'const name = "Acme"; await page.getByRole("textbox", { name: "Product name" }).fill(name)'
-playwriter -s 1 -e 'const url = "https://acme.com"; await page.getByRole("textbox", { name: "Website URL" }).fill(url)'
+playwriter -s 1 -e 'const name = "Acme"; await state.page.getByRole("textbox", { name: "Product name" }).fill(name)'
+playwriter -s 1 -e 'const url = "https://acme.com"; await state.page.getByRole("textbox", { name: "Website URL" }).fill(url)'
 ```
 
 3. Click Submit. Expect POST `/api/products` and confirmation text.
 
 ```bash
-playwriter -s 1 -e 'await page.getByRole("button", { name: "Submit" }).click()'
-playwriter -s 1 -e 'await page.getByText("Thanks! Your product is under review.").waitFor()'
+playwriter -s 1 -e 'await state.page.getByRole("button", { name: "Submit" }).click()'
+playwriter -s 1 -e 'await state.page.getByText("Thanks! Your product is under review.").waitFor()'
 ```
 
 Or import the helper script (preferred for replay; fewer tokens).
@@ -169,13 +173,13 @@ Never put a machine-specific absolute path in SKILL.md or the script.
 Relative to the playwriter cwd for a project skill:
 
 ```bash
-playwriter -s 1 -e 'const { submitProduct } = await import("./.agents/skills/submit-to-directory/submit.js"); await submitProduct({ page, name, url })'
+playwriter -s 1 -e 'const { submitProduct } = await import("./.agents/skills/submit-to-directory/submit.js"); state.page ??= await context.newPage(); await submitProduct({ page: state.page, name, url })'
 ```
 
 For a personal skill, resolve the home directory at runtime:
 
 ```bash
-playwriter -s 1 -e 'const { join } = require("node:path"); const { homedir } = require("node:os"); const { submitProduct } = await import(join(homedir(), ".agents/skills/submit-to-directory/submit.js")); await submitProduct({ page, name, url })'
+playwriter -s 1 -e 'const { join } = require("node:path"); const { homedir } = require("node:os"); const { submitProduct } = await import(join(homedir(), ".agents/skills/submit-to-directory/submit.js")); state.page ??= await context.newPage(); await submitProduct({ page: state.page, name, url })'
 ```
 ````
 
@@ -279,7 +283,7 @@ export class DirectoryClient {
 Replay:
 
 ```bash
-playwriter -s 1 -e 'const { DirectoryClient } = await import("./.agents/skills/submit-to-directory/sdk.js"); const client = new DirectoryClient({ page }); console.log(await client.submitProduct({ name: "Acme", url: "https://acme.com" }))'
+playwriter -s 1 -e 'const { DirectoryClient } = await import("./.agents/skills/submit-to-directory/sdk.js"); state.page ??= await context.newPage(); const client = new DirectoryClient({ page: state.page }); console.log(await client.submitProduct({ name: "Acme", url: "https://acme.com" }))'
 ```
 
 Rules:
@@ -351,7 +355,7 @@ playwriter -s 1 -e '
  * @typedef {{ t: number, kind: WsTapKind, url: string, data?: string }} WsTapEvent
  */
 
-await page.addInitScript(() => {
+await state.page.addInitScript(() => {
   const g = /** @type {typeof globalThis & { __wsTap?: WsTapEvent[] }} */ (globalThis)
   if (g.__wsTap) {
     return
@@ -394,7 +398,7 @@ await page.addInitScript(() => {
     }
   }
 })
-await page.reload({ waitUntil: "domcontentloaded" })
+await state.page.reload({ waitUntil: "domcontentloaded" })
 '
 
 # replay the user action (submit, generate, …), then dump the tap
@@ -403,7 +407,7 @@ playwriter -s 1 -e '
  * @typedef {{ t: number, kind: string, url: string, data?: string }} WsTapEvent
  * @type {WsTapEvent[]}
  */
-const events = await page.evaluate(() => {
+const events = await state.page.evaluate(() => {
   return globalThis.__wsTap || []
 })
 console.log(JSON.stringify(events, null, 2))

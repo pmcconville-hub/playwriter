@@ -13,8 +13,8 @@ Every Playwriter automation follows this pattern:
 # 1. Create a session
 playwriter session new          # outputs: 1
 
-# 2. Navigate
-playwriter -s 1 -e "state.page = context.pages().findLast(p => p.url() === 'about:blank') ?? await context.newPage(); await state.page.goto('https://example.com')"
+# 2. Open a tab and navigate
+playwriter -s 1 -e "state.page = await context.newPage(); await state.page.goto('https://example.com')"
 
 # 3. Observe (snapshot to see interactive elements)
 playwriter -s 1 -e "snapshot({ page: state.page })"
@@ -62,8 +62,8 @@ npx -y skills add https://playwriter.dev
 # Create a new session
 playwriter session new
 
-# Navigate to a page
-playwriter -s 1 -e "state.page = context.pages().findLast(p => p.url() === 'about:blank') ?? await context.newPage(); await state.page.goto('https://example.com')"
+# Open a new tab and navigate
+playwriter -s 1 -e "state.page = await context.newPage(); await state.page.goto('https://example.com')"
 
 # Get an accessibility snapshot
 playwriter -s 1 -e "snapshot({ page: state.page })"

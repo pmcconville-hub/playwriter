@@ -54,7 +54,7 @@ Playwriter's relay server runs on the host machine alongside Chrome. A [traforo]
 ┌────────────────────────────────────────────────────────────┐
 │  REMOTE MACHINE (CLI or MCP)                               │
 │                                                            │
-│  playwriter -s 1 -e "await page.goto('https://...')"      │
+│  playwriter -s 1 -e "await state.page.goto(url)"          │
 │                                                            │
 │  PLAYWRITER_HOST=https://{id}-tunnel.traforo.dev           │
 │  PLAYWRITER_TOKEN=<secret>                                 │
@@ -98,8 +98,8 @@ The **CLI with the skill** is the recommended approach. The skill file (`playwri
 
 ```bash
 playwriter session new          # outputs: 1
-playwriter -s 1 -e "await page.goto('https://example.com')"
-playwriter -s 1 -e "console.log(await snapshot({ page }))"
+playwriter -s 1 -e "state.page = await context.newPage(); await state.page.goto('https://example.com')"
+playwriter -s 1 -e "console.log(await snapshot({ page: state.page }))"
 ```
 
 Alternatively, pass host and token as flags instead of env vars:
@@ -135,7 +135,7 @@ The env vars tell the MCP to skip starting a local relay and connect to the remo
 import { chromium } from 'playwright-core'
 
 const browser = await chromium.connectOverCDP('wss://my-machine-tunnel.traforo.dev/cdp/session1?token=MY_SECRET_TOKEN')
-const page = browser.contexts()[0].pages()[0]
+const page = await browser.contexts()[0].newPage()
 await page.goto('https://example.com')
 // Don't call browser.close() - it would close the user's Chrome
 ```
@@ -152,7 +152,7 @@ await page.goto('https://example.com')
 for machine in machine-a machine-b machine-c; do
   PLAYWRITER_HOST="https://${machine}-tunnel.traforo.dev" \
   PLAYWRITER_TOKEN=shared-secret \
-  playwriter -s 1 -e "console.log(await page.title())"
+  playwriter -s 1 -e "console.log(await Promise.all(context.pages().map((p) => p.title())))"
 done
 ```
 
@@ -179,7 +179,7 @@ From Docker, set `PLAYWRITER_HOST` and `PLAYWRITER_TOKEN` to reach the host rela
 │                                                             │
 │  PLAYWRITER_HOST=host.docker.internal + PLAYWRITER_TOKEN    │
 │                                                             │
-│  playwriter -s 1 -e "await page.goto('https://...')"        │
+│  playwriter -s 1 -e "await state.page.goto(url)"            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -204,7 +204,7 @@ Then use playwriter normally inside the container:
 
 ```bash
 playwriter session new
-playwriter -s 1 -e "await page.goto('https://example.com')"
+playwriter -s 1 -e "state.page = await context.newPage(); await state.page.goto('https://example.com')"
 ```
 
 ### Platform support for `host.docker.internal`

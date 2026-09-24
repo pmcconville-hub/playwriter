@@ -72,11 +72,11 @@ the extension mode is better because it avoids the dialog entirely.
 ```bash
 # Extension mode (recommended): no dialog, no flags
 playwriter session new
-playwriter -s 1 -e "page.goto('https://example.com')"
+playwriter -s 1 -e "state.page = await context.newPage(); await state.page.goto('https://example.com')"
 
 # Direct mode: uses built-in CDP, dialog appears once
 playwriter session new --direct
-playwriter -s 1 -e "page.goto('https://example.com')"
+playwriter -s 1 -e "state.page = await context.newPage(); await state.page.goto('https://example.com')"
 ```
 
 ## Why this matters for agents

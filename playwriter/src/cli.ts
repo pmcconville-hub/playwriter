@@ -1458,10 +1458,8 @@ cli
         process.exit(1)
       }
 
-      const result = (await response.json()) as { success: boolean; pageUrl: string; pagesCount: number }
-      console.log(
-        `Connection reset successfully. ${result.pagesCount} page(s) available. Current page URL: ${result.pageUrl}`,
-      )
+      const result = (await response.json()) as { success: boolean; pagesCount: number }
+      console.log(`Connection reset successfully. ${result.pagesCount} page(s) available.`)
     } catch (error: any) {
       console.error(`Error: ${error.message}`)
       process.exit(1)
@@ -1470,13 +1468,13 @@ cli
 
 // ============================================================================
 // Live RTMP streaming commands. These are sugar over the executor `stream`
-// global (same execute path as -e), which resolves the session's current tab
+// global (same execute path as -e), which streams the session's state.page
 // and calls the relay's /stream/* endpoints. ffmpeg runs inside the relay
 // process, so the stream keeps running after the CLI exits.
 // ============================================================================
 
 cli
-  .command('stream start', 'Stream the session tab live to RTMP destinations (X Live, Twitch, ...) via ffmpeg. Streams the current page - navigate first with -e "await page.goto(...)"')
+  .command('stream start', 'Stream the session tab live to RTMP destinations (X Live, Twitch, ...) via ffmpeg. Streams state.page - set it first with -e "state.page = await context.newPage(); await state.page.goto(...)"')
   .option('--host <host>', 'Remote relay server host')
   .option('--token <token>', 'Authentication token (or use PLAYWRITER_TOKEN env var)')
   .option('-s, --session <id>', 'Session ID (get one with `playwriter session new`)')
@@ -1521,7 +1519,8 @@ cli
     // Run through the executor so the session's current tab is resolved and
     // ffmpeg is spawned inside the relay process (survives CLI exit).
     const code = [
-      `const result = await stream.start(${JSON.stringify(streamParams)})`,
+      `if (!state.page || state.page.isClosed()) throw new Error('Set state.page first, e.g. playwriter -s <session> -e "state.page = await context.newPage(); await state.page.goto(url)"')`,
+      `const result = await stream.start({ page: state.page, ...${JSON.stringify(streamParams)} })`,
       `console.log('Streaming tab ' + result.tabId + ' to: ' + result.destinations.join(', '))`,
       `console.log('The stream runs until you call: playwriter stream stop -s <session>')`,
     ].join('\n')
@@ -1542,7 +1541,8 @@ cli
   .option('-s, --session <id>', 'Session ID')
   .action(async (options) => {
     const code = [
-      `const result = await stream.stop()`,
+      `if (!state.page || state.page.isClosed()) throw new Error('Set state.page first, e.g. playwriter -s <session> -e "state.page = await context.newPage(); await state.page.goto(url)"')`,
+      `const result = await stream.stop({ page: state.page })`,
       `console.log('Stream stopped after ' + Math.round(result.duration / 1000) + 's (' + result.bytesReceived + ' bytes captured)')`,
     ].join('\n')
 
@@ -1562,7 +1562,8 @@ cli
   .option('-s, --session <id>', 'Session ID')
   .action(async (options) => {
     const code = [
-      `const status = await stream.status()`,
+      `if (!state.page || state.page.isClosed()) throw new Error('Set state.page first, e.g. playwriter -s <session> -e "state.page = await context.newPage(); await state.page.goto(url)"')`,
+      `const status = await stream.status({ page: state.page })`,
       `if (!status.streaming) {`,
       `  console.log('Not streaming' + (status.error ? '. Last stream error: ' + status.error : ''))`,
       `} else {`,

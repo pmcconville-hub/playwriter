@@ -48,7 +48,7 @@ agent-browser snapshot
 agent-browser click @e2
 
 # Playwriter: one call, real Playwright the model already knows
-playwriter -s 1 -e 'await page.goto("https://example.com"); await page.getByRole("button", { name: "Submit" }).click()'
+playwriter -s 1 -e 'state.page = await context.newPage(); await state.page.goto("https://example.com"); await state.page.getByRole("button", { name: "Submit" }).click()'
 ```
 
 ## Real scripts, not brittle bash
@@ -64,7 +64,7 @@ collect results, retry. It is a language, not a command list.
 ```bash
 # Playwriter: loop, branch, and collect in a single execute
 playwriter -s 1 -e '
-  const rows = await page.locator("table tr").all();
+  const rows = await state.page.locator("table tr").all();
   state.results = [];
   for (const row of rows) {
     const name = await row.locator("td.name").textContent();
@@ -100,7 +100,7 @@ export async function submitProduct({ page, name, url }) {
 
 ```bash
 # Replay any time, from any session
-playwriter -s 1 -e 'const { submitProduct } = await import("./submit.js"); await submitProduct({ page, name: "Acme", url: "https://acme.com" })'
+playwriter -s 1 -e 'const { submitProduct } = await import("./submit.js"); await submitProduct({ page: state.page, name: "Acme", url: "https://acme.com" })'
 ```
 
 You can of course wrap agent-browser calls in your own shell or JS script. The precise advantage of
@@ -131,9 +131,9 @@ browser, so recording is native 30-60fps, **survives page navigation**, and neve
 frames over the wire.
 
 ```bash
-playwriter -s 1 -e "await recording.start({ page, outputPath: './demo.mp4', frameRate: 60 })"
-playwriter -s 1 -e "await page.click('a'); await page.waitForLoadState('domcontentloaded')"
-playwriter -s 1 -e "await recording.stop({ page })"
+playwriter -s 1 -e "await recording.start({ page: state.page, outputPath: './demo.mp4', frameRate: 60 })"
+playwriter -s 1 -e "await state.page.click('a'); await state.page.waitForLoadState('domcontentloaded')"
+playwriter -s 1 -e "await recording.stop({ page: state.page })"
 ```
 
 See [Recording](/docs/recording).

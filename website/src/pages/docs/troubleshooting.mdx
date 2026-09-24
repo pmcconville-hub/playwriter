@@ -77,7 +77,7 @@ Get-NetTCPConnection -LocalPort 19988 -ErrorAction SilentlyContinue | ForEach-Ob
 Increase the timeout for slow operations:
 
 ```bash
-playwriter -s 1 --timeout 30000 -e 'await page.goto("https://slow-site.com")'
+playwriter -s 1 --timeout 30000 -e 'await state.page.goto("https://slow-site.com")'
 ```
 
 The default timeout is 10 seconds.

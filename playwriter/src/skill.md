@@ -78,7 +78,7 @@ npx -y traforo -p 19988 -- npx -y playwriter serve --token MY_SECRET_TOKEN
 export PLAYWRITER_HOST=https://<tunnel-id>-tunnel.traforo.dev
 export PLAYWRITER_TOKEN=MY_SECRET_TOKEN
 playwriter session new
-playwriter -s 1 -e "await page.goto('https://example.com')"
+playwriter -s 1 -e "state.page = await context.newPage(); await state.page.goto('https://example.com')"
 ```
 
 For the full guide (Docker, LAN, MCP config, security), see: https://playwriter.dev/docs/remote-access
@@ -112,7 +112,7 @@ playwriter session new --direct wss://xxx.cdp.browser-use.com
 playwriter session new --direct 192.168.1.50:9222
 
 # Then use the session normally
-playwriter -s 1 -e "await page.goto('https://example.com')"
+playwriter -s 1 -e "state.page = await context.newPage(); await state.page.goto('https://example.com')"
 ```
 
 **MCP configuration** (for AI assistants): set the `PLAYWRITER_DIRECT` env var in your MCP client config. If the user provides a CDP URL (like `wss://xxx.cdp.browser-use.com`), use it as the value:
@@ -150,14 +150,14 @@ Connect with:
 ```bash
 playwriter session new --remote <id>
 # prints a session id; use it normally afterwards, no extra flags needed
-playwriter -s 1 -e "console.log(await page.title())"
+playwriter -s 1 -e "state.page = context.pages()[0]; console.log(await state.page.title())"
 ```
 
 The shared tab joins the `remote` tab group. Set another title with `--tab-group <name>`.
 
 Rules for remote-control sessions:
 
-- The shared tab is your **starting control surface**, not a security sandbox. The user must fully trust you with broad CDP access. Navigate the shared tab with `page.goto()` instead of opening new pages.
+- The shared tab is your **starting control surface**, not a security sandbox. The user must fully trust you with broad CDP access. Store the shared tab with `state.page = context.pages()[0]` and navigate it with `state.page.goto()` instead of opening new pages.
 - The user revokes access anytime with **Stop sharing** on the Remote ON dropdown; the URL then stops working permanently. If the connection dies, ask the user for a fresh URL.
 - Never print, log, or share the tunnel URL: whoever has it can control the user's tab as them.
 - Screen recording is not available on remote-control sessions.
@@ -176,8 +176,8 @@ playwriter browser install
 playwriter session new --browser headless
 
 # Use the session normally
-playwriter -s 1 -e "await page.goto('https://example.com')"
-playwriter -s 1 -e "console.log(await snapshot({ page }))"
+playwriter -s 1 -e "state.page = await context.newPage(); await state.page.goto('https://example.com')"
+playwriter -s 1 -e "console.log(await snapshot({ page: state.page }))"
 ```
 
 Multiple sessions reuse the same headless Chrome process. Recording is not available in headless mode.
@@ -256,7 +256,7 @@ Calls in one session run in order.
 playwriter -s 1 -f ./scripts/my-automation.js
 ```
 
-`-f` and `-e` cannot be used together. The file content is executed with the same sandbox context (page, context, state, snapshot, etc.).
+`-f` and `-e` cannot be used together. The file content is executed with the same sandbox context (context, state, snapshot, etc.).
 
 **Examples:**
 
@@ -315,7 +315,7 @@ For longer scripts, use `-f` instead of `-e` to execute JavaScript from a file:
 playwriter -s 1 -f script.js
 ```
 
-The file is read from disk and executed in the same sandbox as `-e`. All context variables (`state`, `page`, `context`, etc.) are available. `-e` and `-f` cannot be used together.
+The file is read from disk and executed in the same sandbox as `-e`. All context variables (`state`, `context`, etc.) are available. `-e` and `-f` cannot be used together.
 
 ### Recording user actions for skill generation
 
@@ -423,19 +423,18 @@ You can collaborate with the user - they can help with captchas, difficult eleme
 ## context variables
 
 - `state` - object persisted between calls **within your session**. Each session has its own isolated state. Use to store pages, data, listeners (e.g., `state.page = await context.newPage()`)
-- `page` - a default page (may be shared with other agents). Prefer creating your own page and storing it in `state` (see "working with pages")
-- `context` - browser context, access all pages via `context.pages()`
-- `cloud` - list active cloud browsers and send the current page's cookies to one. Available in local CLI sessions, but not in cloud or remote-control sessions
+- `context` - browser context, access all pages via `context.pages()`, create one with `context.newPage()`
+- `cloud` - list active cloud browsers and send a page's cookies to one. Available in local CLI sessions, but not in cloud or remote-control sessions
 - `require` - load Node.js modules (e.g., `const fs = require('node:fs')`)
 - `import()` - use Node.js ESM to load local scripts, packages, and built-ins (e.g., `const helpers = await import('./scripts/helpers.js')`). Relative paths resolve from the session cwd
 - `importModule` - restricted async import for allowlisted Node.js built-ins (e.g., `const fs = await importModule('node:fs')`)
 - Node.js globals: `setTimeout`, `setInterval`, `fetch`, `URL`, `Buffer`, `crypto`, `process`, etc.
 
-**Not available in the sandbox:** `__dirname`, `__filename`.
+**Not available in the sandbox:** `__dirname`, `__filename`, and a default `page`. Reading `page` throws. Get your own page (see "working with pages").
 
-### sending current-page cookies to a cloud browser
+### sending page cookies to a cloud browser
 
-List active cloud browsers, then send the cookies that apply to the current page URL:
+List active cloud browsers, then send the cookies that apply to a page URL:
 
 ```js
 const browsers = await cloud.browsers.list()
@@ -449,7 +448,7 @@ You can use a cloud key or either session ID directly:
 await cloud.sendCookies({ from: state.page, to: 'cloud-1' })
 ```
 
-`sendCookies` reads cookies for `from.url()`. With more than one tracked tab, `from` is required. Pass `urls` when the login uses more than one HTTP origin:
+`sendCookies` reads cookies for `from.url()`. `from` is required. Pass `urls` when the login uses more than one HTTP origin:
 
 ```js
 await cloud.sendCookies({
@@ -481,7 +480,7 @@ Load the module from the directory where the Playwriter session was created:
 
 ```js
 const { getPageInfo } = await import('./scripts/page-helpers.mjs')
-console.log(await getPageInfo({ page }))
+console.log(await getPageInfo({ page: state.page }))
 ```
 
 Local modules can use static imports and package imports normally:
@@ -510,7 +509,7 @@ Writing to any other path (e.g. `~/Downloads`, `~/Desktop`) throws `EPERM: opera
 
 ## rules
 
-- **Initialize state.page first**: see "working with pages" — at the start of a task, assign `state.page` (reuse `about:blank` or create one) and use `state.page` for all automation steps.
+- **Initialize state.page first**: see "working with pages". There is no default `page`. At the start of a task, assign `state.page` (a new tab, or the tab the user pointed to) and use `state.page` for all automation steps.
 - **Multiple calls**: use multiple execute calls for complex logic - helps understand intermediate state and isolate which action failed
 - **Never close**: never call `browser.close()` or `context.close()`. Only close pages you created or if user asks
 - **No bringToFront**: never call unless user asks - it's disruptive and unnecessary, you can interact with background pages
@@ -518,7 +517,7 @@ Writing to any other path (e.g. `~/Downloads`, `~/Desktop`) throws `EPERM: opera
 - **Check state after actions**: always verify page state after clicking/submitting (see next section)
 - **Clean up only your listeners**: remove listeners you added by event name or handler reference. Never call `removeAllListeners()` because it also removes Playwriter's page error and console listeners.
 - **Tracked page errors are automatic**: uncaught errors from pages assigned directly to `state` keys appear in the current or next execute output as `[PAGE ERROR]`. Errors from pages tracked by other sessions are excluded.
-- **Always print page logs after every action**: call `getLatestLogs({ page: state.page, sinceLastCall: true })` after every goto, click, or submit to catch console errors and warnings. Do not manually collect `page.on('console')` events; manual listeners miss logs emitted before the listener is attached. The first `sinceLastCall` call returns all buffered logs including startup and hydration errors. Never omit `page` on `getLatestLogs`. `snapshot` needs `page`, or a `locator`/`frame` from your tab.
+- **Always print page logs after every action**: call `getLatestLogs({ page: state.page, sinceLastCall: true })` after every goto, click, or submit to catch console errors and warnings. Do not manually collect `page.on('console')` events; manual listeners miss logs emitted before the listener is attached. The first `sinceLastCall` call returns all buffered logs including startup and hydration errors. `getLatestLogs` needs `page`. `snapshot` needs `page`, or a `locator`/`frame` from your tab.
 - **CDP sessions**: use `getCDPSession({ page: state.page })` not `state.page.context().newCDPSession()` - NEVER use `newCDPSession()` method, it doesn't work through playwriter relay
 - **Wait for load**: use `state.page.waitForLoadState('domcontentloaded')` not `state.page.waitForEvent('load')` - waitForEvent times out if already loaded
 - **Minimize timeouts**: prefer proper waits (`waitForSelector`, `waitForPageLoad`) over `state.page.waitForTimeout()`. Short timeouts (1-2s) are acceptable for non-deterministic events like animations, tab opens, or async UI updates where no specific selector is available
@@ -542,7 +541,7 @@ Every browser interaction must follow **observe → act → observe**. Never cha
 ```js
 // Each step should be a separate execute call:
 // Step 1: navigate + observe
-state.page = context.pages().findLast((p) => p.url() === 'about:blank') ?? (await context.newPage())
+state.page = await context.newPage()
 await state.page.goto('https://example.com', { waitUntil: 'domcontentloaded' })
 console.log('URL:', state.page.url())
 console.log('Page logs:', await getLatestLogs({ page: state.page, sinceLastCall: true }))
@@ -660,7 +659,7 @@ await waitForPageLoad({ page: state.page, timeout: 5000 })
 Do NOT waste context trying webfetch, curl, or Playwright CLI screenshots on SPAs (Instagram, Twitter, etc.). These return empty HTML shells. Use playwriter directly:
 
 ```js
-state.page = context.pages().findLast((p) => p.url() === 'about:blank') ?? (await context.newPage())
+state.page = await context.newPage()
 await state.page.goto('https://www.instagram.com/p/ABC123/', { waitUntil: 'domcontentloaded' })
 await waitForPageLoad({ page: state.page, timeout: 8000 })
 await snapshot({ page: state.page, search: /cookie|consent|accept/i }).then(console.log)
@@ -718,7 +717,7 @@ When something doesn't respond to a click, do NOT start inspecting CDP event lis
 await snapshot({ page: state.page, search?, showDiffSinceLastCall? })
 ```
 
-Always pass `{ page: state.page }`, or pass a `locator`/`frame` from that tab. Never call `snapshot()` with no arguments. The sandbox default `page` is a shared tab. With more than one tracked tab, helpers throw unless you pass `page`, `locator`, or `frame`. A locator is enough: the helper uses `locator.page()`.
+Always pass `{ page: state.page }`, or pass a `locator`/`frame` from that tab. `snapshot()` with no arguments throws. A locator is enough: the helper uses `locator.page()`.
 
 ```js
 await snapshot({ page: state.page, locator: state.page.locator('form') })
@@ -827,42 +826,33 @@ await state.page.locator('li').nth(3).click() // 4th item (0-indexed)
 
 **Pages are shared, state is not.** `context.pages()` returns all browser tabs with playwriter enabled — shared across all sessions. Multiple agents see the same tabs. If another agent navigates or closes a page you're using, you'll be affected. To avoid interference, **get your own page**.
 
-Helpers that take `page` (`snapshot`, `getLatestLogs`, `waitForPageLoad`, `recording`, `ghostCursor`, `refToLocator`) must get `{ page: state.page }`. `snapshot` also accepts a `locator` or `frame` from your tab and uses that object's page. The sandbox `page` variable is a shared default tab. With more than one tracked tab, those helpers throw unless you pass `page` (or, for snapshot, a locator/frame).
+There is **no default `page`** in the sandbox. Reading `page` throws. Helpers that take `page` (`snapshot`, `getLatestLogs`, `waitForPageLoad`, `recording`, `ghostCursor`, `refToLocator`) need `{ page: state.page }`. `snapshot` also accepts a `locator` or `frame` from your tab.
 
-**Get or create your page (first call):**
+**New task: create your own tab (first call):**
 
-On your very first execute call, reuse an existing empty tab or create a new one, and navigate it **in the same execute call**. Store it in `state` and use `state.page` for all subsequent operations instead of the default `page` variable:
+Create a tab, store it in `state`, and navigate it **in the same execute call**. Use `state.page` for all later operations:
 
 ```js
-// Reuse an empty about:blank tab if available, otherwise create a new one.
-// findLast picks the most recently opened blank tab, not the oldest one.
-// IMPORTANT: always navigate immediately in the same call to avoid another
-// agent grabbing the same about:blank tab between execute calls.
-state.page = context.pages().findLast((p) => p.url() === 'about:blank') ?? (await context.newPage())
+state.page = await context.newPage()
 await state.page.goto('https://example.com')
-// Use state.page for ALL subsequent operations
+```
+
+**User points to an existing tab:**
+
+Use a page from `context.pages()` only if the user asks you to control a tab they already opened (e.g., they're logged into an app, or they mention its URL or content). Find it by URL and take the **last** match. `context.pages()` is ordered oldest first, so the last match is the most recently opened tab:
+
+```js
+state.page = context.pages().findLast((p) => p.url().includes('myapp.com'))
+if (!state.page) throw new Error('No myapp.com tab found. Ask the user to enable playwriter on it.')
 ```
 
 **Handle page closures gracefully:**
 
-The user may close your page by accident (e.g., closing a tab in Chrome). Always check before using it and recreate if needed:
+The user may close your page by accident (e.g., closing a tab in Chrome). Check before using it and recreate if needed:
 
 ```js
-if (!state.page || state.page.isClosed()) {
-  state.page = context.pages().findLast((p) => p.url() === 'about:blank') ?? (await context.newPage())
-}
+if (!state.page || state.page.isClosed()) state.page = await context.newPage()
 await state.page.goto('https://example.com')
-```
-
-**Use an existing page only when the user asks:**
-
-Only use a page from `context.pages()` if the user explicitly asks you to control a specific tab they already opened (e.g., they're logged into an app). Find it by URL pattern and store it in state. Always take the **last** match, because `context.pages()` is ordered oldest first and the most recently opened tab is almost always the one the user means:
-
-```js
-const matches = context.pages().filter((x) => x.url().includes('myapp.com'))
-if (matches.length === 0) throw new Error('No myapp.com page found. Ask user to enable playwriter on it.')
-if (matches.length > 1) console.log(`Found ${matches.length} matching pages, using the last opened one`)
-state.targetPage = matches[matches.length - 1]
 ```
 
 **List all available pages:**

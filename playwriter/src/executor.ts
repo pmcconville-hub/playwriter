@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
 import * as acorn from 'acorn'
 import { createSmartDiff } from './diff-utils.js'
-import { getCdpUrl, parseRelayHost, shouldAutoEnablePlaywriter, sleep } from './utils.js'
+import { getCdpUrl, parseRelayHost, sleep } from './utils.js'
 import type { TabGroupColor } from './protocol.js'
 import { isRemoteExtensionKey } from './relay-state.js'
 import { REMOTE_EXTENSION_NOT_CONNECTED_ERROR } from './remote-control.js'
@@ -208,8 +208,14 @@ export function shouldAutoReturn(code: string): boolean {
   return getAutoReturnExpression(code) !== null
 }
 
-export const MULTIPLE_PAGES_REQUIRE_PAGE_ERROR =
-  'Multiple tracked pages. Pass { page: state.page } so this helper does not use another tab. Create your own tab with context.newPage() and store it on state.page.'
+const GET_PAGE_HINT =
+  "Get a page from context instead: reuse one with `context.pages().findLast((p) => p.url().includes('example.com'))` (last = most recently opened), or create one with `const page = await context.newPage()`. Store it in `state.page` to reuse it across calls."
+
+export const PAGE_GLOBAL_REMOVED_ERROR = `The global \`page\` was removed. ${GET_PAGE_HINT}`
+
+export function missingPageError(helper: string): Error {
+  return new Error(`${helper} requires an explicit page, e.g. ${helper}({ page: state.page }). ${GET_PAGE_HINT}`)
+}
 
 function pageFromFrame(
   frame?: { page?: () => Page | null; owner?: () => { page(): Page } },
@@ -224,20 +230,18 @@ function pageFromFrame(
   return undefined
 }
 
-/** Agents omit `page` and snapshot a shared default tab. Require it when several tabs exist. */
+/** The sandbox has no default page: helpers need a page, or a locator/frame that owns one. */
 export function resolveSandboxPage(options: {
+  helper: string
   page?: Page
   locator?: { page(): Page }
   frame?: { page?: () => Page | null; owner?: () => { page(): Page } }
-  defaultPage: Page
-  trackedPageCount: number
 }): Page {
   const resolved = options.locator?.page() ?? pageFromFrame(options.frame) ?? options.page
-  if (resolved) return resolved
-  if (options.trackedPageCount > 1) {
-    throw new Error(MULTIPLE_PAGES_REQUIRE_PAGE_ERROR)
+  if (!resolved) {
+    throw missingPageError(options.helper)
   }
-  return options.defaultPage
+  return resolved
 }
 
 /**
@@ -257,9 +261,6 @@ const EXTENSION_NOT_CONNECTED_ERROR = `The Playwriter Chrome extension is not co
 1. Installed the extension: https://chromewebstore.google.com/detail/playwriter/jfeammnjpkecdekppnclgkkffahnhfhe
 2. Clicked the extension icon on a tab to enable it (or refreshed the page if just installed)
 3. Or use a cloud browser instead: run \`playwriter cloud login\` in your terminal to rent a browser in the cloud, with auto CAPTCHA solving, residential proxies and anti-detection built in`
-
-const NO_PAGES_AVAILABLE_ERROR =
-  'No Playwright pages are available. Enable Playwriter on a tab or unset PLAYWRITER_AUTO_ENABLE=false to auto-create one.'
 
 const CLOUD_SESSION_EXPIRED_ERROR =
   'Cloud browser session expired or was destroyed. Create a new session with: playwriter session new --browser cloud'
@@ -454,7 +455,6 @@ export function isPlaywrightChannelOwner(value: any): boolean {
 
 export class PlaywrightExecutor {
   private isConnected = false
-  private page: Page | null = null
   private browser: Browser | null = null
   private context: BrowserContext | null = null
 
@@ -621,7 +621,6 @@ export class PlaywrightExecutor {
   private clearConnectionState() {
     this.isConnected = false
     this.browser = null
-    this.page = null
     this.context = null
   }
 
@@ -754,54 +753,15 @@ export class PlaywrightExecutor {
   private setupPageCloseDetection(page: Page) {
     page.on('close', () => {
       const stateKeysForClosedPage = this.stateKeysForPage(page)
-
-      const wasCurrentPage = this.page === page
-      let replacementPageInfo: { index: string; url: string } | null = null
-
-      if (wasCurrentPage) {
-        this.page = null
-        const context = this.context || page.context()
-        const openPages = context.pages().filter((candidate) => {
-          return !candidate.isClosed()
-        })
-        if (openPages.length > 0) {
-          const replacementPage = openPages[0]
-          this.page = replacementPage
-          const replacementIndex = context.pages().indexOf(replacementPage)
-          replacementPageInfo = {
-            index: replacementIndex >= 0 ? String(replacementIndex) : 'unknown',
-            url: replacementPage.url() || 'unknown',
-          }
-        }
-      }
-
       if (!this.isConnected || this.suppressPageCloseWarnings || stateKeysForClosedPage.length === 0) {
         return
       }
 
       const stateKeyLabel = stateKeysForClosedPage.map((key) => `state.${key}`).join(', ')
       const closedUrl = page.url() || 'unknown'
-
-      if (!wasCurrentPage) {
-        this.enqueueWarning(
-          `Page closed (url: ${closedUrl}) for ${stateKeyLabel}. ` +
-            `Assign a new open page to ${stateKeyLabel} before reusing it.`,
-        )
-        return
-      }
-
-      if (replacementPageInfo) {
-        this.enqueueWarning(
-          `The current page in ${stateKeyLabel} was closed (url: ${closedUrl}). ` +
-            `Switched active page to index ${replacementPageInfo.index} (url: ${replacementPageInfo.url}). ` +
-            `Reassign ${stateKeyLabel} before using it again.`,
-        )
-        return
-      }
-
       this.enqueueWarning(
-        `The current page in ${stateKeyLabel} was closed (url: ${closedUrl}). ` +
-          `No open pages remain. Open a tab with Playwriter enabled, then reassign ${stateKeyLabel}.`,
+        `Page closed (url: ${closedUrl}) for ${stateKeyLabel}. ` +
+          `Assign a new open page to ${stateKeyLabel} before reusing it, e.g. ${stateKeyLabel.split(', ')[0]} = await context.newPage().`,
       )
     })
   }
@@ -990,12 +950,13 @@ export class PlaywrightExecutor {
   }
 
   /**
-   * Connect to Chrome and set up context/page. Shared by ensureConnection and reset.
+   * Connect to Chrome and set up the context. Shared by ensureConnection and reset.
+   * Never opens a tab: the sandbox has no default page, code creates or picks its own.
    * In headless mode, launches Chrome via chromium.launch().
    * In direct CDP mode, connects straight to Chrome's WebSocket.
    * In extension mode, checks extension status then connects via relay.
    */
-  private async connectToBrowser(): Promise<{ browser: Browser; page: Page; context: BrowserContext }> {
+  private async connectToBrowser(): Promise<{ browser: Browser; context: BrowserContext }> {
     // Headless mode: launch Chrome directly via Playwright (no extension, no relay CDP routing)
     if (this.isHeadlessMode()) {
       return this.connectHeadlessBrowser()
@@ -1023,12 +984,6 @@ export class PlaywrightExecutor {
 
       context.pages().forEach((p) => this.setupPageListeners(p))
 
-      // In direct CDP mode, pages are always available (all tabs visible).
-      // Use the first non-closed page, or create one.
-      const pages = context.pages().filter((p) => !p.isClosed())
-      const page = pages.length > 0 ? pages[0] : await context.newPage()
-      this.setupPageListeners(page)
-
       await this.setDeviceScaleFactorForMacOS(context)
 
       // Block images, video, and fonts for cloud sessions with proxy enabled
@@ -1038,7 +993,7 @@ export class PlaywrightExecutor {
         await this.applyProxyResourceBlocking(context)
       }
 
-      return { browser, page, context }
+      return { browser, context }
     }
 
     // Extension mode: check status first for better error messages
@@ -1068,11 +1023,10 @@ export class PlaywrightExecutor {
     })
 
     context.pages().forEach((p) => this.setupPageListeners(p))
-    const page = await this.ensurePageForContext({ context, timeout: 10000 })
 
     await this.setDeviceScaleFactorForMacOS(context)
 
-    return { browser, page, context }
+    return { browser, context }
   }
 
   /**
@@ -1081,7 +1035,7 @@ export class PlaywrightExecutor {
    * Does NOT add per-session disconnect listeners to avoid accumulation on the shared
    * browser; instead, ensureConnection checks browser.isConnected() on each call.
    */
-  private async connectHeadlessBrowser(): Promise<{ browser: Browser; page: Page; context: BrowserContext }> {
+  private async connectHeadlessBrowser(): Promise<{ browser: Browser; context: BrowserContext }> {
     const browser = await PlaywrightExecutor.getOrLaunchHeadlessBrowser()
 
     const context = await browser.newContext()
@@ -1093,13 +1047,10 @@ export class PlaywrightExecutor {
         this.setupPageListeners(page)
       })
 
-      const page = await context.newPage()
-      this.setupPageListeners(page)
-
       await this.setDeviceScaleFactorForMacOS(context)
 
       PlaywrightExecutor._headlessExecutors.add(this)
-      return { browser, page, context }
+      return { browser, context }
     } catch (e) {
       await context.close().catch(() => {})
       throw e
@@ -1180,22 +1131,21 @@ export class PlaywrightExecutor {
     }
   }
 
-  private async ensureConnection(): Promise<{ browser: Browser; page: Page }> {
+  private async ensureConnection(): Promise<{ browser: Browser; context: BrowserContext }> {
     // In headless mode, check that this session's browser is still alive.
     const browserAlive = this.isHeadlessMode() ? this.browser?.isConnected() : true
-    if (this.isConnected && this.browser && this.page && browserAlive) {
-      return { browser: this.browser, page: this.page }
+    if (this.isConnected && this.browser && this.context && browserAlive) {
+      return { browser: this.browser, context: this.context }
     }
 
     try {
-      const { browser, page, context } = await this.connectToBrowser()
+      const { browser, context } = await this.connectToBrowser()
 
       this.browser = browser
-      this.page = page
       this.context = context
       this.isConnected = true
 
-      return { browser, page }
+      return { browser, context }
     } catch (error) {
       // Cloud sessions that fail to connect are likely expired VMs.
       // Give a clear error instead of a cryptic WebSocket/connection error.
@@ -1211,43 +1161,17 @@ export class PlaywrightExecutor {
   withBrowserContext<T>({ operation }: { operation: (context: BrowserContext) => Promise<T> }): Promise<T> {
     return this.runExclusive({
       operation: async () => {
-        const { page } = await this.ensureConnection()
-        return operation(this.context || page.context())
+        const { context } = await this.ensureConnection()
+        return operation(context)
       },
     })
   }
 
-  private async getCurrentPage(timeout = 10000): Promise<Page> {
-    if (this.page && !this.page.isClosed()) {
-      return this.page
-    }
-
-    if (this.browser) {
-      const contexts = this.browser.contexts()
-      if (contexts.length > 0) {
-        const context = contexts[0]
-        this.context = context
-        const pages = context.pages().filter((p) => !p.isClosed())
-        if (pages.length > 0) {
-          const page = pages[0]
-          await page.waitForLoadState('domcontentloaded', { timeout }).catch(() => {})
-          this.page = page
-          return page
-        }
-        const page = await this.ensurePageForContext({ context, timeout })
-        this.page = page
-        return page
-      }
-    }
-
-    throw new Error(NO_PAGES_AVAILABLE_ERROR)
-  }
-
-  async reset(): Promise<{ page: Page; context: BrowserContext }> {
+  async reset(): Promise<{ context: BrowserContext }> {
     return this.runExclusive({ operation: () => this.resetInternal() })
   }
 
-  private async resetInternal(): Promise<{ page: Page; context: BrowserContext }> {
+  private async resetInternal(): Promise<{ context: BrowserContext }> {
     this.suppressPageCloseWarnings = true
     try {
       if (this.isHeadlessMode()) {
@@ -1268,14 +1192,13 @@ export class PlaywrightExecutor {
     this.clearConnectionState()
     this.clearExecutionState()
 
-    const { browser, page, context } = await this.connectToBrowser()
+    const { browser, context } = await this.connectToBrowser()
 
     this.browser = browser
-    this.page = page
     this.context = context
     this.isConnected = true
 
-    return { page, context }
+    return { context }
   }
 
   async execute(code: string, timeout = 10000): Promise<ExecuteResult> {
@@ -1328,9 +1251,7 @@ export class PlaywrightExecutor {
         }
       }
 
-      await this.ensureConnection()
-      const page = await this.getCurrentPage(timeout)
-      const context = this.context || page.context()
+      const { context } = await this.ensureConnection()
 
       this.logger.log('Executing code:', code)
 
@@ -1364,7 +1285,7 @@ export class PlaywrightExecutor {
         format?: SnapshotFormat
         /** Only include interactive elements (default: true) */
         interactiveOnly?: boolean
-      }) => {
+      } = {}) => {
         const {
           page: targetPage,
           frame,
@@ -1373,13 +1294,7 @@ export class PlaywrightExecutor {
           showDiffSinceLastCall = !search,
           interactiveOnly = false,
         } = options
-        const resolvedPage = resolveSandboxPage({
-          page: targetPage,
-          locator,
-          frame,
-          defaultPage: page,
-          trackedPageCount: context.pages().length,
-        })
+        const resolvedPage = resolveSandboxPage({ helper: 'snapshot', page: targetPage, locator, frame })
         const withPageUrl = (body: string) => `URL: ${resolvedPage.url()}\n${body}`
         const documentGeneration = this.pageDocumentGenerations.get(resolvedPage) || 0
 
@@ -1482,11 +1397,7 @@ export class PlaywrightExecutor {
       }
 
       const refToLocator = (options: { ref: string; page?: Page }): string | null => {
-        const targetPage = resolveSandboxPage({
-          page: options.page,
-          defaultPage: page,
-          trackedPageCount: context.pages().length,
-        })
+        const targetPage = resolveSandboxPage({ helper: 'refToLocator', page: options.page })
         const map = this.lastRefToLocator.get(targetPage)
         if (!map) {
           return null
@@ -1494,11 +1405,14 @@ export class PlaywrightExecutor {
         return map.get(options.ref) ?? null
       }
 
-      const getLocatorStringForElement = async (element: any) => {
+      const getLocatorStringForElement = async (element: Locator | ElementHandle) => {
         if (!element || typeof element.evaluate !== 'function') {
           throw new Error('getLocatorStringForElement: argument must be a Playwright Locator or ElementHandle')
         }
-        const elementPage = element.page ? element.page() : page
+        const elementPage = 'page' in element ? element.page() : (await element.ownerFrame())?.page()
+        if (!elementPage) {
+          throw new Error('getLocatorStringForElement: could not get the page of this element')
+        }
         const hasGenerator = await elementPage.evaluate(() => !!(globalThis as any).__selectorGenerator)
         if (!hasGenerator) {
           const scriptPath = path.join(__dirname, '..', 'dist', 'selector-generator.js')
@@ -1506,15 +1420,16 @@ export class PlaywrightExecutor {
           const cdp = await getCDPSession({ page: elementPage })
           await cdp.send('Runtime.evaluate', { expression: scriptContent })
         }
-        return await element.evaluate((el: any) => {
+        const generateLocator = (el: any) => {
           const { createSelectorGenerator, toLocator } = (globalThis as any).__selectorGenerator
           const generator = createSelectorGenerator(globalThis)
           const result = generator(el)
           return toLocator(result.selector, 'javascript')
-        })
+        }
+        return 'page' in element ? await element.evaluate(generateLocator) : await element.evaluate(generateLocator)
       }
 
-      const getLatestLogs = async (options?: {
+      const getLatestLogs = async (options: {
         page?: Page
         count?: number
         search?: string | RegExp
@@ -1523,16 +1438,9 @@ export class PlaywrightExecutor {
         // Cursors are tracked per page so navigations and new logs are
         // never missed. Useful for checking page errors after each action.
         sinceLastCall?: boolean
-      }) => {
-        const { page: requestedPage, count, search, sinceLastCall = false } = options || {}
-        const filterPage =
-          requestedPage ??
-          (context.pages().length > 1
-            ? resolveSandboxPage({
-                defaultPage: page,
-                trackedPageCount: context.pages().length,
-              })
-            : undefined)
+      } = {}) => {
+        const { page: requestedPage, count, search, sinceLastCall = false } = options
+        const filterPage = resolveSandboxPage({ helper: 'getLatestLogs', page: requestedPage })
         let allLogs: string[] = []
 
         // Collect logs, optionally slicing from cursor when sinceLastCall is set
@@ -1545,23 +1453,14 @@ export class PlaywrightExecutor {
           return logs.slice(cursor)
         }
 
-        if (filterPage) {
-          const relatedPages = this.pagesRelatedToPage(filterPage)
-          allLogs = relatedPages.flatMap((relatedPage) => {
-            return collectLogs(relatedPage)
-          })
-        } else {
-          for (const [p] of this.browserLogs) {
-            allLogs.push(...collectLogs(p))
-          }
-        }
+        const relatedPages = this.pagesRelatedToPage(filterPage)
+        allLogs = relatedPages.flatMap((relatedPage) => {
+          return collectLogs(relatedPage)
+        })
 
         // Advance cursors after collecting so next sinceLastCall call starts fresh
         if (sinceLastCall) {
-          const pagesToAdvance = filterPage
-            ? this.pagesRelatedToPage(filterPage)
-            : [...this.browserLogs.keys()]
-          for (const p of pagesToAdvance) {
+          for (const p of relatedPages) {
             const logs = this.browserLogs.get(p)
             if (logs) {
               this.pageLogCursor.set(p, logs.length)
@@ -1643,9 +1542,9 @@ export class PlaywrightExecutor {
       }
 
       const inspectPinnedElement = async (pageUrl: string, elementExpression: string) => {
-        const targetPage = context.pages().findLast((candidate) => candidate.url() === pageUrl) || context.pages()[0]
+        const targetPage = context.pages().findLast((candidate) => candidate.url() === pageUrl)
         if (!targetPage) {
-          throw new Error('No Playwright pages are available')
+          throw new Error(`No Playwriter tab with url ${pageUrl}. Enable Playwriter on that tab and pin the element again.`)
         }
 
         this.userState.page = targetPage
@@ -1680,6 +1579,7 @@ export class PlaywrightExecutor {
       }
 
       const screenshotWithAccessibilityLabelsFn = async (options: { page: Page; interactiveOnly?: boolean }) => {
+        resolveSandboxPage({ helper: 'screenshotWithAccessibilityLabels', page: options?.page })
         return screenshotWithAccessibilityLabels({
           ...options,
           collector: screenshotCollector,
@@ -1702,11 +1602,7 @@ export class PlaywrightExecutor {
       const ghostCursorController = this.ghostCursorController
 
       const showGhostCursor = async (options?: ({ page?: Page } & GhostCursorClientOptions)) => {
-        const targetPage = resolveSandboxPage({
-          page: options?.page,
-          defaultPage: page,
-          trackedPageCount: context.pages().length,
-        })
+        const targetPage = resolveSandboxPage({ helper: 'ghostCursor.show', page: options?.page })
         const cursorOptions: GhostCursorClientOptions | undefined = (() => {
           if (!options) {
             return undefined
@@ -1720,24 +1616,12 @@ export class PlaywrightExecutor {
       }
 
       const hideGhostCursor = async (options?: { page?: Page }) => {
-        const targetPage = resolveSandboxPage({
-          page: options?.page,
-          defaultPage: page,
-          trackedPageCount: context.pages().length,
-        })
+        const targetPage = resolveSandboxPage({ helper: 'ghostCursor.hide', page: options?.page })
         await ghostCursorController.hide({ page: targetPage })
       }
 
-      const requirePage = (requested?: Page) =>
-        resolveSandboxPage({
-          page: requested,
-          defaultPage: page,
-          trackedPageCount: context.pages().length,
-        })
-
-      const recordingApiRaw = createRecordingApi({
+      const recordingApi = createRecordingApi({
         context,
-        defaultPage: page,
         relayPort,
         ghostCursorController,
         onStart: () => {
@@ -1752,50 +1636,20 @@ export class PlaywrightExecutor {
           return self.executionTimestamps
         },
       })
-      const recordingApi = {
-        start: (opts?: Parameters<typeof recordingApiRaw.start>[0]) => {
-          requirePage(opts?.page)
-          return recordingApiRaw.start(opts)
-        },
-        stop: (opts?: Parameters<typeof recordingApiRaw.stop>[0]) => {
-          requirePage(opts?.page)
-          return recordingApiRaw.stop(opts)
-        },
-        isRecording: (opts?: Parameters<typeof recordingApiRaw.isRecording>[0]) => {
-          requirePage(opts?.page)
-          return recordingApiRaw.isRecording(opts)
-        },
-        cancel: (opts?: Parameters<typeof recordingApiRaw.cancel>[0]) => {
-          requirePage(opts?.page)
-          return recordingApiRaw.cancel(opts)
-        },
-      }
 
       // Live RTMP streaming: pipes tabCapture chunks to ffmpeg in the relay
       // process. Streams keep running after execute() returns and CLI exits.
-      const streamApiRaw = createStreamApi({
-        defaultPage: page,
-        relayPort,
-      })
-      const streamApi = {
-        start: (opts: Parameters<typeof streamApiRaw.start>[0]) => {
-          requirePage(opts?.page)
-          return streamApiRaw.start(opts)
-        },
-        stop: (opts?: Parameters<typeof streamApiRaw.stop>[0]) => {
-          requirePage(opts?.page)
-          return streamApiRaw.stop(opts)
-        },
-        status: (opts?: Parameters<typeof streamApiRaw.status>[0]) => {
-          requirePage(opts?.page)
-          return streamApiRaw.status(opts)
-        },
-      }
+      const streamApi = createStreamApi({ relayPort })
 
       // Ghost Browser API - creates chrome object that mirrors Ghost Browser's APIs
       // See extension/src/ghost-browser-api.d.ts for full API documentation
       const chromeGhostBrowser = createGhostBrowserChrome(async (namespace, method, args) => {
-        const cdp = await getCDPSession({ page })
+        // The relay handles 'ghost-browser' on any session; a tab is only the transport.
+        const transportPage = context.pages().find((p) => !p.isClosed())
+        if (!transportPage) {
+          throw new Error('Ghost Browser API needs at least one Playwriter tab. Create one with `state.page = await context.newPage()`.')
+        }
+        const cdp = await getCDPSession({ page: transportPage })
         const result = await cdp.send('ghost-browser' as any, { namespace, method, args })
         const typed = result as GhostBrowserCommandResult
         if (!typed.success) {
@@ -1868,7 +1722,6 @@ export class PlaywrightExecutor {
       }
 
       let vmContextObj: any = {
-        page,
         context,
         browser: this.browser,
         state: this.userState,
@@ -1877,12 +1730,23 @@ export class PlaywrightExecutor {
         accessibilitySnapshot: snapshot, // backward compat alias
         inspect,
         refToLocator,
-        getCleanHTML,
-        getPageMarkdown,
+        getCleanHTML: (options: GetCleanHTMLOptions) => {
+          if (!options?.locator) {
+            throw new Error("getCleanHTML requires { locator }, e.g. getCleanHTML({ locator: state.page }) or getCleanHTML({ locator: state.page.locator('main') }).")
+          }
+          return getCleanHTML(options)
+        },
+        getPageMarkdown: (options: GetPageMarkdownOptions) => {
+          resolveSandboxPage({ helper: 'getPageMarkdown', page: options?.page })
+          return getPageMarkdown(options)
+        },
         getLocatorStringForElement,
         getLatestLogs,
         clearAllLogs,
-        waitForPageLoad,
+        waitForPageLoad: (options: WaitForPageLoadOptions) => {
+          resolveSandboxPage({ helper: 'waitForPageLoad', page: options?.page })
+          return waitForPageLoad(options)
+        },
         getCDPSession,
         createDebugger,
         createEditor,
@@ -1911,22 +1775,7 @@ export class PlaywrightExecutor {
           status: streamApi.status,
         },
         cloud: this.enableCloudScope
-          ? (() => {
-              const cloudScope = createCloudScope({ defaultPage: page, auth: this.cloudAuth })
-              return {
-                browsers: cloudScope.browsers,
-                sendCookies: (opts: Parameters<typeof cloudScope.sendCookies>[0]) => {
-                  return cloudScope.sendCookies({
-                    ...opts,
-                    from: resolveSandboxPage({
-                      page: opts.from,
-                      defaultPage: page,
-                      trackedPageCount: context.pages().length,
-                    }),
-                  })
-                },
-              }
-            })()
+          ? createCloudScope({ auth: this.cloudAuth })
           : undefined,
         // Backward-compatible aliases
         startRecording: recordingApi.start,
@@ -1935,12 +1784,11 @@ export class PlaywrightExecutor {
         cancelRecording: recordingApi.cancel,
         createDemoVideo,
         resetPlaywright: async () => {
-          const { page: newPage, context: newContext } = await self.resetInternal()
-          vmContextObj.page = newPage
+          const { context: newContext } = await self.resetInternal()
           vmContextObj.context = newContext
           vmContextObj.browser = self.browser
           vmContextObj.state = self.userState
-          return { page: newPage, context: newContext }
+          return { context: newContext }
         },
         require: this.sandboxedRequire,
         // Restricted alternative to native import() for allowlisted built-ins.
@@ -1991,6 +1839,13 @@ export class PlaywrightExecutor {
       }
 
       const vmContext = vm.createContext(vmContextObj)
+      // No default page: reading `page` throws so agents pick or create their own tab.
+      // Defined inside the context because vm swallows errors thrown by host-side sandbox getters
+      // (the global would just read as "page is not defined").
+      vm.runInContext(
+        `Object.defineProperty(globalThis, 'page', { get() { throw new Error(${JSON.stringify(PAGE_GLOBAL_REMOVED_ERROR)}) } })`,
+        vmContext,
+      )
       const sandboxEntryPath = path.join(this.sessionCwd || process.cwd(), '.playwriter-eval.js')
       const autoReturnExpr = getAutoReturnExpression(code)
       const wrappedCode = autoReturnExpr !== null
@@ -2137,59 +1992,6 @@ export class PlaywrightExecutor {
       },
     })
     return this.disposePromise
-  }
-
-  // When extension is connected but has no pages, auto-create unless PLAYWRITER_AUTO_ENABLE=false disables it.
-  // In direct CDP mode, always create a page (no extension check needed).
-  private async ensurePageForContext(options: { context: BrowserContext; timeout: number }): Promise<Page> {
-    const { context, timeout } = options
-    const pages = context.pages().filter((p) => !p.isClosed())
-    if (pages.length > 0) {
-      return pages[0]
-    }
-
-    // Direct CDP mode: always create a new page, no extension involved
-    if (this.isDirectCdpMode()) {
-      const page = await context.newPage()
-      this.setupPageListeners(page)
-      await page.waitForLoadState('domcontentloaded', { timeout }).catch(() => {})
-      return page
-    }
-
-    await this.requireConnectedExtension()
-
-    if (!shouldAutoEnablePlaywriter()) {
-      const waitTimeoutMs = Math.min(timeout, 1000)
-      const startTime = Date.now()
-      while (Date.now() - startTime < waitTimeoutMs) {
-        const availablePages = context.pages().filter((p) => !p.isClosed())
-        if (availablePages.length > 0) {
-          return availablePages[0]
-        }
-        await new Promise((resolve) => setTimeout(resolve, 100))
-      }
-      throw new Error(NO_PAGES_AVAILABLE_ERROR)
-    }
-
-    const page = await context.newPage()
-    this.setupPageListeners(page)
-    const pageUrl = page.url()
-    if (pageUrl === 'about:blank') {
-      return page
-    }
-
-    // Avoid burning the full timeout on about:blank-like pages.
-    await page.waitForLoadState('domcontentloaded', { timeout }).catch(() => {})
-    return page
-  }
-
-  /** Get info about current connection state */
-  getStatus(): { connected: boolean; pageUrl: string | null; pagesCount: number } {
-    return {
-      connected: this.isConnected,
-      pageUrl: this.page?.url() || null,
-      pagesCount: this.context?.pages().length || 0,
-    }
   }
 
   /** Get keys of user-defined state */

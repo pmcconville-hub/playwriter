@@ -23,7 +23,7 @@ Other browser MCPs spawn a fresh Chrome — no logins, no extensions, instantly 
 
    ```bash
    npm i -g playwriter
-   playwriter -s 1 -e 'await page.goto("https://example.com")'
+   playwriter -s 1 -e 'state.page = await context.newPage(); await state.page.goto("https://example.com")'
    ```
 
 4. Install the skill so your agent knows how to use Playwriter:
@@ -36,9 +36,9 @@ Other browser MCPs spawn a fresh Chrome — no logins, no extensions, instantly 
 ```bash
 playwriter browser start  # starts Chrome for Testing/Chromium with bundled Playwriter extension
 playwriter session new  # creates stateful sandbox, outputs session id (e.g. 1)
-playwriter -s 1 -e 'await page.goto("https://example.com")'
-playwriter -s 1 -e 'console.log(await snapshot({ page }))'
-playwriter -s 1 -e 'await page.locator("aria-ref=e5").click()'
+playwriter -s 1 -e 'state.page = await context.newPage(); await state.page.goto("https://example.com")'
+playwriter -s 1 -e 'console.log(await snapshot({ page: state.page }))'
+playwriter -s 1 -e 'await state.page.locator("aria-ref=e5").click()'
 ```
 
 > **Tip:** Always use single quotes for `-e` to prevent bash from interpreting `$`, backticks, and `\` in your JS code. Use double quotes for strings inside the JS.
@@ -60,15 +60,15 @@ playwriter session list             # show sessions + state keys + group
 playwriter session reset <id>       # fix connection issues
 
 # Execute (always use -s)
-playwriter -s 1 -e 'await page.goto("https://example.com")'
-playwriter -s 1 -e 'await page.click("button")'
-playwriter -s 1 -e 'console.log(await page.title())'
+playwriter -s 1 -e 'state.page = await context.newPage(); await state.page.goto("https://example.com")'
+playwriter -s 1 -e 'await state.page.click("button")'
+playwriter -s 1 -e 'console.log(await state.page.title())'
 ```
 
-Create your own page to avoid interference from other agents:
+There is no default `page`. Create your own tab and store it in `state`. To use a tab the user already opened, find it by URL:
 
 ```bash
-playwriter -s 1 -e 'state.myPage = await context.newPage(); await state.myPage.goto("https://example.com")'
+playwriter -s 1 -e 'state.page = context.pages().findLast((p) => p.url().includes("github.com"))'
 ```
 
 ### Tab groups
@@ -118,34 +118,34 @@ Multiline:
 
 ```bash
 playwriter -s 1 -e $'
-const title = await page.title();
-console.log({ title, url: page.url() });
+const title = await state.page.title();
+console.log({ title, url: state.page.url() });
 '
 ```
 
 ## Examples
 
-Variables in scope: `page`, `context`, `state` (persists between calls), `cloud` (local CLI sessions), `require`, `importModule`, native `import()`, and Node.js globals. Relative imports resolve from the session working directory.
+Variables in scope: `context`, `state` (persists between calls), `cloud` (local CLI sessions), `require`, `importModule`, native `import()`, and Node.js globals. Relative imports resolve from the session working directory. There is no default `page`; examples below assume `state.page` was set as shown above.
 
 **Persist data in state:**
 
 ```bash
-playwriter -e "state.users = await page.$$eval('.user', els => els.map(e => e.textContent))"
+playwriter -e "state.users = await state.page.$$eval('.user', els => els.map(e => e.textContent))"
 playwriter -e "console.log(state.users)"
 ```
 
 **Intercept network requests:**
 
 ```bash
-playwriter -e "state.requests = []; page.on('response', r => { if (r.url().includes('/api/')) state.requests.push(r.url()) })"
-playwriter -e "await Promise.all([page.waitForResponse(r => r.url().includes('/api/')), page.click('button')])"
+playwriter -e "state.requests = []; state.page.on('response', r => { if (r.url().includes('/api/')) state.requests.push(r.url()) })"
+playwriter -e "await Promise.all([state.page.waitForResponse(r => r.url().includes('/api/')), state.page.click('button')])"
 playwriter -e "console.log(state.requests)"
 ```
 
 **Set breakpoints and debug:**
 
 ```bash
-playwriter -e "state.cdp = await getCDPSession({ page }); state.dbg = createDebugger({ cdp: state.cdp }); await state.dbg.enable()"
+playwriter -e "state.cdp = await getCDPSession({ page: state.page }); state.dbg = createDebugger({ cdp: state.cdp }); await state.dbg.enable()"
 playwriter -e "state.scripts = await state.dbg.listScripts({ search: 'app' }); console.log(state.scripts.map(s => s.url))"
 playwriter -e "await state.dbg.setBreakpoint({ file: state.scripts[0].url, line: 42 })"
 ```
@@ -153,20 +153,20 @@ playwriter -e "await state.dbg.setBreakpoint({ file: state.scripts[0].url, line:
 **Live edit page code:**
 
 ```bash
-playwriter -e "state.cdp = await getCDPSession({ page }); state.editor = createEditor({ cdp: state.cdp }); await state.editor.enable()"
+playwriter -e "state.cdp = await getCDPSession({ page: state.page }); state.editor = createEditor({ cdp: state.cdp }); await state.editor.enable()"
 playwriter -e "await state.editor.edit({ url: 'https://example.com/app.js', oldString: 'const DEBUG = false', newString: 'const DEBUG = true' })"
 ```
 
 **Screenshot with labels:**
 
 ```bash
-playwriter -e "await screenshotWithAccessibilityLabels({ page })"
+playwriter -e "await screenshotWithAccessibilityLabels({ page: state.page })"
 ```
 
 **Live stream a tab to X Live / Twitch (RTMP, runs 24/7):**
 
 ```bash
-playwriter -s 1 -e "await page.goto('https://example.com')"
+playwriter -s 1 -e "state.page = await context.newPage(); await state.page.goto('https://example.com')"
 playwriter stream start -s 1 --rtmp rtmp://va.pscp.tv:80/x/<stream-key>
 playwriter stream status -s 1
 playwriter stream stop -s 1
@@ -181,9 +181,9 @@ Using the CLI with the skill (step 4 above) is the recommended approach. For dir
 Vimium-style labels for AI agents to identify elements:
 
 ```javascript
-await screenshotWithAccessibilityLabels({ page })
+await screenshotWithAccessibilityLabels({ page: state.page })
 // Returns screenshot + accessibility snapshot with aria-ref selectors
-await page.locator('aria-ref=e5').click()
+await state.page.locator('aria-ref=e5').click()
 ```
 
 Color-coded: yellow=links, orange=buttons, coral=inputs, pink=checkboxes, peach=sliders, salmon=menus, amber=tabs.
@@ -326,7 +326,7 @@ npx -y traforo -p 19988 -t my-machine -- npx -y playwriter serve --token <secret
 ```bash
 export PLAYWRITER_HOST=https://my-machine-tunnel.traforo.dev
 export PLAYWRITER_TOKEN=<secret>
-playwriter -s 1 -e 'await page.goto("https://example.com")'
+playwriter -s 1 -e 'state.page = await context.newPage(); await state.page.goto("https://example.com")'
 ```
 
 Also works on a LAN without traforo (`PLAYWRITER_HOST=192.168.1.10`). Full guide with use cases (remote Mac mini, user support, multi-machine control): [docs/remote-access.md](./docs/remote-access.md)
@@ -335,7 +335,7 @@ Also works on a LAN without traforo (`PLAYWRITER_HOST=192.168.1.10`). Full guide
 
 - **Local by default**: The normal WebSocket relay stays on `localhost:19988`. Traffic leaves your machine only when you enable Remote control or configure remote access.
 - **Origin validation**: Only our extension IDs allowed (browsers can't spoof Origin)
-- **Controlled tab scope**: Tabs are controlled after an extension click. By default, Playwriter also creates a controlled `about:blank` tab when a client connects with no controlled tabs. Set `PLAYWRITER_AUTO_ENABLE=false` to require a manual click.
+- **Controlled tab scope**: Tabs are controlled after an extension click. Playwriter never opens a tab on its own. New tabs are created only when code calls `context.newPage()`.
 - **Visible automation**: Chrome shows automation banner on controlled tabs
 - **No remote access**: Malicious websites cannot connect
 
@@ -349,7 +349,7 @@ import { startPlayWriterCDPRelayServer, getCdpUrl } from 'playwriter'
 
 const server = await startPlayWriterCDPRelayServer()
 const browser = await chromium.connectOverCDP(getCdpUrl())
-const page = browser.contexts()[0].pages()[0]
+const page = await browser.contexts()[0].newPage()
 
 await page.goto('https://example.com')
 await page.screenshot({ path: 'screenshot.png' })

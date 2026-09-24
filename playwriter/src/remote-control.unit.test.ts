@@ -113,7 +113,7 @@ describe('remote-control', () => {
     expect(getRemoteCdpCommandRejection('Page.navigate')).toBeNull()
     expect(getRemoteCdpCommandRejection('Runtime.evaluate')).toBeNull()
     expect(getRemoteCdpCommandRejection('Target.createTarget')).toMatchInlineSnapshot(
-      `"This is a shared remote-control browser tab. You cannot create additional tabs and should not try to. The user shared exactly one tab with you (plus any popups that tab opens itself). Keep working inside the shared tab: navigate it with page.goto() instead of opening new pages. If you really need another tab, ask the user to open one and share it with you (they get a separate id per shared tab)."`,
+      `"This is a shared remote-control browser tab. You cannot create additional tabs and should not try to. The user shared exactly one tab with you (plus any popups that tab opens itself). Keep working inside the shared tab: store it with state.page = context.pages()[0] and navigate it with state.page.goto() instead of opening new pages. If you really need another tab, ask the user to open one and share it with you (they get a separate id per shared tab)."`,
     )
     expect(getRemoteCdpCommandRejection('Network.clearBrowserCookies')).toMatchInlineSnapshot(
       `"Network.clearBrowserCookies is not allowed on a shared remote-control tab: it clears cookies for EVERY site in the user profile."`,

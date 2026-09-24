@@ -156,8 +156,8 @@ Once connected, the cloud browser works exactly like a local one. All Playwright
 snapshots, screenshots, and MCP tools work the same way:
 
 ```bash
-playwriter -s 1 -e "await page.goto('https://example.com')"
-playwriter -s 1 -e "console.log(await snapshot({ page }))"
+playwriter -s 1 -e "state.page = await context.newPage(); await state.page.goto('https://example.com')"
+playwriter -s 1 -e "console.log(await snapshot({ page: state.page }))"
 ```
 
 ### 5. Check status

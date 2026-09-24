@@ -28,7 +28,7 @@ By default, everything runs **on your machine**. The relay binds to `localhost:1
 
 **Origin validation.** The extension WebSocket endpoint only accepts the Playwriter extension origin. Browsers cannot spoof the `Origin` header, so malicious websites cannot connect and control your browser. CLI and MCP connect as local Node.js clients on localhost; for remote access, always use [token authentication](./remote-access.mdx).
 
-**Controlled tab scope.** Existing tabs are controlled after you click the extension icon. By default, Playwriter also creates a controlled `about:blank` tab when a client connects with no controlled tabs. Set `PLAYWRITER_AUTO_ENABLE=false` to require a manual click. Playwriter does not attach to other existing tabs in the background.
+**Controlled tab scope.** Existing tabs are controlled after you click the extension icon. Playwriter never opens a tab on its own. New tabs are created only when code calls `context.newPage()`. Playwriter does not attach to other existing tabs in the background.
 
 **Visible automation.** The Chrome debugger banner is always visible on controlled tabs. You can see everything the agent does in real time.
 

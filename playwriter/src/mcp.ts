@@ -253,7 +253,7 @@ server.tool(
     code: z
       .string()
       .describe(
-        'js playwright code, has {page, state, context} in scope. Should be one line, using ; to execute multiple statements. you MUST call execute multiple times instead of writing complex scripts in a single tool call.',
+        'js playwright code, has {state, context} in scope. There is no `page` global: use `state.page = await context.newPage()` or pick an existing tab from `context.pages()`. Should be one line, using ; to execute multiple statements. you MUST call execute multiple times instead of writing complex scripts in a single tool call.',
       ),
     timeout: z
       .number()
@@ -326,11 +326,11 @@ server.tool(
 server.tool(
   'reset',
   dedent`
-    Recreates the CDP connection and resets the browser/page/context. Use this when the MCP stops responding, you get connection errors, if there are no pages in context, assertion failures, page closed, or other issues.
+    Recreates the CDP connection and resets the browser/context. Use this when the MCP stops responding, you get connection errors, assertion failures, or other issues.
 
-    After calling this tool, the page and context variables are automatically updated in the execution environment.
+    After calling this tool, the context variable is automatically updated in the execution environment.
 
-    This tools also removes any custom properties you may have added to the global scope AND clearing all keys from the \`state\` object. Only \`page\`, \`context\`, \`state\` (empty), \`console\`, and utility functions will remain.
+    This tools also removes any custom properties you may have added to the global scope AND clearing all keys from the \`state\` object. Only \`context\`, \`state\` (empty), \`console\`, and utility functions will remain. Assign \`state.page\` again after a reset.
 
     if playwright always returns all pages as about:blank urls and evaluate does not work you should ask the user to restart Chrome. This is a known Chrome bug.
   `,
@@ -347,13 +347,13 @@ server.tool(
       }
 
       const exec = await getOrCreateExecutor()
-      const { page, context } = await exec.reset()
+      const { context } = await exec.reset()
       const pagesCount = context.pages().length
       return {
         content: [
           {
             type: 'text',
-            text: `Connection reset successfully. ${pagesCount} page(s) available. Current page URL: ${page.url()}`,
+            text: `Connection reset successfully. ${pagesCount} page(s) available.`,
           },
         ],
       }

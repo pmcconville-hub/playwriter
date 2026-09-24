@@ -72,7 +72,7 @@ await ghostCursor.show({ page: state.page, style: 'screenstudio' })
 await ghostCursor.hide({ page: state.page })
 ```
 
-For best-looking recordings, use **locator-based interactions** (`locator.click()`, `page.mouse.move()`) instead of `goto()` to show realistic cursor motion.
+For best-looking recordings, use **locator-based interactions** (`locator.click()`, `state.page.mouse.move()`) instead of `goto()` to show realistic cursor motion.
 
 ## Demo video acceleration
 

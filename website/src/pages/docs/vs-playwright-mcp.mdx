@@ -57,6 +57,6 @@ where you left off.
 # Playwriter: agent works in your browser, you collaborate in real time
 
 playwriter session new
-playwriter -s 1 -e "page.goto('https://gmail.com')"
+playwriter -s 1 -e "state.page = await context.newPage(); await state.page.goto('https://gmail.com')"
 # Already logged in, no credentials needed
 ```

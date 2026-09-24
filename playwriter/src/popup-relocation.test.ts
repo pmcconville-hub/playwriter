@@ -72,7 +72,7 @@ describe('Popup window relocation', () => {
       name: 'execute',
       arguments: {
         code: js`
-          state.popupTestPage = context.pages().find((p) => p.url() === 'about:blank') ?? (await context.newPage());
+          state.popupTestPage = await context.newPage();
           await state.popupTestPage.goto('${htmlServer.baseUrl}/opener', { waitUntil: 'domcontentloaded' });
           return { url: state.popupTestPage.url(), pagesBefore: context.pages().length };
         `,

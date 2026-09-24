@@ -533,7 +533,6 @@ describe('Relay Navigation Tests', () => {
     const { startRecording, stopRecording, isRecording } = await import('./screen-recording.js')
 
     const startResult = await startRecording({
-      page: recordingPage,
       outputPath,
       frameRate: 30,
       audio: false,
@@ -549,10 +548,10 @@ describe('Relay Navigation Tests', () => {
     await recordingPage.goBack()
     await recordingPage.waitForLoadState('domcontentloaded')
 
-    const status = await isRecording({ page: recordingPage, relayPort: TEST_PORT })
+    const status = await isRecording({ relayPort: TEST_PORT })
     expect(status.isRecording).toBe(true)
 
-    const stopResult = await stopRecording({ page: recordingPage, relayPort: TEST_PORT })
+    const stopResult = await stopRecording({ relayPort: TEST_PORT })
     expect(stopResult.path).toBe(outputPath)
     expect(stopResult.size).toBeGreaterThan(10000)
     expect(fs.existsSync(outputPath)).toBe(true)

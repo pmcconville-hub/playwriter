@@ -89,10 +89,6 @@ export function getCdpUrl({
   return `${wsBaseUrl}/cdp/${id}${suffix}`
 }
 
-export function shouldAutoEnablePlaywriter(): boolean {
-  return process.env.PLAYWRITER_AUTO_ENABLE?.toLowerCase() !== 'false'
-}
-
 export function redactRemoteControlSecrets(value: string): string {
   return value
     .replace(/(playwriter\.dev\/remote-control#)[a-z0-9-]{1,63}/gi, '$1[redacted]')

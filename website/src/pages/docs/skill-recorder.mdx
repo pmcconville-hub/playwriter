@@ -232,27 +232,27 @@ Preconditions: already signed in. Playwriter drives the browser.
 1. Open the submit page
 
 ```bash
-playwriter -s 1 -e 'await page.goto("https://directory.example.com/submit")'
+playwriter -s 1 -e 'state.page = await context.newPage(); await state.page.goto("https://directory.example.com/submit")'
 ```
 
 2. Fill name and URL (parameters)
 
 ```bash
-playwriter -s 1 -e 'const name = "Acme"; await page.getByRole("textbox", { name: "Product name" }).fill(name)'
-playwriter -s 1 -e 'const url = "https://acme.com"; await page.getByRole("textbox", { name: "Website URL" }).fill(url)'
+playwriter -s 1 -e 'const name = "Acme"; await state.page.getByRole("textbox", { name: "Product name" }).fill(name)'
+playwriter -s 1 -e 'const url = "https://acme.com"; await state.page.getByRole("textbox", { name: "Website URL" }).fill(url)'
 ```
 
 3. Click Submit. Expect POST `/api/products` and confirmation text.
 
 ```bash
-playwriter -s 1 -e 'await page.getByRole("button", { name: "Submit" }).click()'
+playwriter -s 1 -e 'await state.page.getByRole("button", { name: "Submit" }).click()'
 ```
 ````
 
 Replay the helper script (preferred, fewer tokens):
 
 ```bash
-playwriter -s 1 -e 'const { submitProduct } = await import("./.agents/skills/submit-to-directory/submit.js"); await submitProduct({ page, name: "Acme", url: "https://acme.com" })'
+playwriter -s 1 -e 'const { submitProduct } = await import("./.agents/skills/submit-to-directory/submit.js"); state.page ??= await context.newPage(); await submitProduct({ page: state.page, name: "Acme", url: "https://acme.com" })'
 ```
 
 The agent validates the skill by running that replay end-to-end before calling it done.

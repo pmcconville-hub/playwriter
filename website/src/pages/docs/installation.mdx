@@ -44,9 +44,9 @@ This works with any agent that supports skills (OpenCode, Cursor, Claude Code, e
 
 ```bash
 playwriter session new                    # creates sandbox, outputs id (e.g. 1)
-playwriter -s 1 -e 'await page.goto("https://example.com")'
-playwriter -s 1 -e 'console.log(await snapshot({ page }))'
-playwriter -s 1 -e 'await page.locator("aria-ref=e5").click()'
+playwriter -s 1 -e 'state.page = await context.newPage(); await state.page.goto("https://example.com")'
+playwriter -s 1 -e 'console.log(await snapshot({ page: state.page }))'
+playwriter -s 1 -e 'await state.page.locator("aria-ref=e5").click()'
 ```
 
 ## Start Chrome for Testing
@@ -73,7 +73,7 @@ After installing the extension and CLI:
 
 ```bash
 playwriter session new
-playwriter -s 1 -e 'console.log(await page.title())'
+playwriter -s 1 -e 'console.log(context.pages().map((p) => p.url()))'
 ```
 
-If you see the page title printed, everything is working.
+If you see the tab URL printed, everything is working.

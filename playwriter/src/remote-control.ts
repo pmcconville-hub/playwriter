@@ -325,7 +325,7 @@ export function readAttachedTargetSession(
 // ---------------------------------------------------------------------------
 
 const REMOTE_NEW_TAB_ERROR = dedent`
-  This is a shared remote-control browser tab. You cannot create additional tabs and should not try to. The user shared exactly one tab with you (plus any popups that tab opens itself). Keep working inside the shared tab: navigate it with page.goto() instead of opening new pages. If you really need another tab, ask the user to open one and share it with you (they get a separate id per shared tab).
+  This is a shared remote-control browser tab. You cannot create additional tabs and should not try to. The user shared exactly one tab with you (plus any popups that tab opens itself). Keep working inside the shared tab: store it with state.page = context.pages()[0] and navigate it with state.page.goto() instead of opening new pages. If you really need another tab, ask the user to open one and share it with you (they get a separate id per shared tab).
 `
 
 /** Remote control is not a sandbox; only block obvious profile-wide accidents. */

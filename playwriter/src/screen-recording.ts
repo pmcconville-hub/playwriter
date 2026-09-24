@@ -83,8 +83,6 @@ function isActiveTabPermissionError(error: string): boolean {
 }
 
 export interface StartRecordingOptions {
-  /** Target page to record */
-  page: Page
   /** CDP tab session ID (pw-tab-* format) to identify which tab to record */
   sessionId?: string
   /** Frame rate (default: 30) */
@@ -108,8 +106,6 @@ export interface StartRecordingOptions {
 }
 
 export interface StopRecordingOptions {
-  /** Target page that is being recorded */
-  page: Page
   /** CDP tab session ID (pw-tab-* format) to identify which tab to stop recording */
   sessionId?: string
   /** Relay server port (default: 19988) */
@@ -134,7 +130,6 @@ interface RecordingTargetOptions {
 
 interface CreateRecordingApiOptions {
   context: BrowserContext
-  defaultPage: Page
   relayPort: number
   ghostCursorController: GhostCursorController
   onStart: () => void
@@ -142,85 +137,53 @@ interface CreateRecordingApiOptions {
   getExecutionTimestamps: () => ExecutionTimestamp[]
 }
 
-interface StartRecordingWithDefaultsOptions extends Omit<StartRecordingOptions, 'relayPort'> {}
-interface StopRecordingWithDefaultsOptions extends Omit<StopRecordingOptions, 'relayPort'> {}
-interface IsRecordingWithDefaultsOptions {
-  page?: Page
-  sessionId?: string
-}
-interface CancelRecordingWithDefaultsOptions {
-  page?: Page
-  sessionId?: string
-}
+interface StartRecordingWithDefaultsOptions extends Omit<StartRecordingOptions, 'relayPort'>, RecordingTargetOptions {}
+type StopRecordingWithDefaultsOptions = RecordingTargetOptions
 
-function resolveRecordingTargetPage(options: {
-  context: BrowserContext
-  defaultPage: Page
-  ghostCursorController: GhostCursorController
+const RECORDING_TARGET_REQUIRED =
+  'requires an explicit target tab, e.g. ({ page: state.page }). There is no default page; create one with `state.page = await context.newPage()`.'
+
+/** Resolve the tab to record/stream. There is no default page: require page or a known sessionId. */
+function resolveTarget(options: {
+  helper: string
+  context?: BrowserContext
+  ghostCursorController?: GhostCursorController
   target?: RecordingTargetOptions
-}): Page {
-  return options.ghostCursorController.resolveRecordingTargetPage({
-    context: options.context,
-    defaultPage: options.defaultPage,
-    target: options.target,
-  })
-}
-
-function withRecordingDefaults<T extends { page?: Page; sessionId?: string }, R>(options: {
-  relayPort: number
-  defaultPage: Page
-  fn: (opts: T & { relayPort: number; sessionId?: string }) => Promise<R>
-}): (input?: T) => Promise<R> {
-  const { relayPort, defaultPage, fn } = options
-  return async (input: T = {} as T) => {
-    const targetPage = input.page || defaultPage
-    const sessionId = input.sessionId || targetPage.sessionId() || undefined
-    return fn({ page: targetPage, sessionId, relayPort, ...input })
+}): { page: Page | null; sessionId: string } {
+  const { helper, context, ghostCursorController, target } = options
+  const page = context && ghostCursorController
+    ? ghostCursorController.resolveRecordingTargetPage({ context, target })
+    : target?.page || null
+  const sessionId = target?.sessionId || page?.sessionId() || undefined
+  if (!sessionId) {
+    throw new Error(`${helper} ${RECORDING_TARGET_REQUIRED}`)
   }
+  return { page, sessionId }
 }
 
 export function createRecordingApi(options: CreateRecordingApiOptions): {
-  start: (opts?: StartRecordingWithDefaultsOptions) => Promise<RecordingState>
-  stop: (opts?: StopRecordingWithDefaultsOptions) => Promise<{ path: string; duration: number; size: number; executionTimestamps: ExecutionTimestamp[] }>
-  isRecording: (opts?: IsRecordingWithDefaultsOptions) => Promise<RecordingState>
-  cancel: (opts?: CancelRecordingWithDefaultsOptions) => Promise<void>
+  start: (opts: StartRecordingWithDefaultsOptions) => Promise<RecordingState>
+  stop: (opts: StopRecordingWithDefaultsOptions) => Promise<{ path: string; duration: number; size: number; executionTimestamps: ExecutionTimestamp[] }>
+  isRecording: (opts: RecordingTargetOptions) => Promise<RecordingState>
+  cancel: (opts: RecordingTargetOptions) => Promise<void>
 } {
-  const { context, defaultPage, relayPort, ghostCursorController, onStart, onFinish, getExecutionTimestamps } = options
+  const { context, relayPort, ghostCursorController, onStart, onFinish, getExecutionTimestamps } = options
+  const resolve = (helper: string, target?: RecordingTargetOptions) => {
+    return resolveTarget({ helper, context, ghostCursorController, target })
+  }
 
   // Stores the original viewport before aspect-ratio resize so we can restore on stop/cancel
   let preRecordingViewport: { width: number; height: number } | null = null
   // Auto-stop timer to prevent unbounded recordings
   let maxDurationTimer: ReturnType<typeof setTimeout> | null = null
 
-  const startWithDefaults = withRecordingDefaults<StartRecordingWithDefaultsOptions, RecordingState>({
-    relayPort,
-    defaultPage,
-    fn: startRecording,
-  })
-  const stopWithDefaults = withRecordingDefaults<StopRecordingWithDefaultsOptions, { path: string; duration: number; size: number }>({
-    relayPort,
-    defaultPage,
-    fn: stopRecording,
-  })
-  const isRecordingWithDefaults = async (opts: IsRecordingWithDefaultsOptions = {}): Promise<RecordingState> => {
-    const targetPage = opts.page || defaultPage
-    const sessionId = opts.sessionId || targetPage.sessionId() || undefined
-    return isRecording({ page: targetPage, sessionId, relayPort })
-  }
-
-  const cancelWithDefaults = async (opts: CancelRecordingWithDefaultsOptions = {}): Promise<void> => {
-    const targetPage = opts.page || defaultPage
-    const sessionId = opts.sessionId || targetPage.sessionId() || undefined
-    await cancelRecording({ page: targetPage, sessionId, relayPort })
-  }
-
-  const start = async (opts?: StartRecordingWithDefaultsOptions): Promise<RecordingState> => {
-    const targetPage = resolveRecordingTargetPage({ context, defaultPage, ghostCursorController, target: opts })
+  const start = async (opts: StartRecordingWithDefaultsOptions): Promise<RecordingState> => {
+    const { page: targetPage, sessionId } = resolve('recording.start', opts)
 
     // Resize viewport to target aspect ratio (default 16:9) before recording.
     // Only shrinks — never increases width or height beyond current values.
     const aspectRatio = opts?.aspectRatio === undefined ? DEFAULT_ASPECT_RATIO : opts.aspectRatio
-    if (aspectRatio) {
+    if (aspectRatio && targetPage) {
       const current = targetPage.viewportSize()
       if (current) {
         const fitted = fitToAspectRatio(current, aspectRatio)
@@ -231,7 +194,7 @@ export function createRecordingApi(options: CreateRecordingApiOptions): {
       }
     }
 
-    const result = await startWithDefaults(opts)
+    const result = await startRecording({ ...opts, sessionId, relayPort })
     onStart()
 
     // Schedule auto-stop to prevent unbounded recordings filling disk.
@@ -240,7 +203,7 @@ export function createRecordingApi(options: CreateRecordingApiOptions): {
     if (maxMs > 0 && maxMs < Infinity) {
       maxDurationTimer = setTimeout(() => {
         maxDurationTimer = null
-        stop(opts ? { page: opts.page, sessionId: opts.sessionId } : undefined).catch(() => {})
+        stop({ page: opts.page, sessionId }).catch(() => {})
       }, maxMs)
     }
 
@@ -254,8 +217,8 @@ export function createRecordingApi(options: CreateRecordingApiOptions): {
     }
   }
 
-  const restoreViewport = async (targetPage: Page): Promise<void> => {
-    if (!preRecordingViewport) {
+  const restoreViewport = async (targetPage: Page | null): Promise<void> => {
+    if (!preRecordingViewport || !targetPage) {
       return
     }
     const saved = preRecordingViewport
@@ -264,21 +227,21 @@ export function createRecordingApi(options: CreateRecordingApiOptions): {
   }
 
   const stop = async (
-    opts?: StopRecordingWithDefaultsOptions,
+    opts: StopRecordingWithDefaultsOptions,
   ): Promise<{ path: string; duration: number; size: number; executionTimestamps: ExecutionTimestamp[] }> => {
+    const { page: targetPage, sessionId } = resolve('recording.stop', opts)
     clearMaxDurationTimer()
-    const targetPage = resolveRecordingTargetPage({ context, defaultPage, ghostCursorController, target: opts })
-    const result = await stopWithDefaults(opts)
+    const result = await stopRecording({ sessionId, relayPort })
     const executionTimestamps = [...getExecutionTimestamps()]
     onFinish()
     await restoreViewport(targetPage)
     return { ...result, executionTimestamps }
   }
 
-  const cancel = async (opts?: CancelRecordingWithDefaultsOptions): Promise<void> => {
+  const cancel = async (opts: RecordingTargetOptions): Promise<void> => {
+    const { page: targetPage, sessionId } = resolve('recording.cancel', opts)
     clearMaxDurationTimer()
-    const targetPage = resolveRecordingTargetPage({ context, defaultPage, ghostCursorController, target: opts })
-    await cancelWithDefaults(opts)
+    await cancelRecording({ sessionId, relayPort })
     onFinish()
     await restoreViewport(targetPage)
   }
@@ -286,7 +249,10 @@ export function createRecordingApi(options: CreateRecordingApiOptions): {
   return {
     start,
     stop,
-    isRecording: isRecordingWithDefaults,
+    isRecording: async (opts) => {
+      const { sessionId } = resolve('recording.isRecording', opts)
+      return isRecording({ sessionId, relayPort })
+    },
     cancel,
   }
 }
@@ -377,7 +343,6 @@ export async function stopRecording(
  * Check if recording is currently active.
  */
 export async function isRecording(options: {
-  page: Page
   sessionId?: string
   relayPort?: number
 }): Promise<RecordingState> {
@@ -401,7 +366,7 @@ export async function isRecording(options: {
 // ============================================================================
 
 export interface StartStreamOptions extends Omit<StartStreamParams, 'sessionId'> {
-  /** Target page to stream (defaults to the executor's current page) */
+  /** Target page to stream (required unless sessionId is given) */
   page?: Page
   /** CDP tab session ID (pw-tab-*) to identify which tab to stream */
   sessionId?: string
@@ -440,7 +405,6 @@ export async function startStream(
 
 /** Stop an active stream. Closes ffmpeg gracefully and waits for it to exit. */
 export async function stopStream(options: {
-  page?: Page
   sessionId?: string
   relayPort?: number
 }): Promise<{ duration: number; bytesReceived: number }> {
@@ -463,7 +427,6 @@ export async function stopStream(options: {
 
 /** Get status and encoder stats for the active stream (if any). */
 export async function streamStatus(options: {
-  page?: Page
   sessionId?: string
   relayPort?: number
 }): Promise<StreamStatusResult> {
@@ -483,27 +446,26 @@ export async function streamStatus(options: {
  * recording there is no viewport resize or max-duration timer: streams pick an
  * explicit output resolution (ffmpeg scales) and run indefinitely.
  */
-export function createStreamApi(options: { defaultPage: Page; relayPort: number }): {
+export function createStreamApi(options: { relayPort: number }): {
   start: (opts: StartStreamOptions) => Promise<StartStreamResult & { success: true }>
-  stop: (opts?: { page?: Page; sessionId?: string }) => Promise<{ duration: number; bytesReceived: number }>
-  status: (opts?: { page?: Page; sessionId?: string }) => Promise<StreamStatusResult>
+  stop: (opts: RecordingTargetOptions) => Promise<{ duration: number; bytesReceived: number }>
+  status: (opts: RecordingTargetOptions) => Promise<StreamStatusResult>
 } {
-  const { defaultPage, relayPort } = options
-
-  const resolveSessionId = (opts?: { page?: Page; sessionId?: string }): string | undefined => {
-    const targetPage = opts?.page || defaultPage
-    return opts?.sessionId || targetPage.sessionId() || undefined
-  }
+  const { relayPort } = options
 
   return {
     start: async (opts) => {
-      return startStream({ ...opts, sessionId: resolveSessionId(opts), relayPort })
+      const { sessionId } = resolveTarget({ helper: 'stream.start', target: opts })
+      const { page: _page, ...params } = opts
+      return startStream({ ...params, sessionId, relayPort })
     },
-    stop: async (opts = {}) => {
-      return stopStream({ ...opts, sessionId: resolveSessionId(opts), relayPort })
+    stop: async (opts) => {
+      const { sessionId } = resolveTarget({ helper: 'stream.stop', target: opts })
+      return stopStream({ sessionId, relayPort })
     },
-    status: async (opts = {}) => {
-      return streamStatus({ ...opts, sessionId: resolveSessionId(opts), relayPort })
+    status: async (opts) => {
+      const { sessionId } = resolveTarget({ helper: 'stream.status', target: opts })
+      return streamStatus({ sessionId, relayPort })
     },
   }
 }
@@ -512,7 +474,6 @@ export function createStreamApi(options: { defaultPage: Page; relayPort: number 
  * Cancel recording without saving.
  */
 export async function cancelRecording(options: {
-  page: Page
   sessionId?: string
   relayPort?: number
 }): Promise<void> {

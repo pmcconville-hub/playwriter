@@ -41,6 +41,6 @@ for advanced workflows like debugging, performance profiling, and live code edit
 # BrowserMCP: limited to what the tools expose
 # Playwriter: anything Playwright can do
 
-playwriter -s 1 -e "page.evaluate(() => performance.getEntriesByType('navigation'))"
-playwriter -s 1 -e "state.cdp = getCDPSession({ page }); state.cdp.send('Network.enable')"
+playwriter -s 1 -e "state.page.evaluate(() => performance.getEntriesByType('navigation'))"
+playwriter -s 1 -e "state.cdp = getCDPSession({ page: state.page }); state.cdp.send('Network.enable')"
 ```

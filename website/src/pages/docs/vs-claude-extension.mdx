@@ -45,8 +45,9 @@ your browser setup.
 ```bash
 # Works with any MCP client, any agent
 playwriter session new
-playwriter -s 1 -e "snapshot({ page })"
-playwriter -s 1 -e "page.locator('button:has-text(\"Submit\")').click()"
+playwriter -s 1 -e "state.page = await context.newPage(); await state.page.goto('https://example.com')"
+playwriter -s 1 -e "snapshot({ page: state.page })"
+playwriter -s 1 -e "state.page.locator('button:has-text(\"Submit\")').click()"
 ```
 
 ## Advanced capabilities

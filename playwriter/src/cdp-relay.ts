@@ -39,7 +39,7 @@ import crypto from 'node:crypto'
 import os from 'node:os'
 import path from 'node:path'
 import { EventEmitter } from 'node:events'
-import { VERSION, EXTENSION_IDS, shouldAutoEnablePlaywriter } from './utils.js'
+import { VERSION, EXTENSION_IDS } from './utils.js'
 import { createCdpLogger, type CdpLogEntry, type CdpLogger } from './cdp-log.js'
 import { RecordingRelay } from './recording-relay.js'
 import { StreamRelay } from './stream-relay.js'
@@ -555,58 +555,6 @@ export async function startPlayWriterCDPRelayServer({
     return streamRelays.get(connId) || null
   }
 
-  // Auto-create an initial blank tab when no targets exist. Set
-  // PLAYWRITER_AUTO_ENABLE=false to require manually enabled tabs instead.
-  async function maybeAutoCreateInitialTab(
-    extensionId: string,
-    options?: { tabGroup?: string; tabGroupKey?: string; tabGroupColor?: TabGroupColor },
-  ): Promise<void> {
-    if (!shouldAutoEnablePlaywriter()) {
-      return
-    }
-    const conn = getExtensionConnection(extensionId)
-    if (!conn) {
-      return
-    }
-    if (conn.connectedTargets.size > 0) {
-      return
-    }
-
-    try {
-      logger?.log(pc.blue('Auto-creating initial tab for Playwright client'))
-      const result = (await sendToExtension({
-        extensionId,
-        method: 'createInitialTab',
-        timeout: 10000,
-        params:
-          options?.tabGroup || options?.tabGroupKey || options?.tabGroupColor
-            ? { tabGroup: options.tabGroup, tabGroupKey: options.tabGroupKey, tabGroupColor: options.tabGroupColor }
-            : undefined,
-      })) as {
-        success: boolean
-        tabId: number
-        sessionId: string
-        targetInfo: Protocol.Target.TargetInfo
-      }
-      if (result.success && result.sessionId && result.targetInfo) {
-        store.setState((s) =>
-          relayState.addTarget(s, {
-            extensionId,
-            sessionId: result.sessionId,
-            targetId: result.targetInfo.targetId,
-            targetInfo: result.targetInfo,
-          }),
-        )
-        const updatedTargets = store.getState().extensions.get(extensionId)?.connectedTargets.size || 0
-        logger?.log(
-          pc.blue(`Auto-created tab, now have ${updatedTargets} targets, url: ${result.targetInfo.url}`),
-        )
-      }
-    } catch (e) {
-      logger?.error('Failed to auto-create initial tab:', e)
-    }
-  }
-
   function getPageTargetSessionIds({ extensionId }: { extensionId: string }): string[] {
     const extensionState = store.getState().extensions.get(extensionId)
     if (!extensionState) {
@@ -744,18 +692,11 @@ export async function startPlayWriterCDPRelayServer({
       }
 
       // Target.setAutoAttach is a CDP command Playwright sends on first connection.
-      // We use it as the hook to auto-create an initial tab. If Playwright changes
-      // its initialization sequence in the future, this could be moved to a different command.
+      // The relay never auto-creates a tab here: clients with zero tabs get an
+      // empty default context and open tabs themselves via Target.createTarget.
       case 'Target.setAutoAttach': {
         if (sessionId) {
           break
-        }
-        if (conn?.inventoryReady) {
-          await maybeAutoCreateInitialTab(conn.id, {
-            tabGroup: clientTabGroup,
-            tabGroupKey: clientSessionKey,
-            tabGroupColor: clientTabGroupColor,
-          })
         }
         // Forward auto-attach so Chrome emits iframe Target.attachedToTarget events.
         // Playwright relies on these (with parentFrameId) when reconnecting over CDP.
@@ -1672,16 +1613,6 @@ export async function startPlayWriterCDPRelayServer({
 
           if (message.method === 'ready') {
             store.setState((s) => relayState.markExtensionInventoryReady(s, { extensionId: connectionId }))
-            const boundClient = Array.from(store.getState().playwrightClients.values()).find((client) => {
-              return client.extensionId === connectionId
-            })
-            if (boundClient) {
-              await maybeAutoCreateInitialTab(connectionId, {
-                tabGroup: boundClient.tabGroup,
-                tabGroupKey: boundClient.sessionId,
-                tabGroupColor: boundClient.tabGroupColor,
-              })
-            }
             return
           }
 
@@ -2386,11 +2317,10 @@ export async function startPlayWriterCDPRelayServer({
       if (!existingExecutor) {
         return c.json({ error: `Session ${sessionId} not found. Run 'playwriter session new' first.` }, 404)
       }
-      const { page, context } = await existingExecutor.reset()
+      const { context } = await existingExecutor.reset()
 
       return c.json({
         success: true,
-        pageUrl: page.url(),
         pagesCount: context.pages().length,
       })
     } catch (error: any) {

@@ -78,9 +78,9 @@ optional and starts only after you confirm a disclosure for one selected tab.
 
 ```bash
 playwriter session new              # new sandbox, outputs id (e.g. 1)
-playwriter -e "page.goto('https://example.com')"
-playwriter -e "snapshot({ page })"
-playwriter -e "page.locator('aria-ref=e5').click()"
+playwriter -e "state.page = await context.newPage(); await state.page.goto('https://example.com')"
+playwriter -e "snapshot({ page: state.page })"
+playwriter -e "state.page.locator('aria-ref=e5').click()"
 ```
 
 ## How it works
@@ -152,7 +152,7 @@ interactive element as text, with Playwright locators attached.
 agent can parse them without vision.
 
 ```bash
-playwriter -e "snapshot({ page })"
+playwriter -e "snapshot({ page: state.page })"
 
 # Output:
 # - banner:
@@ -164,16 +164,16 @@ playwriter -e "snapshot({ page })"
 
 ### Search and diff
 
-Each line ends with a **locator** you can pass directly to `page.locator()`.
+Each line ends with a **locator** you can pass directly to `state.page.locator()`.
 Subsequent calls return a **diff**, so you only see what changed. Use `search` to
 filter large pages.
 
 ```bash
 # Search for specific elements
-playwriter -e "snapshot({ page, search: /button|submit/i })"
+playwriter -e "snapshot({ page: state.page, search: /button|submit/i })"
 
 # Always print URL first, then snapshot
-playwriter -e "console.log('URL:', page.url()); snapshot({ page }).then(console.log)"
+playwriter -e "console.log('URL:', state.page.url()); snapshot({ page: state.page }).then(console.log)"
 ```
 
 ## Visual labels
@@ -183,10 +183,10 @@ When the agent needs to understand **where things are on screen**,
 interactive element. The agent sees the screenshot, reads the labels, and clicks by reference.
 
 ```bash
-playwriter -e "screenshotWithAccessibilityLabels({ page })"
+playwriter -e "screenshotWithAccessibilityLabels({ page: state.page })"
 # Returns screenshot + accessibility snapshot with aria-ref selectors
 
-playwriter -e "page.locator('aria-ref=e5').click()"
+playwriter -e "state.page.locator('aria-ref=e5').click()"
 ```
 
 Labels are **color-coded by element type**: yellow for links, orange for buttons, coral for
@@ -207,7 +207,7 @@ playwriter session new    # => 2
 playwriter session list   # shows sessions + state keys
 
 # Session 1 stores data
-playwriter -s 1 -e "state.users = page.$$eval('.user', els => els.map(e => e.textContent))"
+playwriter -s 1 -e "state.users = state.page.$$eval('.user', els => els.map(e => e.textContent))"
 
 # Session 2 can't see it
 playwriter -s 2 -e "console.log(state.users)"  # undefined
@@ -215,14 +215,17 @@ playwriter -s 2 -e "console.log(state.users)"  # undefined
 
 ### Dedicated pages
 
-Create your own page to **avoid interference** from other agents. Reuse an existing
-`about:blank` tab or create a fresh one, and store it in `state`.
+There is **no default page**. Create your own tab and store it in `state`, so other
+agents do not interfere. To use a tab the user already opened, find it by URL.
 
 ```bash
-playwriter -s 1 -e "state.myPage = context.pages().findLast(p => p.url() === 'about:blank') ?? context.newPage(); state.myPage.goto('https://example.com')"
+playwriter -s 1 -e "state.page = await context.newPage(); await state.page.goto('https://example.com')"
 
-# All subsequent calls use state.myPage
-playwriter -s 1 -e "state.myPage.title()"
+# Or pick the tab the user opened (last match is the most recent)
+playwriter -s 1 -e "state.page = context.pages().findLast((p) => p.url().includes('github.com'))"
+
+# All subsequent calls use state.page
+playwriter -s 1 -e "state.page.title()"
 ```
 
 ## Debugger and editor
@@ -233,7 +236,7 @@ access, not a watered-down subset.
 
 ```bash
 # Set breakpoints and debug
-playwriter -e "state.cdp = getCDPSession({ page }); state.dbg = createDebugger({ cdp: state.cdp }); state.dbg.enable()"
+playwriter -e "state.cdp = getCDPSession({ page: state.page }); state.dbg = createDebugger({ cdp: state.cdp }); state.dbg.enable()"
 playwriter -e "state.scripts = state.dbg.listScripts({ search: 'app' }); state.scripts.map(s => s.url)"
 playwriter -e "state.dbg.setBreakpoint({ file: state.scripts[0].url, line: 42 })"
 
@@ -253,14 +256,14 @@ rendering, or debug failing requests. Captured data lives in `state` and persist
 
 ```bash
 # Start intercepting
-playwriter -e "state.responses = []; page.on('response', async res => { if (res.url().includes('/api/')) { try { state.responses.push({ url: res.url(), status: res.status(), body: await res.json() }); } catch {} } })"
+playwriter -e "state.responses = []; state.page.on('response', async res => { if (res.url().includes('/api/')) { try { state.responses.push({ url: res.url(), status: res.status(), body: await res.json() }); } catch {} } })"
 
 # Trigger actions, then analyze
-playwriter -e "page.click('button.load-more')"
+playwriter -e "state.page.click('button.load-more')"
 playwriter -e "console.log('Captured', state.responses.length, 'API calls'); state.responses.forEach(r => console.log(r.status, r.url.slice(0, 80)))"
 
 # Replay an API call directly
-playwriter -e "page.evaluate(async (url) => { const res = await fetch(url); return res.json(); }, state.responses[0].url)"
+playwriter -e "state.page.evaluate(async (url) => { const res = await fetch(url); return res.json(); }, state.responses[0].url)"
 ```
 
 **Faster than scraping the DOM.** The agent captures the real API calls, inspects their schemas,
@@ -275,14 +278,14 @@ Have the agent **record what it's doing** as MP4 video. The recording uses
 
 ```bash
 # Start recording
-playwriter -e "startRecording({ page, outputPath: './recording.mp4', frameRate: 30 })"
+playwriter -e "startRecording({ page: state.page, outputPath: './recording.mp4', frameRate: 30 })"
 
 # Navigate, interact — recording continues
-playwriter -e "page.click('a'); page.waitForLoadState('domcontentloaded')"
-playwriter -e "page.goBack()"
+playwriter -e "state.page.click('a'); state.page.waitForLoadState('domcontentloaded')"
+playwriter -e "state.page.goBack()"
 
 # Stop and save
-playwriter -e "stopRecording({ page })"
+playwriter -e "stopRecording({ page: state.page })"
 ```
 
 Unlike `getDisplayMedia`, this approach **persists across navigations** because the extension holds
@@ -315,7 +318,7 @@ npx -y traforo -p 19988 -t my-machine -- npx -y playwriter serve --token <secret
 # From anywhere — set env vars and use normally
 export PLAYWRITER_HOST=https://my-machine-tunnel.traforo.dev
 export PLAYWRITER_TOKEN=<secret>
-playwriter -e "page.goto('https://example.com')"
+playwriter -e "state.page = await context.newPage(); await state.page.goto('https://example.com')"
 ```
 
 ### LAN
@@ -332,7 +335,7 @@ accepts connections from the extension. No remote server, no account, no telemet
 
 - **Local by default:** WebSocket server binds to localhost. Traffic leaves your machine only when you explicitly enable Remote control, remote access, or cloud browsers.
 - **Origin validation:** only the Playwriter extension origin is accepted. Browsers cannot spoof the Origin header, so malicious websites cannot connect.
-- **Controlled tab scope:** tabs are controlled after an extension click. By default, Playwriter also creates a controlled `about:blank` tab when a client connects with no controlled tabs. Set `PLAYWRITER_AUTO_ENABLE=false` to require a manual click.
+- **Controlled tab scope:** tabs are controlled after an extension click. Playwriter never opens a tab on its own. New tabs are created only when code calls `context.newPage()`.
 - **Visible automation:** Chrome shows an automation banner on controlled tabs.
 
 ## More resources

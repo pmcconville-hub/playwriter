@@ -306,4 +306,4 @@ The **Location** column shows the React track: `Components` for component render
 - **Development builds only.** Production React builds don't emit performance measures. Use a profiling build (`react-dom/profiling`) or development mode.
 - **React 19.2+ required.** Earlier versions don't emit `PerformanceObserver` measures with devtools metadata.
 - **Extension overhead.** Browser extensions (React DevTools, ad blockers) show up in CPU profiles. Profile in an incognito window with extensions disabled for clean results.
-- **Use `getCDPSession({ page })`** not `context.newCDPSession()`. Only the Playwriter helper works through the relay.
+- **Use `getCDPSession({ page: state.page })`** not `context.newCDPSession()`. Only the Playwriter helper works through the relay.

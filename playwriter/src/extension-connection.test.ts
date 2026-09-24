@@ -553,7 +553,7 @@ describe('Extension Connection Tests', () => {
     await pageB.close()
   })
 
-  it('should warn and switch page when the active page closes', async () => {
+  it('should warn only when a page stored in state closes', async () => {
     const browserContext = getBrowserContext()
     const serviceWorker = await getExtensionServiceWorker(browserContext)
 
@@ -571,92 +571,28 @@ describe('Extension Connection Tests', () => {
       await globalThis.toggleExtensionForActiveTab()
     })
 
-    const closeResult = await client.callTool({
+    const storedCloseResult = await client.callTool({
       name: 'execute',
       arguments: {
         code: js`
-          state.page = page;
-          const closedUrl = state.page.url();
+          state.page = context.pages().findLast((p) => p.url().includes('close-warning-a'));
           await state.page.close();
-          return { closedUrl, remainingPages: context.pages().length };
         `,
       },
     })
+    expect((storedCloseResult as any).isError).not.toBe(true)
+    expect((storedCloseResult as any).content[0].text).toMatchInlineSnapshot(`"[WARNING] Page closed (url: https://example.com/close-warning-a) for state.page. Assign a new open page to state.page before reusing it, e.g. state.page = await context.newPage()."`)
 
-    const closeOutput = (closeResult as any).content[0].text
-    expect(closeOutput).toContain('[WARNING] The current page in state.page was closed')
-    expect(closeOutput).toContain('Switched active page to index')
-    expect((closeResult as any).isError).not.toBe(true)
-
-    const nextResult = await client.callTool({
+    const unstoredCloseResult = await client.callTool({
       name: 'execute',
       arguments: {
         code: js`
-          return { pageUrl: page.url(), pagesCount: context.pages().length };
+          await context.pages().findLast((p) => p.url().includes('close-warning-b')).close();
         `,
       },
     })
-
-    const nextOutput = (nextResult as any).content[0].text
-    expect(nextOutput).toContain('pagesCount')
-    expect(nextOutput).not.toContain('No Playwright pages are available')
-    expect(nextOutput).not.toContain('[WARNING] The current page was closed')
-    expect((nextResult as any).isError).not.toBe(true)
-
-    if (!pageA.isClosed()) {
-      await pageA.close()
-    }
-    if (!pageB.isClosed()) {
-      await pageB.close()
-    }
-  })
-
-  it('should switch page without warning when closed page is not stored in state', async () => {
-    const browserContext = getBrowserContext()
-    const serviceWorker = await getExtensionServiceWorker(browserContext)
-
-    const pageA = await browserContext.newPage()
-    await pageA.goto('https://example.com/close-no-state-warning-a')
-    await pageA.bringToFront()
-    await serviceWorker.evaluate(async () => {
-      await globalThis.toggleExtensionForActiveTab()
-    })
-
-    const pageB = await browserContext.newPage()
-    await pageB.goto('https://example.com/close-no-state-warning-b')
-    await pageB.bringToFront()
-    await serviceWorker.evaluate(async () => {
-      await globalThis.toggleExtensionForActiveTab()
-    })
-
-    const closeResult = await client.callTool({
-      name: 'execute',
-      arguments: {
-        code: js`
-          const closedUrl = page.url();
-          await page.close();
-          return { closedUrl, remainingPages: context.pages().length };
-        `,
-      },
-    })
-
-    const closeOutput = (closeResult as any).content[0].text
-    expect(closeOutput).not.toContain('[WARNING] The current page in state.page was closed')
-    expect(closeOutput).not.toContain('Switched active page to index')
-    expect((closeResult as any).isError).not.toBe(true)
-
-    const nextResult = await client.callTool({
-      name: 'execute',
-      arguments: {
-        code: js`
-          return { pageUrl: page.url(), pagesCount: context.pages().length };
-        `,
-      },
-    })
-
-    const nextOutput = (nextResult as any).content[0].text
-    expect(nextOutput).toContain('pagesCount')
-    expect((nextResult as any).isError).not.toBe(true)
+    expect((unstoredCloseResult as any).isError).not.toBe(true)
+    expect((unstoredCloseResult as any).content[0].text).toMatchInlineSnapshot(`"Code executed successfully (no output)"`)
 
     if (!pageA.isClosed()) {
       await pageA.close()
@@ -743,8 +679,8 @@ describe('Extension Connection Tests', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 100))
 
-    // 3. Detached tabs leave Playwright. Auto-enable may create a blank tab,
-    // so execute still succeeds; the disconnected page must not be listed.
+    // 3. Detached tabs leave Playwright. Execute still works with zero tabs;
+    // the disconnected page must not be listed.
     const afterDisconnect = await client.callTool({
       name: 'execute',
       arguments: {

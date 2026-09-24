@@ -28,7 +28,7 @@ export interface CloudScope {
   }
   sendCookies(options: {
     to: string | CloudBrowserDescriptor
-    from?: Page
+    from: Page
     urls?: string[]
   }): Promise<CloudCookieTransferResult>
 }
@@ -139,14 +139,17 @@ export function resolveCloudCookieUrls({ pageUrl, urls }: { pageUrl: string; url
   })
 }
 
-export function createCloudScope({ defaultPage, auth }: { defaultPage: Page; auth?: CloudAuth }): CloudScope {
+export function createCloudScope({ auth }: { auth?: CloudAuth }): CloudScope {
   return {
     browsers: {
       list: async () => {
         return listCloudBrowsers({ auth })
       },
     },
-    async sendCookies({ to, from = defaultPage, urls }) {
+    async sendCookies({ to, from, urls }) {
+      if (!from) {
+        throw new Error('cloud.sendCookies requires { from: state.page }. There is no default page.')
+      }
       if (from.isClosed()) {
         throw new Error('Cannot copy cookies from a closed page.')
       }
@@ -175,13 +178,9 @@ export function createCloudScope({ defaultPage, auth }: { defaultPage: Page; aut
         const chromium = await getChromium()
         const browser = await chromium.connectOverCDP(await resolveDirectInput(target.cdpUrl))
         try {
-          const context = browser.contexts()[0]
-          if (!context) {
-            throw new Error('Cloud browser has no browser context.')
-          }
-          const targetPage = context.pages()[0] || await context.newPage()
-          const targetCdp = await getCDPSessionForPage({ page: targetPage })
-          await targetCdp.send('Network.setCookies', { cookies: converted.cookies })
+          // Browser-level session: sets cookies without opening a tab in the cloud browser.
+          const browserCdp = await browser.newBrowserCDPSession()
+          await browserCdp.send('Storage.setCookies', { cookies: converted.cookies })
         } finally {
           await browser.close().catch(() => {})
         }

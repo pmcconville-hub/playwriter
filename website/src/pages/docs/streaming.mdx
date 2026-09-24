@@ -28,10 +28,10 @@ ffmpeg runs **inside the relay process**, so the stream keeps running after the 
 
 ## Start streaming
 
-The stream captures the session's **current page** — navigate first, then start:
+The stream captures the session's **`state.page`**. Set it and navigate first, then start:
 
 ```bash
-playwriter -s 1 -e "await page.goto('https://my-generated-content.example')"
+playwriter -s 1 -e "state.page = await context.newPage(); await state.page.goto('https://my-generated-content.example')"
 playwriter stream start -s 1 --rtmp rtmp://va.pscp.tv:80/x/<stream-key>
 ```
 

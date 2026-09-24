@@ -17,7 +17,7 @@ playwriter session new    # => 2
 playwriter session list
 # ID  State Keys
 # --------------
-# 1   myPage, userData
+# 1   page, userData
 # 2   -
 ```
 
@@ -34,7 +34,7 @@ The `state` object persists between execute calls **within the same session**. U
 
 ```js
 // Call 1: store data
-state.page = context.pages().findLast(p => p.url() === 'about:blank') ?? await context.newPage()
+state.page = await context.newPage()
 await state.page.goto('https://example.com')
 state.results = []
 
@@ -45,16 +45,16 @@ state.results.push(await state.page.title())
 
 ## Pages are shared, state is not
 
-`context.pages()` returns all browser tabs with Playwriter enabled, **shared across all sessions**. Multiple agents see the same tabs. To avoid interference, always **get your own page**:
+`context.pages()` returns all browser tabs with Playwriter enabled, **shared across all sessions**. Multiple agents see the same tabs. There is **no default page**. Always **create your own page**:
 
 ```js
-// First call: grab an empty tab or create one, navigate immediately
-state.page = context.pages().findLast(p => p.url() === 'about:blank') ?? await context.newPage()
+// First call: create a tab and navigate immediately
+state.page = await context.newPage()
 await state.page.goto('https://example.com')
-// Store in state.page and use it for ALL subsequent operations
+// Use state.page for ALL subsequent operations
 ```
 
-Navigate **in the same call** as creating the page. This prevents another agent from grabbing the same `about:blank` tab between execute calls.
+Navigate **in the same call** as creating the page.
 
 ## Handle page closures
 
@@ -62,19 +62,18 @@ The user may close your tab. Always check before using it:
 
 ```js
 if (!state.page || state.page.isClosed()) {
-  state.page = context.pages().findLast(p => p.url() === 'about:blank') ?? await context.newPage()
+  state.page = await context.newPage()
 }
 await state.page.goto('https://example.com')
 ```
 
 ## Using existing pages
 
-Only use a page from `context.pages()` if the user explicitly asks you to control a specific tab:
+Only use a page from `context.pages()` if the user points you to a specific tab. Find it by URL. `findLast` picks the most recently opened match:
 
 ```js
-const pages = context.pages().filter(x => x.url().includes('myapp.com'))
-if (pages.length === 0) throw new Error('No myapp.com page found')
-state.targetPage = pages[0]
+state.page = context.pages().findLast((p) => p.url().includes('myapp.com'))
+if (!state.page) throw new Error('No myapp.com page found')
 ```
 
 ## Tab groups per session
@@ -167,13 +166,14 @@ Every session has access to these globals:
 | Variable | Description |
 |---|---|
 | `state` | Persisted object, isolated per session |
-| `page` | Default page (shared, prefer `state.page`) |
 | `context` | Browser context, access all pages via `context.pages()` |
 | `require` | Load Node.js modules (`path`, `fs`, `crypto`, etc.) |
 | `fetch` | Standard fetch API |
 | `Buffer`, `URL`, `URLSearchParams` | Standard globals |
 | `setTimeout`, `setInterval` | Timers |
 | `crypto`, `process` | Node.js globals |
+
+There is no default `page` global. Reading `page` throws. Store your own page in `state.page`.
 
 ## Popup handling
 
