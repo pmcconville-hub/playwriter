@@ -519,20 +519,25 @@ export class StreamRelay {
     stdin.write(buffer)
   }
 
-  private findStream(sessionId?: string): ActiveStream | undefined {
+  /** Without sessionId, only an unambiguous single active stream matches.
+   *  Callers may not know the tab (e.g. session state was reset). */
+  private findStream(sessionId?: string): ActiveStream | { ambiguous: string } | undefined {
+    const streams = [...this.activeStreams.values()]
     if (sessionId) {
-      for (const stream of this.activeStreams.values()) {
-        if (stream.sessionId === sessionId) {
-          return stream
-        }
-      }
-      return undefined
+      return streams.find((stream) => stream.sessionId === sessionId)
     }
-    return this.activeStreams.values().next().value
+    if (streams.length > 1) {
+      const tabs = streams.map((stream) => stream.tabId).join(', ')
+      return { ambiguous: `Multiple active streams (tabs ${tabs}). Pass { page } to pick one.` }
+    }
+    return streams[0]
   }
 
   async stopStream(params: StopStreamParams): Promise<StopStreamResult> {
     const stream = this.findStream(params.sessionId)
+    if (stream && 'ambiguous' in stream) {
+      return { success: false, error: stream.ambiguous }
+    }
     if (!stream) {
       const errorMsg = params.sessionId
         ? `No active stream found for sessionId: ${params.sessionId}`
@@ -605,6 +610,9 @@ export class StreamRelay {
 
   streamStatus(params: { sessionId?: string }): StreamStatusResult {
     const stream = this.findStream(params.sessionId)
+    if (stream && 'ambiguous' in stream) {
+      return { streaming: false, error: stream.ambiguous }
+    }
     if (!stream) {
       const result: StreamStatusResult = { streaming: false }
       if (this.lastStreamError) {

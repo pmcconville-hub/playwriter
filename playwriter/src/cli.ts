@@ -1541,8 +1541,8 @@ cli
   .option('-s, --session <id>', 'Session ID')
   .action(async (options) => {
     const code = [
-      `if (!state.page || state.page.isClosed()) throw new Error('Set state.page first, e.g. playwriter -s <session> -e "state.page = await context.newPage(); await state.page.goto(url)"')`,
-      `const result = await stream.stop({ page: state.page })`,
+      `const target = state.page && !state.page.isClosed() ? { page: state.page } : undefined`,
+      `const result = await stream.stop(target)`,
       `console.log('Stream stopped after ' + Math.round(result.duration / 1000) + 's (' + result.bytesReceived + ' bytes captured)')`,
     ].join('\n')
 
@@ -1562,10 +1562,11 @@ cli
   .option('-s, --session <id>', 'Session ID')
   .action(async (options) => {
     const code = [
-      `if (!state.page || state.page.isClosed()) throw new Error('Set state.page first, e.g. playwriter -s <session> -e "state.page = await context.newPage(); await state.page.goto(url)"')`,
-      `const status = await stream.status({ page: state.page })`,
+      `const target = state.page && !state.page.isClosed() ? { page: state.page } : undefined`,
+      `const status = await stream.status(target)`,
       `if (!status.streaming) {`,
-      `  console.log('Not streaming' + (status.error ? '. Last stream error: ' + status.error : ''))`,
+      `  const errorLabel = status.tabId ? 'Last stream error: ' : ''`,
+      `  console.log('Not streaming' + (status.error ? '. ' + errorLabel + status.error : ''))`,
       `} else {`,
       `  const uptime = Math.round((Date.now() - status.startedAt) / 1000)`,
       `  console.log('Streaming tab ' + status.tabId + ' to: ' + status.destinations.join(', '))`,

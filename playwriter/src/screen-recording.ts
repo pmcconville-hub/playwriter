@@ -448,8 +448,8 @@ export async function streamStatus(options: {
  */
 export function createStreamApi(options: { relayPort: number }): {
   start: (opts: StartStreamOptions) => Promise<StartStreamResult & { success: true }>
-  stop: (opts: RecordingTargetOptions) => Promise<{ duration: number; bytesReceived: number }>
-  status: (opts: RecordingTargetOptions) => Promise<StreamStatusResult>
+  stop: (opts?: RecordingTargetOptions) => Promise<{ duration: number; bytesReceived: number }>
+  status: (opts?: RecordingTargetOptions) => Promise<StreamStatusResult>
 } {
   const { relayPort } = options
 
@@ -459,12 +459,14 @@ export function createStreamApi(options: { relayPort: number }): {
       const { page: _page, ...params } = opts
       return startStream({ ...params, sessionId, relayPort })
     },
+    // Streams outlive session state (reset clears state.page), so stop/status
+    // work without a target when exactly one stream is active in the relay.
     stop: async (opts) => {
-      const { sessionId } = resolveTarget({ helper: 'stream.stop', target: opts })
+      const sessionId = opts ? resolveTarget({ helper: 'stream.stop', target: opts }).sessionId : undefined
       return stopStream({ sessionId, relayPort })
     },
     status: async (opts) => {
-      const { sessionId } = resolveTarget({ helper: 'stream.status', target: opts })
+      const sessionId = opts ? resolveTarget({ helper: 'stream.status', target: opts }).sessionId : undefined
       return streamStatus({ sessionId, relayPort })
     },
   }

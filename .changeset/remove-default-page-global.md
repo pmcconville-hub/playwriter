@@ -12,7 +12,7 @@ Now:
 - The relay no longer auto-creates a tab when a client connects with zero tabs. `PLAYWRITER_AUTO_ENABLE` is removed.
 - Headless and direct CDP sessions start without a tab.
 - Helpers need an explicit page: `snapshot`, `getLatestLogs`, `waitForPageLoad`, `refToLocator`, `screenshotWithAccessibilityLabels`, `getPageMarkdown`, `ghostCursor.*`, `recording.*`, `stream.*`, and `cloud.sendCookies({ from })`. `snapshot` also accepts a `locator` or `frame`.
-- `playwriter stream start|stop|status` stream `state.page`.
+- `playwriter stream start` streams `state.page`. `stream stop` and `stream status` also work without `state.page` (for example after a session reset): they target the only active stream, and ask you to pick a page when several streams run.
 - `reset` (MCP tool, CLI, and `/cli/reset`) no longer reports a current page URL.
 
 Migrate by storing your own page in `state`:

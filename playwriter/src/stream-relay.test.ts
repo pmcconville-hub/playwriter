@@ -263,6 +263,48 @@ describe.skipIf(!hasFfmpeg)('StreamRelay end-to-end pipe', () => {
     fs.rmSync(path.dirname(outputPath), { recursive: true, force: true })
   }, 30000)
 
+  test('stop/status without a target are rejected when several streams are active', async () => {
+    const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-stream-test-'))
+    let nextTabId = 50
+    const sendToExtension = async ({ method }: { method: string; params?: unknown; timeout?: number }) => {
+      if (method === 'startRecording') {
+        return { success: true, tabId: nextTabId++, startedAt: Date.now() }
+      }
+      return { success: true }
+    }
+    const relay = new StreamRelay({ sendToExtension, isExtensionConnected: () => true })
+    for (const sessionId of ['pw-tab-a', 'pw-tab-b']) {
+      await relay.startStream({
+        sessionId,
+        rtmpUrls: [path.join(outputDir, `${sessionId}.flv`)],
+        resolution: '320x240',
+        audio: false,
+        codec: 'libx264',
+      })
+    }
+
+    expect({
+      status: relay.streamStatus({}),
+      stop: await relay.stopStream({}),
+      statusForB: relay.streamStatus({ sessionId: 'pw-tab-b' }).tabId,
+    }).toMatchInlineSnapshot(`
+      {
+        "status": {
+          "error": "Multiple active streams (tabs 50, 51). Pass { page } to pick one.",
+          "streaming": false,
+        },
+        "statusForB": 51,
+        "stop": {
+          "error": "Multiple active streams (tabs 50, 51). Pass { page } to pick one.",
+          "success": false,
+        },
+      }
+    `)
+
+    relay.destroyAll('test done')
+    fs.rmSync(outputDir, { recursive: true, force: true })
+  }, 30000)
+
   test('extension stopRecording failure resolves stop with error, not false success', async () => {
     const tabId = 44
     const outputPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pw-stream-test-')), 'out.flv')
