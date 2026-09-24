@@ -214,8 +214,8 @@ Cloudflare, and the TLS fingerprint stay in the browser.
 Put the SDK in **`sdk.js`** next to `SKILL.md` (or another name that matches
 the site, like `directory-sdk.js`). Use a **class**. Pass shared handles in
 the constructor (`page`, origin). Methods take **one object argument**.
-Annotate inputs and returns with **JSDoc comments** (this is a `.js` file;
-do not switch to TypeScript unless the user asks).
+Annotate inputs and returns with **JSDoc comments**. For a typed SDK that
+other code imports outside playwriter, see "Standalone TypeScript SDK" below.
 
 Never call the site API with Node `fetch`. Node has no session cookies and
 trips bot checks.
@@ -292,6 +292,43 @@ Rules:
 - Open the site origin first so `fetch('/api/...')` is same-origin.
 - If a call needs a prior id or csrf token, fetch that in another method and
   pass it through the constructor or as a method arg. Do not hardcode tokens.
+
+## Standalone TypeScript SDK
+
+Use this when the user wants a typed SDK that other code imports (a script, a
+bot, a cron job), not only replay inside `playwriter -e`. Write `sdk.ts` and
+connect with the `playwriter` package. Docs:
+https://playwriter.dev/docs/sessions#node-api
+
+```ts
+import { connectViaExtension } from 'playwriter'
+
+export interface Product {
+  id: string
+  name: string
+}
+
+export async function listProducts(): Promise<Product[]> {
+  // throws a clear "install the Playwriter extension" error if Chrome is not connected.
+  // `await using` closes pages, disconnects and deletes the session at scope end, also on throw.
+  await using connection = await connectViaExtension({ tabGroup: 'directory' })
+  const page = await connection.browser.contexts()[0].newPage()
+  await page.goto('https://directory.example.com', { waitUntil: 'domcontentloaded' })
+  return await page.evaluate(async () => {
+    const res = await fetch('/api/products', { credentials: 'include' })
+    if (!res.ok) throw new Error(`GET /api/products failed: ${res.status} ${await res.text()}`)
+    return await res.json()
+  })
+}
+```
+
+Rules:
+
+- `playwriter` must be a dependency of the project that runs `sdk.ts`.
+- Export typed interfaces for every input and return value.
+- Always `await using connection = ...` so it auto-closes. Never leave tabs or sessions open.
+- `fetch` still runs inside `page.evaluate`, same as the JS SDK.
+- Validate by running the SDK with `tsx` or `bun` end-to-end.
 
 ## WebSockets are not in the recording
 
@@ -414,4 +451,5 @@ or compare locators, fix the root cause, keep working parts, re-validate.
 - No absolute filesystem paths in SKILL.md or helper scripts
 - Replay uses playwriter commands (inline `-e` or an imported helper script)
 - XHR skills use an in-page class SDK; fetch errors include status and body
+- Standalone `sdk.ts` uses `await using connection = await connectViaExtension()`
 - The flow was validated end-to-end at least once

@@ -103,16 +103,16 @@ Node programs should use `connectViaExtension()` instead of posting `/cli/sessio
 ```ts
 import { connectViaExtension } from 'playwriter'
 
-const connection = await connectViaExtension({
+await using connection = await connectViaExtension({
   tabGroup: 'email-check',
   tabGroupColor: 'grey',
 })
 const page = await connection.browser.contexts()[0].newPage()
 await page.goto('https://example.com')
-await connection.close()
+// connection closes automatically when the scope ends, also on throw
 ```
 
-`tabGroupColor` is typed as Chrome's tab group colors. `close()` closes leftover pages, disconnects CDP, and deletes the session.
+`tabGroupColor` is typed as Chrome's tab group colors. `await using` calls `close()` at scope end: it closes leftover pages, disconnects CDP, and deletes the session. Without `await using`, call `await connection.close()` in `finally`.
 
 Multiline:
 

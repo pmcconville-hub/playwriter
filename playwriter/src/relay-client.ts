@@ -351,6 +351,8 @@ export type PlaywriterBrowserConnection = {
   browser: Browser
   sessionId: string
   close(): Promise<void>
+  /** Enables `await using connection = await connectViaExtension()`. Same as close(). */
+  [Symbol.asyncDispose](): Promise<void>
 }
 
 export async function createRelaySession({
@@ -431,10 +433,10 @@ export async function connectViaExtension({
       throw cause
     })
 
-  return {
-    browser,
-    sessionId: session.id,
-    async close() {
+  // Memoized so close() followed by dispose (or double close) runs cleanup once.
+  let closing: Promise<void> | undefined
+  const close = () => {
+    closing ??= (async () => {
       const leftoverPages = browser
         .contexts()
         .flatMap((browserContext) => browserContext.pages())
@@ -442,6 +444,14 @@ export async function connectViaExtension({
       await Promise.all(leftoverPages.map((page) => page.close().catch(() => undefined)))
       await browser.close().catch(() => undefined)
       await deleteRelaySession({ port, sessionId: session.id })
-    },
+    })()
+    return closing
+  }
+
+  return {
+    browser,
+    sessionId: session.id,
+    close,
+    [Symbol.asyncDispose]: close,
   }
 }

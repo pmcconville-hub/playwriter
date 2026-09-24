@@ -278,6 +278,24 @@ The SDK is a class in `sdk.js`. Shared state (`page`) goes in the constructor.
 Methods take one object argument. `fetch` runs inside `page.evaluate`. Failed
 calls throw with method, path, status, and response text.
 
+For an SDK that other code imports (scripts, bots, cron jobs), ask for a
+**standalone `sdk.ts`**. It uses `playwriter` as a library through the
+[Node API](/docs/sessions#node-api) and returns typed data:
+
+```ts
+import { connectViaExtension } from 'playwriter'
+
+export async function listProducts(): Promise<{ id: string; name: string }[]> {
+  await using connection = await connectViaExtension({ tabGroup: 'directory' })
+  const page = await connection.browser.contexts()[0].newPage()
+  await page.goto('https://directory.example.com', { waitUntil: 'domcontentloaded' })
+  return await page.evaluate(async () => {
+    const res = await fetch('/api/products', { credentials: 'include' })
+    return await res.json()
+  })
+}
+```
+
 ### CRM data entry
 
 Record one full "create lead → fill 20 fields → assign owner → save" flow in Salesforce or

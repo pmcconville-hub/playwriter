@@ -134,16 +134,16 @@ Use `connectViaExtension()` from the `playwriter` package. It starts the relay i
 ```ts
 import { connectViaExtension } from 'playwriter'
 
-const connection = await connectViaExtension({
+await using connection = await connectViaExtension({
   tabGroup: 'email-check',
   tabGroupColor: 'grey',
 })
 const page = await connection.browser.contexts()[0].newPage()
 await page.goto('https://example.com')
-await connection.close()
+// connection closes automatically when the scope ends, also on throw
 ```
 
-`tabGroupColor` is typed as Chrome's tab group colors: `grey`, `blue`, `red`, `yellow`, `green`, `pink`, `purple`, `cyan`, `orange`. `close()` closes leftover pages, disconnects CDP, and deletes the session.
+`tabGroupColor` is typed as Chrome's tab group colors: `grey`, `blue`, `red`, `yellow`, `green`, `pink`, `purple`, `cyan`, `orange`. `await using` calls `close()` at scope end: it closes leftover pages, disconnects CDP, and deletes the session. It needs Node 24+ (or a TypeScript 5.2+ / tsx build). Without `await using`, call `await connection.close()` in `finally`.
 
 Do not POST `/cli/session/new` yourself. Do not call `chromium.connectOverCDP(getCdpUrl(...))` unless you already have a session from the CLI.
 

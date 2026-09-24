@@ -1692,6 +1692,7 @@ cli
       console.log('     or https://playwriter.dev/SKILL.md')
       console.log(`  2. playwriter recorder events -r ${result.recordingId}`)
       console.log('  3. Write SKILL.md + a named helper (submit.js, sdk.js) with playwriter -e examples from the events')
+      console.log('     or a standalone typed sdk.ts via connectViaExtension: https://playwriter.dev/docs/sessions#node-api')
     } catch (error: any) {
       console.error(`Error: ${error.message}`)
       process.exit(1)

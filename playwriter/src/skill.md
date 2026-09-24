@@ -55,7 +55,16 @@ playwriter session new --tab-group scrape --tab-group-color grey
 
 Colors: `grey, blue, red, yellow, green, pink, purple, cyan, orange`; otherwise color is derived from the name. Chrome can collapse or move groups. Dragging a tab between Playwriter groups keeps it connected; dragging it out disconnects it. Local and remote-control extension sessions only.
 
-Node programs: `import { connectViaExtension } from 'playwriter'`. Pass `tabGroup` and `tabGroupColor`, then `await connection.close()`. Do not POST `/cli/session/new` yourself.
+Node programs and TypeScript SDKs use the `playwriter` package as a library. Do not POST `/cli/session/new` yourself. Docs: https://playwriter.dev/docs/sessions#node-api
+
+```ts
+import { connectViaExtension } from 'playwriter'
+
+// auto-closes at scope end, also on throw: closes its pages, deletes the session
+await using connection = await connectViaExtension({ tabGroup: 'docs' })
+const page = await connection.browser.contexts()[0].newPage()
+await page.goto('https://example.com')
+```
 
 ### Remote access (control browser from another machine)
 
